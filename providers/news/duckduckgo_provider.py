@@ -8,7 +8,10 @@ from duckduckgo_search import DDGS
 from domain.enums import ImpactLevel, NewsSentiment, TimeHorizon
 from domain.reports import NewsItem
 from providers.interfaces import NewsProvider
+from utils.logging import get_logger
 from utils.retry import sync_retry
+
+logger = get_logger(__name__)
 
 _POSITIVE = {"beat", "surge", "rally", "upgrade", "growth", "profit", "buy", "bullish", "record"}
 _NEGATIVE = {"miss", "decline", "drop", "loss", "downgrade", "sell", "bearish", "lawsuit", "investigation"}
@@ -53,4 +56,8 @@ class DuckDuckGoNewsProvider(NewsProvider):
         return items
 
     async def search_news(self, query: str, max_results: int = 10) -> list[NewsItem]:
-        return await asyncio.to_thread(self._search, query, max_results)
+        try:
+            return await asyncio.to_thread(self._search, query, max_results)
+        except Exception as exc:
+            logger.warning("news.search.failed", query=query, error=str(exc))
+            return []

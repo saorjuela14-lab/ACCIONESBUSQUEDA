@@ -25,6 +25,8 @@ from providers.sentiment.factory import get_sentiment_provider
 from services.alert_service import AlertService
 from utils.logging import get_logger
 
+logger = get_logger(__name__)
+
 
 class AnalysisService:
     """Orchestrates the multi-agent investment committee pipeline."""

@@ -59,7 +59,19 @@ class WatchlistMonitorService:
         price = float(quote.get("current_price") or 0)
 
         tech_report = await self._technical.analyze(ticker)
-        news_report = await self._news.analyze(ticker, company_name=company_name or ticker)
+        try:
+            news_report = await self._news.analyze(ticker, company_name=company_name or ticker)
+        except Exception as exc:
+            logger.warning("watchlist.news.failed", ticker=ticker, error=str(exc))
+            from domain.reports import AgentReport
+
+            news_report = AgentReport(
+                agent_name="news_agent",
+                ticker=ticker,
+                score=0.0,
+                confidence=0.0,
+                summary="News unavailable during scan.",
+            )
 
         current = {
             "price": price,
