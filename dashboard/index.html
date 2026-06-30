@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NexBuy — Investment Committee</title>
+  <link rel="stylesheet" href="/dashboard/static/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="logo">NX</span>
+        <div>
+          <h1>NexBuy</h1>
+          <p>Investment Committee</p>
+        </div>
+      </div>
+      <nav>
+        <button class="nav active" data-tab="overview">Overview</button>
+        <button class="nav" data-tab="analyze">Análisis</button>
+        <button class="nav" data-tab="correlations">Correlaciones</button>
+        <button class="nav" data-tab="proposal">Propuesta $</button>
+        <button class="nav" data-tab="watchlist">Watchlist</button>
+        <button class="nav" data-tab="alerts">Alertas</button>
+      </nav>
+      <div class="sidebar-footer">
+        <div id="provider-status" class="status-pill">Providers…</div>
+      </div>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <input id="global-ticker" type="text" placeholder="Ticker (AAPL, ABBV, TSM…)" maxlength="10" />
+        <button id="btn-quick-analyze" class="btn primary">Analizar</button>
+      </header>
+
+      <!-- OVERVIEW -->
+      <section id="tab-overview" class="tab active">
+        <h2>Dashboard</h2>
+        <div class="grid cards">
+          <div class="card"><h3>Recomendación</h3><div id="ov-rec" class="metric">—</div></div>
+          <div class="card"><h3>Confianza</h3><div id="ov-conf" class="metric">—</div></div>
+          <div class="card"><h3>Score noticias</h3><div id="ov-news" class="metric">—</div></div>
+          <div class="card"><h3>Sentimiento</h3><div id="ov-sent" class="metric">—</div></div>
+        </div>
+        <div class="grid two">
+          <div class="card">
+            <h3>Resumen ejecutivo</h3>
+            <p id="ov-summary" class="prose">Selecciona un ticker y pulsa Analizar.</p>
+          </div>
+          <div class="card">
+            <h3>Impacto inversión (noticias)</h3>
+            <p id="ov-impact" class="prose muted">—</p>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Agentes del comité</h3>
+          <div id="ov-agents" class="agent-grid"></div>
+        </div>
+      </section>
+
+      <!-- ANALYZE -->
+      <section id="tab-analyze" class="tab">
+        <h2>Análisis completo</h2>
+        <div id="analyze-output" class="output-panel">Ejecuta un análisis desde la barra superior.</div>
+      </section>
+
+      <!-- CORRELATIONS -->
+      <section id="tab-correlations" class="tab">
+        <h2>Dependencias de mercado</h2>
+        <p class="subtitle">Correlaciones, macro (petróleo, tasas, EM), empresas vinculadas</p>
+        <button id="btn-correlations" class="btn">Cargar correlaciones</button>
+        <div id="corr-output" class="output-panel"></div>
+      </section>
+
+      <!-- PROPOSAL -->
+      <section id="tab-proposal" class="tab">
+        <h2>Propuesta de inversión</h2>
+        <div class="form-row">
+          <label>Presupuesto ($) <input id="prop-budget" type="number" value="50" min="1" step="1" /></label>
+          <label>Tickers <input id="prop-tickers" type="text" placeholder="ABBV,TSM o vacío=watchlist" /></label>
+          <label>Instrumento
+            <select id="prop-instrument">
+              <option value="auto">Auto (acción o CFD)</option>
+              <option value="stock">Solo acciones</option>
+              <option value="cfd">Solo CFD</option>
+            </select>
+          </label>
+          <label>Riesgo
+            <select id="prop-risk">
+              <option value="conservative">Conservador</option>
+              <option value="balanced" selected>Balanceado</option>
+              <option value="aggressive">Agresivo</option>
+            </select>
+          </label>
+          <label>Margen CFD % <input id="prop-margin" type="number" placeholder="auto" min="5" max="50" /></label>
+        </div>
+        <label class="checkbox"><input id="prop-watchlist" type="checkbox" /> Usar watchlist si tickers vacío</label>
+        <button id="btn-proposal" class="btn primary">Generar propuesta</button>
+        <div id="proposal-output" class="output-panel"></div>
+      </section>
+
+      <!-- WATCHLIST -->
+      <section id="tab-watchlist" class="tab">
+        <h2>Watchlist</h2>
+        <div class="form-row">
+          <input id="wl-ticker" type="text" placeholder="Ticker" maxlength="10" />
+          <button id="btn-wl-add" class="btn">Añadir</button>
+          <button id="btn-wl-scan" class="btn">Scan</button>
+        </div>
+        <div id="watchlist-output" class="output-panel"></div>
+      </section>
+
+      <!-- ALERTS -->
+      <section id="tab-alerts" class="tab">
+        <h2>Alertas</h2>
+        <button id="btn-alerts-refresh" class="btn">Actualizar</button>
+        <div id="alerts-output" class="output-panel"></div>
+      </section>
+    </main>
+  </div>
+  <div id="toast" class="toast hidden"></div>
+  <script src="/dashboard/static/app.js"></script>
+</body>
+</html>
