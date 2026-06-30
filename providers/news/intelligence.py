@@ -191,6 +191,31 @@ def _short_company_name(company_name: str) -> str:
     return company_name.strip()
 
 
+def partition_news_by_age(items: list[NewsItem], recent_days: int = 90) -> tuple[list[NewsItem], list[NewsItem]]:
+    """Split news into recent window and older backdrop."""
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=recent_days)
+    recent: list[NewsItem] = []
+    historical: list[NewsItem] = []
+    undated: list[NewsItem] = []
+
+    for item in items:
+        if item.published_at is None:
+            undated.append(item)
+            continue
+        pub = item.published_at if item.published_at.tzinfo else item.published_at.replace(tzinfo=timezone.utc)
+        if pub >= cutoff:
+            recent.append(item)
+        else:
+            historical.append(item)
+
+    # Undated feed items are treated as recent supplemental coverage
+    recent.extend(undated)
+    return recent, historical
+
+
 def is_relevant_news_item(item: NewsItem, ticker: str, company_name: str) -> bool:
     text = f"{item.title} {item.snippet or ''} {item.url or ''}".lower()
     url = (item.url or "").lower()
@@ -206,7 +231,7 @@ def is_relevant_news_item(item: NewsItem, ticker: str, company_name: str) -> boo
         return False
 
     short_name = _short_company_name(company_name).lower()
-    tokens = {ticker.lower(), short_name.lower()}
+    tokens = {ticker.lower(), short_name.lower(), company_name.lower()}
     if short_name:
         tokens.add(short_name.split()[0].lower())
 
