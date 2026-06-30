@@ -1,0 +1,2464 @@
+{
+  "id": "6fbb0e88-a538-4592-9361-1567ca4adca2",
+  "ticker": "AAPL",
+  "executive_summary": "Investment committee synthesis for AAPL: weighted score 3.8/100, recommendation HOLD with 64% confidence based on 12 agent reports.",
+  "investment_thesis": "Committee recommends HOLD with composite score 3.8. Verified facts: P/E Ratio: 34.150303 | Forward P/E: 29.320671 | Federal Funds Effective Rate: 3.63 % (-0.27% vs prior) [as of 2026-05-01] | US CPI inflation (YoY): 4.27% as of 2026-05-01. Interpretations: 5m: bearish (score -1.5) | 15m: bullish (score +3.5) | DCF proxy intrinsic value: $103.24 (15x FCF/share).",
+  "bull_case": {
+    "name": "Bull Case",
+    "probability": 0.25944691329889596,
+    "price_target": 378.108576,
+    "thesis": "Bullish scenario (score 3.8) supported by: fundamental_agent: Fundamental review for AAPL based on 15 verified metrics. Score: 29.0.; valuation_agent: Valuation assessment. MOS: 10.6%.; technical_agent: Multi-timeframe technical analysis across 8 horizons. Daily bias: bearish. Suppo",
+    "catalysts": [
+      "Strong roe supports quality growth profile",
+      "Strong revenue growth supports quality growth profile",
+      "Strong eps growth supports quality growth profile"
+    ],
+    "risks": [
+      "Debt/Equity at 79.548 indicates balance sheet stress",
+      "Elevated inflation may delay Fed rate cuts"
+    ],
+    "confidence": 0.5450625
+  },
+  "bear_case": {
+    "name": "Bear Case",
+    "probability": 0.24055308670110404,
+    "price_target": 252.07238400000003,
+    "thesis": "Bearish scenario (score 3.8) supported by: fundamental_agent: Fundamental review for AAPL based on 15 verified metrics. Score: 29.0.; valuation_agent: Valuation assessment. MOS: 10.6%.; technical_agent: Multi-timeframe technical analysis across 8 horizons. Daily bias: bearish. Suppo",
+    "catalysts": [],
+    "risks": [
+      "Debt/Equity at 79.548 indicates balance sheet stress",
+      "Elevated inflation may delay Fed rate cuts",
+      "Sector-country exposure: general geopolitical risk"
+    ],
+    "confidence": 0.5450625
+  },
+  "base_case": {
+    "name": "Base Case",
+    "probability": 0.5,
+    "price_target": 315.09048,
+    "thesis": "Base scenario (score 3.8) supported by: fundamental_agent: Fundamental review for AAPL based on 15 verified metrics. Score: 29.0.; valuation_agent: Valuation assessment. MOS: 10.6%.; technical_agent: Multi-timeframe technical analysis across 8 horizons. Daily bias: bearish. Suppo",
+    "catalysts": [
+      "Strong roe supports quality growth profile",
+      "Strong revenue growth supports quality growth profile"
+    ],
+    "risks": [
+      "Debt/Equity at 79.548 indicates balance sheet stress",
+      "Elevated inflation may delay Fed rate cuts"
+    ],
+    "confidence": 0.64125
+  },
+  "catalysts": [
+    {
+      "category": "interpretation",
+      "statement": "Strong roe supports quality growth profile",
+      "confidence": 0.7,
+      "references": [
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:56.131712Z",
+          "data_point": "returnOnEquity",
+          "value": 1.4147099
+        }
+      ],
+      "impact": "medium",
+      "horizon": null
+    },
+    {
+      "category": "interpretation",
+      "statement": "Strong revenue growth supports quality growth profile",
+      "confidence": 0.7,
+      "references": [
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:56.131748Z",
+          "data_point": "revenueGrowth",
+          "value": 0.166
+        }
+      ],
+      "impact": "medium",
+      "horizon": null
+    },
+    {
+      "category": "interpretation",
+      "statement": "Strong eps growth supports quality growth profile",
+      "confidence": 0.7,
+      "references": [
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:56.131753Z",
+          "data_point": "earningsGrowth",
+          "value": 0.218
+        }
+      ],
+      "impact": "medium",
+      "horizon": null
+    },
+    {
+      "category": "interpretation",
+      "statement": "AAPL stock rises overnight: After price hikes, Apple reportedly seeks US approval to buy Chinese memory chips",
+      "confidence": 0.55,
+      "references": [
+        {
+          "source": "Asianet Newsable",
+          "url": "https://www.msn.com/en-in/technology/tech-companies/aapl-stock-rises-overnight-after-price-hikes-apple-reportedly-seeks-us-approval-to-buy-chinese-memory-chips/ar-AA26LtBw",
+          "retrieved_at": "2026-06-30T03:43:10.559125Z",
+          "data_point": "headline",
+          "value": "AAPL stock rises overnight: After price hikes, Apple reportedly seeks US approval to buy Chinese memory chips"
+        }
+      ],
+      "impact": "medium",
+      "horizon": "weekly"
+    },
+    {
+      "category": "interpretation",
+      "statement": "Active dividend policy supports income investors",
+      "confidence": 0.7,
+      "references": [
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:43:03.084465Z",
+          "data_point": "dividendYield",
+          "value": 0.38
+        }
+      ],
+      "impact": null,
+      "horizon": null
+    }
+  ],
+  "risks": [
+    {
+      "category": "risk",
+      "statement": "Debt/Equity at 79.548 indicates balance sheet stress",
+      "confidence": 0.75,
+      "references": [
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:56.131726Z",
+          "data_point": "debtToEquity",
+          "value": 79.548
+        }
+      ],
+      "impact": "high",
+      "horizon": null
+    },
+    {
+      "category": "risk",
+      "statement": "Elevated inflation may delay Fed rate cuts",
+      "confidence": 0.8,
+      "references": [
+        {
+          "source": "fred",
+          "url": "https://fred.stlouisfed.org/series/CPIAUCSL",
+          "retrieved_at": "2026-06-30T03:42:58.241210Z",
+          "data_point": "CPI_YOY",
+          "value": 4.27
+        }
+      ],
+      "impact": "high",
+      "horizon": "monthly"
+    },
+    {
+      "category": "risk",
+      "statement": "Sector-country exposure: general geopolitical risk",
+      "confidence": 0.6,
+      "references": [
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:43:04.714629Z",
+          "data_point": "country",
+          "value": "US"
+        }
+      ],
+      "impact": "medium",
+      "horizon": "long_term"
+    }
+  ],
+  "recommendation": "hold",
+  "confidence": 0.64125,
+  "price_target": 315.09048,
+  "agent_reports": [
+    {
+      "agent_name": "fundamental_agent",
+      "ticker": "AAPL",
+      "score": 29.0,
+      "confidence": 0.88,
+      "findings": [
+        {
+          "category": "fact",
+          "statement": "P/E Ratio: 34.150303",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131679Z",
+              "data_point": "trailingPE",
+              "value": 34.150303
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Forward P/E: 29.320671",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131702Z",
+              "data_point": "forwardPE",
+              "value": 29.320671
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "P/B: 38.80716",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131708Z",
+              "data_point": "priceToBook",
+              "value": 38.80716
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "ROE: 1.4147099",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131712Z",
+              "data_point": "returnOnEquity",
+              "value": 1.4147099
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "ROA: 0.26229",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131722Z",
+              "data_point": "returnOnAssets",
+              "value": 0.26229
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Debt/Equity: 79.548",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131726Z",
+              "data_point": "debtToEquity",
+              "value": 79.548
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Current Ratio: 1.07",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131734Z",
+              "data_point": "currentRatio",
+              "value": 1.07
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Quick Ratio: 0.906",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131738Z",
+              "data_point": "quickRatio",
+              "value": 0.906
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Net Margin: 0.27152002",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131742Z",
+              "data_point": "profitMargins",
+              "value": 0.27152002
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Operating Margin: 0.32275",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131745Z",
+              "data_point": "operatingMargins",
+              "value": 0.32275
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Revenue Growth: 0.166",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131748Z",
+              "data_point": "revenueGrowth",
+              "value": 0.166
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "EPS Growth: 0.218",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131753Z",
+              "data_point": "earningsGrowth",
+              "value": 0.218
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Free Cash Flow: 101090746368",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131758Z",
+              "data_point": "freeCashflow",
+              "value": 101090746368
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Dividend Yield: 0.38",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131776Z",
+              "data_point": "dividendYield",
+              "value": 0.38
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "PEG: 2.29",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131781Z",
+              "data_point": "pegRatio",
+              "value": 2.29
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Analyst consensus: BUY",
+          "confidence": 0.85,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131785Z",
+              "data_point": "recommendationKey",
+              "value": "buy"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "probability",
+          "statement": "Analyst mean target implies +11.8% upside",
+          "confidence": 0.6,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131791Z",
+              "data_point": "targetMeanPrice",
+              "value": 315.09048
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [
+        {
+          "category": "risk",
+          "statement": "Debt/Equity at 79.548 indicates balance sheet stress",
+          "confidence": 0.75,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131726Z",
+              "data_point": "debtToEquity",
+              "value": 79.548
+            }
+          ],
+          "impact": "high",
+          "horizon": null
+        }
+      ],
+      "opportunities": [
+        {
+          "category": "interpretation",
+          "statement": "Strong roe supports quality growth profile",
+          "confidence": 0.7,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131712Z",
+              "data_point": "returnOnEquity",
+              "value": 1.4147099
+            }
+          ],
+          "impact": "medium",
+          "horizon": null
+        },
+        {
+          "category": "interpretation",
+          "statement": "Strong revenue growth supports quality growth profile",
+          "confidence": 0.7,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131748Z",
+              "data_point": "revenueGrowth",
+              "value": 0.166
+            }
+          ],
+          "impact": "medium",
+          "horizon": null
+        },
+        {
+          "category": "interpretation",
+          "statement": "Strong eps growth supports quality growth profile",
+          "confidence": 0.7,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:56.131753Z",
+              "data_point": "earningsGrowth",
+              "value": 0.218
+            }
+          ],
+          "impact": "medium",
+          "horizon": null
+        }
+      ],
+      "references": [
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:56.131679Z",
+          "data_point": "trailingPE",
+          "value": 34.150303
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:56.131702Z",
+          "data_point": "forwardPE",
+          "value": 29.320671
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:56.131708Z",
+          "data_point": "priceToBook",
+          "value": 38.80716
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:56.131712Z",
+          "data_point": "returnOnEquity",
+          "value": 1.4147099
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:56.131722Z",
+          "data_point": "returnOnAssets",
+          "value": 0.26229
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:56.131726Z",
+          "data_point": "debtToEquity",
+          "value": 79.548
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:56.131734Z",
+          "data_point": "currentRatio",
+          "value": 1.07
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:56.131738Z",
+          "data_point": "quickRatio",
+          "value": 0.906
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:56.131742Z",
+          "data_point": "profitMargins",
+          "value": 0.27152002
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:56.131745Z",
+          "data_point": "operatingMargins",
+          "value": 0.32275
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:56.131748Z",
+          "data_point": "revenueGrowth",
+          "value": 0.166
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:56.131753Z",
+          "data_point": "earningsGrowth",
+          "value": 0.218
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:56.131758Z",
+          "data_point": "freeCashflow",
+          "value": 101090746368
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:56.131776Z",
+          "data_point": "dividendYield",
+          "value": 0.38
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:56.131781Z",
+          "data_point": "pegRatio",
+          "value": 2.29
+        }
+      ],
+      "raw_data": {
+        "info": {
+          "priceToBook": 38.80716,
+          "freeCashflow": 101090746368,
+          "recommendationKey": "buy",
+          "industry": "Consumer Electronics",
+          "dividendYield": 0.38,
+          "earningsGrowth": 0.218,
+          "targetMeanPrice": 315.09048,
+          "quickRatio": 0.906,
+          "currentRatio": 1.07,
+          "sector": "Technology",
+          "trailingPE": 34.150303,
+          "profitMargins": 0.27152002,
+          "operatingMargins": 0.32275,
+          "revenueGrowth": 0.166,
+          "returnOnAssets": 0.26229,
+          "forwardPE": 29.320671,
+          "debtToEquity": 79.548,
+          "returnOnEquity": 1.4147099,
+          "pegRatio": 2.29
+        },
+        "company": "AAPL"
+      },
+      "timestamp": "2026-06-30T03:42:56.131814Z",
+      "summary": "Fundamental review for AAPL based on 15 verified metrics. Score: 29.0."
+    },
+    {
+      "agent_name": "technical_agent",
+      "ticker": "AAPL",
+      "score": 8.75,
+      "confidence": 0.83,
+      "findings": [
+        {
+          "category": "interpretation",
+          "statement": "5m: bearish (score -1.5)",
+          "confidence": 0.9500000000000001,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:06.285386Z",
+              "data_point": "5m_score",
+              "value": -1.5
+            }
+          ],
+          "impact": null,
+          "horizon": "intraday"
+        },
+        {
+          "category": "interpretation",
+          "statement": "15m: bullish (score +3.5)",
+          "confidence": 0.81,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:06.285403Z",
+              "data_point": "15m_score",
+              "value": 3.5
+            }
+          ],
+          "impact": null,
+          "horizon": "intraday"
+        },
+        {
+          "category": "interpretation",
+          "statement": "30m: bullish (score +1.5)",
+          "confidence": 0.9500000000000001,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:06.285408Z",
+              "data_point": "30m_score",
+              "value": 1.5
+            }
+          ],
+          "impact": null,
+          "horizon": "intraday"
+        },
+        {
+          "category": "interpretation",
+          "statement": "1H: bullish (score +1.5)",
+          "confidence": 0.8300000000000001,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:06.285412Z",
+              "data_point": "1H_score",
+              "value": 1.5
+            }
+          ],
+          "impact": null,
+          "horizon": "intraday"
+        },
+        {
+          "category": "interpretation",
+          "statement": "4H: bullish (score +1.5)",
+          "confidence": 0.9500000000000001,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:06.285415Z",
+              "data_point": "4H_score",
+              "value": 1.5
+            }
+          ],
+          "impact": null,
+          "horizon": "weekly"
+        },
+        {
+          "category": "interpretation",
+          "statement": "1D: bearish (score -3.5)",
+          "confidence": 0.9500000000000001,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:06.285419Z",
+              "data_point": "1D_score",
+              "value": -3.5
+            }
+          ],
+          "impact": null,
+          "horizon": "monthly"
+        },
+        {
+          "category": "interpretation",
+          "statement": "1W: neutral (score +0.5)",
+          "confidence": 0.9500000000000001,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:06.285422Z",
+              "data_point": "1W_score",
+              "value": 0.5
+            }
+          ],
+          "impact": null,
+          "horizon": "monthly"
+        },
+        {
+          "category": "interpretation",
+          "statement": "1M: bullish (score +3.5)",
+          "confidence": 0.79,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:06.285426Z",
+              "data_point": "1M_score",
+              "value": 3.5
+            }
+          ],
+          "impact": null,
+          "horizon": "long_term"
+        },
+        {
+          "category": "probability",
+          "statement": "Risk/reward ratio estimated at 0.45x",
+          "confidence": 0.65,
+          "references": [
+            {
+              "source": "technical",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:06.285433Z",
+              "data_point": "risk_reward",
+              "value": 0.45
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [],
+      "opportunities": [],
+      "references": [
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:43:06.285386Z",
+          "data_point": "5m_score",
+          "value": -1.5
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:43:06.285403Z",
+          "data_point": "15m_score",
+          "value": 3.5
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:43:06.285408Z",
+          "data_point": "30m_score",
+          "value": 1.5
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:43:06.285412Z",
+          "data_point": "1H_score",
+          "value": 1.5
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:43:06.285415Z",
+          "data_point": "4H_score",
+          "value": 1.5
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:43:06.285419Z",
+          "data_point": "1D_score",
+          "value": -3.5
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:43:06.285422Z",
+          "data_point": "1W_score",
+          "value": 0.5
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:43:06.285426Z",
+          "data_point": "1M_score",
+          "value": 3.5
+        }
+      ],
+      "raw_data": {
+        "timeframes": {
+          "5m": {
+            "score": -1.5,
+            "bias": "bearish",
+            "rsi": 49.86688959953249,
+            "atr": 0.5573272705078125,
+            "confidence": 0.9500000000000001,
+            "support": 279.939501953125,
+            "resistance": 282.8910140991211
+          },
+          "15m": {
+            "score": 3.5,
+            "bias": "bullish",
+            "rsi": 59.33701892862088,
+            "atr": 0.8956974574497768,
+            "confidence": 0.81,
+            "support": 275.3259872436523,
+            "resistance": 284.10000762939455
+          },
+          "30m": {
+            "score": 1.5,
+            "bias": "bullish",
+            "rsi": 55.020320616471395,
+            "atr": 2.2826058523995534,
+            "confidence": 0.9500000000000001,
+            "support": 274.44749145507814,
+            "resistance": 299.471501159668
+          },
+          "1H": {
+            "score": 1.5,
+            "bias": "bullish",
+            "rsi": 67.1173846080564,
+            "atr": 3.218991960797991,
+            "confidence": 0.8300000000000001,
+            "support": 274.44749145507814,
+            "resistance": 301.4404067993164
+          },
+          "4H": {
+            "score": 1.5,
+            "bias": "bullish",
+            "rsi": 67.1173846080564,
+            "atr": 3.218991960797991,
+            "confidence": 0.9500000000000001,
+            "support": 274.44749145507814,
+            "resistance": 301.4404067993164
+          },
+          "1D": {
+            "score": -3.5,
+            "bias": "bearish",
+            "rsi": 35.34635133053604,
+            "atr": 8.667842320033483,
+            "confidence": 0.9500000000000001,
+            "support": 256.2044383966705,
+            "resistance": 315.1840133666992
+          },
+          "1W": {
+            "score": 0.5,
+            "bias": "neutral",
+            "rsi": 65.34376746785915,
+            "atr": 15.862828571428569,
+            "confidence": 0.9500000000000001,
+            "support": 196.726,
+            "resistance": 311.58
+          },
+          "1M": {
+            "score": 3.5,
+            "bias": "bullish",
+            "rsi": 66.59388627429698,
+            "atr": 26.9791658886121,
+            "confidence": 0.79,
+            "support": 129.6441842358684,
+            "resistance": 280.7738648143934
+          }
+        },
+        "trade_levels": {
+          "entry_zone": [
+            256.2044383966705,
+            260.5383595566873
+          ],
+          "stop_loss": 243.2026749166203,
+          "take_profit_1": 299.075684640067,
+          "take_profit_2": 307.74352696010044,
+          "take_profit_3": 315.1840133666992,
+          "risk_reward_ratio": 0.45
+        },
+        "current_price": 281.74
+      },
+      "timestamp": "2026-06-30T03:43:06.285448Z",
+      "summary": "Multi-timeframe technical analysis across 8 horizons. Daily bias: bearish. Support $256.20, Resistance $315.18."
+    },
+    {
+      "agent_name": "macro_agent",
+      "ticker": "AAPL",
+      "score": -2.0,
+      "confidence": 0.75,
+      "findings": [
+        {
+          "category": "fact",
+          "statement": "Federal Funds Effective Rate: 3.63 % (-0.27% vs prior) [as of 2026-05-01]",
+          "confidence": 0.95,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/series/FEDFUNDS",
+              "retrieved_at": "2026-06-30T03:42:58.241186Z",
+              "data_point": "FEDFUNDS",
+              "value": 3.63
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "US CPI inflation (YoY): 4.27% as of 2026-05-01",
+          "confidence": 0.95,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/series/CPIAUCSL",
+              "retrieved_at": "2026-06-30T03:42:58.241210Z",
+              "data_point": "CPI_YOY",
+              "value": 4.27
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Unemployment Rate: 4.30 % (+0.00% vs prior) [as of 2026-05-01]",
+          "confidence": 0.95,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/series/UNRATE",
+              "retrieved_at": "2026-06-30T03:42:58.241222Z",
+              "data_point": "UNRATE",
+              "value": 4.3
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Gross Domestic Product: 31865.72 billions USD (+1.41% vs prior) [as of 2026-01-01]",
+          "confidence": 0.95,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/series/GDP",
+              "retrieved_at": "2026-06-30T03:42:58.241229Z",
+              "data_point": "GDP",
+              "value": 31865.721
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Yield curve spread (10Y-2Y): 0.28%",
+          "confidence": 0.95,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/series/T10Y2Y",
+              "retrieved_at": "2026-06-30T03:42:58.241234Z",
+              "data_point": "T10Y2Y",
+              "value": 0.28
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "M2 money supply: $23,052B (+1.09% vs prior)",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "fred",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:58.241239Z",
+              "data_point": "M2SL",
+              "value": 23052.3
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "VIX (FRED) at 18.41",
+          "confidence": 0.95,
+          "references": [
+            {
+              "source": "fred",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:58.241245Z",
+              "data_point": "VIXCLS",
+              "value": 18.41
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "US 10Y yield at 4.38%",
+          "confidence": 0.95,
+          "references": [
+            {
+              "source": "fred",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:58.241248Z",
+              "data_point": "US10Y",
+              "value": 4.38
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "DXY: 101.31 (-0.05%)",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:58.241252Z",
+              "data_point": "DXY",
+              "value": 101.309
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "OIL: 70.58 (+1.95%)",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:58.241257Z",
+              "data_point": "OIL",
+              "value": 70.58
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "GOLD: 3975.50 (-2.53%)",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:58.241260Z",
+              "data_point": "GOLD",
+              "value": 3975.5
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "BTC: 59636.25 (+0.17%)",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:58.241264Z",
+              "data_point": "BTC",
+              "value": 59636.25
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Upcoming: FOMC Press Release on 2026-06-30 (impact: high)",
+          "confidence": 0.85,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/releases/calendar",
+              "retrieved_at": "2026-06-30T03:42:59.371519Z",
+              "data_point": "release",
+              "value": "FOMC Press Release"
+            }
+          ],
+          "impact": null,
+          "horizon": "weekly"
+        },
+        {
+          "category": "fact",
+          "statement": "Upcoming: FOMC Press Release on 2026-07-01 (impact: high)",
+          "confidence": 0.85,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/releases/calendar",
+              "retrieved_at": "2026-06-30T03:42:59.371534Z",
+              "data_point": "release",
+              "value": "FOMC Press Release"
+            }
+          ],
+          "impact": null,
+          "horizon": "weekly"
+        },
+        {
+          "category": "fact",
+          "statement": "Upcoming: Employment Situation on 2026-07-02 (impact: high)",
+          "confidence": 0.85,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/releases/calendar",
+              "retrieved_at": "2026-06-30T03:42:59.371537Z",
+              "data_point": "release",
+              "value": "Employment Situation"
+            }
+          ],
+          "impact": null,
+          "horizon": "weekly"
+        },
+        {
+          "category": "fact",
+          "statement": "Upcoming: FOMC Press Release on 2026-07-02 (impact: high)",
+          "confidence": 0.85,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/releases/calendar",
+              "retrieved_at": "2026-06-30T03:42:59.371540Z",
+              "data_point": "release",
+              "value": "FOMC Press Release"
+            }
+          ],
+          "impact": null,
+          "horizon": "weekly"
+        },
+        {
+          "category": "fact",
+          "statement": "Upcoming: Industrial Production and Capacity Utilization on 2026-07-02 (impact: medium)",
+          "confidence": 0.85,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/releases/calendar",
+              "retrieved_at": "2026-06-30T03:42:59.371543Z",
+              "data_point": "release",
+              "value": "Industrial Production and Capacity Utilization"
+            }
+          ],
+          "impact": null,
+          "horizon": "weekly"
+        },
+        {
+          "category": "interpretation",
+          "statement": "Monetary policy stance: restrictive (Fed Funds at 3.63%)",
+          "confidence": 0.8,
+          "references": [
+            {
+              "source": "fred",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:42:59.371549Z",
+              "data_point": "FEDFUNDS",
+              "value": 3.63
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [
+        {
+          "category": "risk",
+          "statement": "Elevated inflation may delay Fed rate cuts",
+          "confidence": 0.8,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/series/CPIAUCSL",
+              "retrieved_at": "2026-06-30T03:42:58.241210Z",
+              "data_point": "CPI_YOY",
+              "value": 4.27
+            }
+          ],
+          "impact": "high",
+          "horizon": "monthly"
+        }
+      ],
+      "opportunities": [],
+      "references": [
+        {
+          "source": "fred",
+          "url": "https://fred.stlouisfed.org/series/FEDFUNDS",
+          "retrieved_at": "2026-06-30T03:42:58.241186Z",
+          "data_point": "FEDFUNDS",
+          "value": 3.63
+        },
+        {
+          "source": "fred",
+          "url": "https://fred.stlouisfed.org/series/CPIAUCSL",
+          "retrieved_at": "2026-06-30T03:42:58.241210Z",
+          "data_point": "CPI_YOY",
+          "value": 4.27
+        },
+        {
+          "source": "fred",
+          "url": "https://fred.stlouisfed.org/series/UNRATE",
+          "retrieved_at": "2026-06-30T03:42:58.241222Z",
+          "data_point": "UNRATE",
+          "value": 4.3
+        },
+        {
+          "source": "fred",
+          "url": "https://fred.stlouisfed.org/series/GDP",
+          "retrieved_at": "2026-06-30T03:42:58.241229Z",
+          "data_point": "GDP",
+          "value": 31865.721
+        },
+        {
+          "source": "fred",
+          "url": "https://fred.stlouisfed.org/series/T10Y2Y",
+          "retrieved_at": "2026-06-30T03:42:58.241234Z",
+          "data_point": "T10Y2Y",
+          "value": 0.28
+        },
+        {
+          "source": "fred",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:58.241239Z",
+          "data_point": "M2SL",
+          "value": 23052.3
+        },
+        {
+          "source": "fred",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:58.241245Z",
+          "data_point": "VIXCLS",
+          "value": 18.41
+        },
+        {
+          "source": "fred",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:58.241248Z",
+          "data_point": "US10Y",
+          "value": 4.38
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:58.241252Z",
+          "data_point": "DXY",
+          "value": 101.309
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:58.241257Z",
+          "data_point": "OIL",
+          "value": 70.58
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:58.241260Z",
+          "data_point": "GOLD",
+          "value": 3975.5
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:42:58.241264Z",
+          "data_point": "BTC",
+          "value": 59636.25
+        }
+      ],
+      "raw_data": {
+        "indicators": {
+          "VIX": {
+            "symbol": "VIXCLS",
+            "value": 18.41,
+            "change_pct": -2.54,
+            "source": "fred",
+            "label": "CBOE Volatility Index",
+            "date": "2026-06-26",
+            "unit": "index"
+          },
+          "DXY": {
+            "symbol": "DX-Y.NYB",
+            "value": 101.309,
+            "change_pct": -0.05
+          },
+          "US10Y": {
+            "symbol": "DGS10",
+            "value": 4.38,
+            "change_pct": -0.45,
+            "source": "fred",
+            "label": "10-Year Treasury Constant Maturity",
+            "date": "2026-06-26",
+            "unit": "%"
+          },
+          "SP500": {
+            "symbol": "^GSPC",
+            "value": 7440.4302,
+            "change_pct": 1.18
+          },
+          "NASDAQ": {
+            "symbol": "^IXIC",
+            "value": 25820.1445,
+            "change_pct": 2.07
+          },
+          "GOLD": {
+            "symbol": "GC=F",
+            "value": 3975.5,
+            "change_pct": -2.53
+          },
+          "OIL": {
+            "symbol": "CL=F",
+            "value": 70.58,
+            "change_pct": 1.95
+          },
+          "BTC": {
+            "symbol": "BTC-USD",
+            "value": 59636.25,
+            "change_pct": 0.17
+          },
+          "FED_FUNDS": {
+            "symbol": "FEDFUNDS",
+            "value": 3.63,
+            "change_pct": -0.27,
+            "source": "fred",
+            "label": "Federal Funds Effective Rate",
+            "date": "2026-05-01",
+            "unit": "%"
+          },
+          "CPI": {
+            "symbol": "CPIAUCSL",
+            "value": 333.979,
+            "change_pct": 0.47,
+            "source": "fred",
+            "label": "Consumer Price Index (All Urban)",
+            "date": "2026-05-01",
+            "unit": "index"
+          },
+          "UNEMPLOYMENT": {
+            "symbol": "UNRATE",
+            "value": 4.3,
+            "change_pct": 0.0,
+            "source": "fred",
+            "label": "Unemployment Rate",
+            "date": "2026-05-01",
+            "unit": "%"
+          },
+          "GDP": {
+            "symbol": "GDP",
+            "value": 31865.721,
+            "change_pct": 1.41,
+            "source": "fred",
+            "label": "Gross Domestic Product",
+            "date": "2026-01-01",
+            "unit": "billions USD"
+          },
+          "YIELD_2Y": {
+            "symbol": "DGS2",
+            "value": 4.07,
+            "change_pct": -0.49,
+            "source": "fred",
+            "label": "2-Year Treasury Constant Maturity",
+            "date": "2026-06-26",
+            "unit": "%"
+          },
+          "YIELD_CURVE": {
+            "symbol": "T10Y2Y",
+            "value": 0.28,
+            "change_pct": -9.68,
+            "source": "fred",
+            "label": "10Y minus 2Y Treasury Spread",
+            "date": "2026-06-29",
+            "unit": "%"
+          },
+          "M2": {
+            "symbol": "M2SL",
+            "value": 23052.3,
+            "change_pct": 1.09,
+            "source": "fred",
+            "label": "M2 Money Stock",
+            "date": "2026-05-01",
+            "unit": "billions USD"
+          },
+          "INDUSTRIAL_PRODUCTION": {
+            "symbol": "INDPRO",
+            "value": 102.6475,
+            "change_pct": 0.14,
+            "source": "fred",
+            "label": "Industrial Production Index",
+            "date": "2026-05-01",
+            "unit": "index"
+          },
+          "CONSUMER_SENTIMENT": {
+            "symbol": "UMCSENT",
+            "value": 44.8,
+            "change_pct": -10.04,
+            "source": "fred",
+            "label": "U. of Michigan Consumer Sentiment",
+            "date": "2026-05-01",
+            "unit": "index"
+          },
+          "CPI_YOY": {
+            "symbol": "CPIAUCSL",
+            "value": 4.27,
+            "change_pct": null,
+            "source": "fred",
+            "label": "CPI Inflation (YoY)",
+            "date": "2026-05-01",
+            "unit": "%"
+          }
+        },
+        "fred": {
+          "FED_FUNDS": {
+            "key": "FED_FUNDS",
+            "series_id": "FEDFUNDS",
+            "label": "Federal Funds Effective Rate",
+            "unit": "%",
+            "category": "monetary",
+            "value": 3.63,
+            "previous_value": 3.64,
+            "change_pct": -0.27,
+            "date": "2026-05-01",
+            "source": "fred"
+          },
+          "CPI": {
+            "key": "CPI",
+            "series_id": "CPIAUCSL",
+            "label": "Consumer Price Index (All Urban)",
+            "unit": "index",
+            "category": "inflation",
+            "value": 333.979,
+            "previous_value": 332.407,
+            "change_pct": 0.47,
+            "date": "2026-05-01",
+            "source": "fred"
+          },
+          "UNEMPLOYMENT": {
+            "key": "UNEMPLOYMENT",
+            "series_id": "UNRATE",
+            "label": "Unemployment Rate",
+            "unit": "%",
+            "category": "employment",
+            "value": 4.3,
+            "previous_value": 4.3,
+            "change_pct": 0.0,
+            "date": "2026-05-01",
+            "source": "fred"
+          },
+          "GDP": {
+            "key": "GDP",
+            "series_id": "GDP",
+            "label": "Gross Domestic Product",
+            "unit": "billions USD",
+            "category": "growth",
+            "value": 31865.721,
+            "previous_value": 31422.526,
+            "change_pct": 1.41,
+            "date": "2026-01-01",
+            "source": "fred"
+          },
+          "YIELD_10Y": {
+            "key": "YIELD_10Y",
+            "series_id": "DGS10",
+            "label": "10-Year Treasury Constant Maturity",
+            "unit": "%",
+            "category": "rates",
+            "value": 4.38,
+            "previous_value": 4.4,
+            "change_pct": -0.45,
+            "date": "2026-06-26",
+            "source": "fred"
+          },
+          "YIELD_2Y": {
+            "key": "YIELD_2Y",
+            "series_id": "DGS2",
+            "label": "2-Year Treasury Constant Maturity",
+            "unit": "%",
+            "category": "rates",
+            "value": 4.07,
+            "previous_value": 4.09,
+            "change_pct": -0.49,
+            "date": "2026-06-26",
+            "source": "fred"
+          },
+          "YIELD_CURVE": {
+            "key": "YIELD_CURVE",
+            "series_id": "T10Y2Y",
+            "label": "10Y minus 2Y Treasury Spread",
+            "unit": "%",
+            "category": "rates",
+            "value": 0.28,
+            "previous_value": 0.31,
+            "change_pct": -9.68,
+            "date": "2026-06-29",
+            "source": "fred"
+          },
+          "M2": {
+            "key": "M2",
+            "series_id": "M2SL",
+            "label": "M2 Money Stock",
+            "unit": "billions USD",
+            "category": "liquidity",
+            "value": 23052.3,
+            "previous_value": 22804.5,
+            "change_pct": 1.09,
+            "date": "2026-05-01",
+            "source": "fred"
+          },
+          "INDUSTRIAL_PRODUCTION": {
+            "key": "INDUSTRIAL_PRODUCTION",
+            "series_id": "INDPRO",
+            "label": "Industrial Production Index",
+            "unit": "index",
+            "category": "growth",
+            "value": 102.6475,
+            "previous_value": 102.509,
+            "change_pct": 0.14,
+            "date": "2026-05-01",
+            "source": "fred"
+          },
+          "CONSUMER_SENTIMENT": {
+            "key": "CONSUMER_SENTIMENT",
+            "series_id": "UMCSENT",
+            "label": "U. of Michigan Consumer Sentiment",
+            "unit": "index",
+            "category": "growth",
+            "value": 44.8,
+            "previous_value": 49.8,
+            "change_pct": -10.04,
+            "date": "2026-05-01",
+            "source": "fred"
+          },
+          "VIX": {
+            "key": "VIX",
+            "series_id": "VIXCLS",
+            "label": "CBOE Volatility Index",
+            "unit": "index",
+            "category": "risk",
+            "value": 18.41,
+            "previous_value": 18.89,
+            "change_pct": -2.54,
+            "date": "2026-06-26",
+            "source": "fred"
+          },
+          "CPI_YOY": {
+            "key": "CPI_YOY",
+            "series_id": "CPIAUCSL",
+            "label": "CPI Inflation (YoY)",
+            "unit": "%",
+            "category": "inflation",
+            "value": 4.27,
+            "previous_value": null,
+            "change_pct": null,
+            "date": "2026-05-01",
+            "source": "fred",
+            "raw_cpi_index": 333.98
+          }
+        },
+        "sector": null
+      },
+      "timestamp": "2026-06-30T03:42:59.371566Z",
+      "summary": "Macro assessment for AAPL (None) using FRED + market data. Score: -2.0."
+    },
+    {
+      "agent_name": "news_agent",
+      "ticker": "AAPL",
+      "score": 3.0,
+      "confidence": 0.65,
+      "findings": [
+        {
+          "category": "fact",
+          "statement": "Apple (AAPL) Stock Trades Down, Here Is Why",
+          "confidence": 0.6,
+          "references": [
+            {
+              "source": "Yahoo Finance",
+              "url": "https://finance.yahoo.com/markets/stocks/articles/apple-aapl-stock-trades-down-233750438.html",
+              "retrieved_at": "2026-06-30T03:43:10.559145Z",
+              "data_point": "headline",
+              "value": "Apple (AAPL) Stock Trades Down, Here Is Why"
+            }
+          ],
+          "impact": "low",
+          "horizon": "weekly"
+        },
+        {
+          "category": "fact",
+          "statement": "Apple's (AAPL) AI Strategy Reset Gains Wall Street Support Amid Cybersecurity Probe",
+          "confidence": 0.6,
+          "references": [
+            {
+              "source": "Insider Monkey",
+              "url": "https://www.insidermonkey.com/blog/apples-aapl-ai-strategy-reset-gains-wall-street-support-amid-cybersecurity-probe-1791385/",
+              "retrieved_at": "2026-06-30T03:43:10.559150Z",
+              "data_point": "headline",
+              "value": "Apple's (AAPL) AI Strategy Reset Gains Wall Street Support Amid Cybersecurity Probe"
+            }
+          ],
+          "impact": "low",
+          "horizon": "weekly"
+        },
+        {
+          "category": "fact",
+          "statement": "AAPL Stock On-Track For Worst Week In Four Months — Mac, iPad Price Hikes Spurs Demand, Margins Debate",
+          "confidence": 0.6,
+          "references": [
+            {
+              "source": "Yahoo Finance",
+              "url": "https://finance.yahoo.com/markets/stocks/articles/aapl-stock-track-worst-week-171213126.html",
+              "retrieved_at": "2026-06-30T03:43:10.559154Z",
+              "data_point": "headline",
+              "value": "AAPL Stock On-Track For Worst Week In Four Months — Mac, iPad Price Hikes Spurs Demand, Margins Debate"
+            }
+          ],
+          "impact": "low",
+          "horizon": "weekly"
+        },
+        {
+          "category": "fact",
+          "statement": "How Much Would $10,000 Invested in Apple Stock 20 Years Ago Be Worth Today?",
+          "confidence": 0.6,
+          "references": [
+            {
+              "source": "U.S. News Money",
+              "url": "https://money.usnews.com/investing/articles/apple-aapl-stock-investment-worth-today",
+              "retrieved_at": "2026-06-30T03:43:10.559157Z",
+              "data_point": "headline",
+              "value": "How Much Would $10,000 Invested in Apple Stock 20 Years Ago Be Worth Today?"
+            }
+          ],
+          "impact": "low",
+          "horizon": "weekly"
+        }
+      ],
+      "risks": [],
+      "opportunities": [
+        {
+          "category": "interpretation",
+          "statement": "AAPL stock rises overnight: After price hikes, Apple reportedly seeks US approval to buy Chinese memory chips",
+          "confidence": 0.55,
+          "references": [
+            {
+              "source": "Asianet Newsable",
+              "url": "https://www.msn.com/en-in/technology/tech-companies/aapl-stock-rises-overnight-after-price-hikes-apple-reportedly-seeks-us-approval-to-buy-chinese-memory-chips/ar-AA26LtBw",
+              "retrieved_at": "2026-06-30T03:43:10.559125Z",
+              "data_point": "headline",
+              "value": "AAPL stock rises overnight: After price hikes, Apple reportedly seeks US approval to buy Chinese memory chips"
+            }
+          ],
+          "impact": "medium",
+          "horizon": "weekly"
+        }
+      ],
+      "references": [
+        {
+          "source": "Asianet Newsable",
+          "url": "https://www.msn.com/en-in/technology/tech-companies/aapl-stock-rises-overnight-after-price-hikes-apple-reportedly-seeks-us-approval-to-buy-chinese-memory-chips/ar-AA26LtBw",
+          "retrieved_at": "2026-06-30T03:43:10.559125Z",
+          "data_point": "headline",
+          "value": "AAPL stock rises overnight: After price hikes, Apple reportedly seeks US approval to buy Chinese memory chips"
+        },
+        {
+          "source": "Yahoo Finance",
+          "url": "https://finance.yahoo.com/markets/stocks/articles/apple-aapl-stock-trades-down-233750438.html",
+          "retrieved_at": "2026-06-30T03:43:10.559145Z",
+          "data_point": "headline",
+          "value": "Apple (AAPL) Stock Trades Down, Here Is Why"
+        },
+        {
+          "source": "Insider Monkey",
+          "url": "https://www.insidermonkey.com/blog/apples-aapl-ai-strategy-reset-gains-wall-street-support-amid-cybersecurity-probe-1791385/",
+          "retrieved_at": "2026-06-30T03:43:10.559150Z",
+          "data_point": "headline",
+          "value": "Apple's (AAPL) AI Strategy Reset Gains Wall Street Support Amid Cybersecurity Probe"
+        },
+        {
+          "source": "Yahoo Finance",
+          "url": "https://finance.yahoo.com/markets/stocks/articles/aapl-stock-track-worst-week-171213126.html",
+          "retrieved_at": "2026-06-30T03:43:10.559154Z",
+          "data_point": "headline",
+          "value": "AAPL Stock On-Track For Worst Week In Four Months — Mac, iPad Price Hikes Spurs Demand, Margins Debate"
+        },
+        {
+          "source": "U.S. News Money",
+          "url": "https://money.usnews.com/investing/articles/apple-aapl-stock-investment-worth-today",
+          "retrieved_at": "2026-06-30T03:43:10.559157Z",
+          "data_point": "headline",
+          "value": "How Much Would $10,000 Invested in Apple Stock 20 Years Ago Be Worth Today?"
+        }
+      ],
+      "raw_data": {
+        "news_count": 5,
+        "bullish": 1,
+        "bearish": 0
+      },
+      "timestamp": "2026-06-30T03:43:10.559181Z",
+      "summary": "Collected 5 news items. Bullish: 1, Bearish: 0."
+    },
+    {
+      "agent_name": "sentiment_agent",
+      "ticker": "AAPL",
+      "score": 4.027777777777778,
+      "confidence": 0.925,
+      "findings": [
+        {
+          "category": "fact",
+          "statement": "Stocktwits labeled sentiment: 100% bullish (3 bull / 0 bear / 31 neutral)",
+          "confidence": 0.75,
+          "references": [
+            {
+              "source": "stocktwits",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:06.285485Z",
+              "data_point": "bullish_pct",
+              "value": 100.0
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Collected 34 social posts from: stocktwits, seeking_alpha",
+          "confidence": 0.7,
+          "references": [],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "[stocktwits] Q3 Market Outlook is out 🍏 🗺️  \n \nThe quarterly write ups likely have created the most value of any of my releases.  \n \nFrom alpha generating seasonal setups  and research on some of the best under th",
+          "confidence": 0.5,
+          "references": [
+            {
+              "source": "stocktwits",
+              "url": "https://stocktwits.com/symbol/AAPL",
+              "retrieved_at": "2026-06-30T03:43:06.285494Z",
+              "data_point": "post",
+              "value": "Q3 Market Outlook is out 🍏 🗺️  \n \nThe quarterly write ups likely have created the most value of any of my releases.  \n \n"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "[stocktwits] $AAPL $MSFT its what we have done since 2016\nhttps://www.instagram.com/reel/DaMfIN0gAzF/?igsh=d21mNmMzcjF6NDlj",
+          "confidence": 0.5,
+          "references": [
+            {
+              "source": "stocktwits",
+              "url": "https://stocktwits.com/symbol/AAPL",
+              "retrieved_at": "2026-06-30T03:43:06.285501Z",
+              "data_point": "post",
+              "value": "$AAPL $MSFT its what we have done since 2016\nhttps://www.instagram.com/reel/DaMfIN0gAzF/?igsh=d21mNmMzcjF6NDlj"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "[stocktwits] $AAPL",
+          "confidence": 0.5,
+          "references": [
+            {
+              "source": "stocktwits",
+              "url": "https://stocktwits.com/symbol/AAPL",
+              "retrieved_at": "2026-06-30T03:43:06.285504Z",
+              "data_point": "post",
+              "value": "$AAPL"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "[stocktwits] $AAPL  you liberals your party just called us out.  We’re coming and hell is coming with us.!!!",
+          "confidence": 0.5,
+          "references": [
+            {
+              "source": "stocktwits",
+              "url": "https://stocktwits.com/symbol/AAPL",
+              "retrieved_at": "2026-06-30T03:43:06.285507Z",
+              "data_point": "post",
+              "value": "$AAPL  you liberals your party just called us out.  We’re coming and hell is coming with us.!!!"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "[stocktwits] $AAPL  just take a look just take a look…",
+          "confidence": 0.5,
+          "references": [
+            {
+              "source": "stocktwits",
+              "url": "https://stocktwits.com/symbol/AAPL",
+              "retrieved_at": "2026-06-30T03:43:06.285510Z",
+              "data_point": "post",
+              "value": "$AAPL  just take a look just take a look…"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "[stocktwits] $AAPL",
+          "confidence": 0.5,
+          "references": [
+            {
+              "source": "stocktwits",
+              "url": "https://stocktwits.com/symbol/AAPL",
+              "retrieved_at": "2026-06-30T03:43:06.285512Z",
+              "data_point": "post",
+              "value": "$AAPL"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "[stocktwits] $AAPL lying RTTT.  Vzzztrrrdzzzzz",
+          "confidence": 0.5,
+          "references": [
+            {
+              "source": "stocktwits",
+              "url": "https://stocktwits.com/symbol/AAPL",
+              "retrieved_at": "2026-06-30T03:43:06.285514Z",
+              "data_point": "post",
+              "value": "$AAPL lying RTTT.  Vzzztrrrdzzzzz"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "[stocktwits] $AAPL you democrat wurrrthlezzzz p ovvv ZZZT. Liberals!!!  The part of peadozzz. Karma is coming for the whole Democrat party.",
+          "confidence": 0.5,
+          "references": [
+            {
+              "source": "stocktwits",
+              "url": "https://stocktwits.com/symbol/AAPL",
+              "retrieved_at": "2026-06-30T03:43:06.285517Z",
+              "data_point": "post",
+              "value": "$AAPL you democrat wurrrthlezzzz p ovvv ZZZT. Liberals!!!  The part of peadozzz. Karma is coming for the whole Democrat "
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [],
+      "opportunities": [],
+      "references": [
+        {
+          "source": "stocktwits",
+          "url": "https://stocktwits.com/symbol/AAPL",
+          "retrieved_at": "2026-06-30T03:43:06.285494Z",
+          "data_point": "post",
+          "value": "Q3 Market Outlook is out 🍏 🗺️  \n \nThe quarterly write ups likely have created the most value of any of my releases.  \n \n"
+        },
+        {
+          "source": "stocktwits",
+          "url": "https://stocktwits.com/symbol/AAPL",
+          "retrieved_at": "2026-06-30T03:43:06.285501Z",
+          "data_point": "post",
+          "value": "$AAPL $MSFT its what we have done since 2016\nhttps://www.instagram.com/reel/DaMfIN0gAzF/?igsh=d21mNmMzcjF6NDlj"
+        },
+        {
+          "source": "stocktwits",
+          "url": "https://stocktwits.com/symbol/AAPL",
+          "retrieved_at": "2026-06-30T03:43:06.285504Z",
+          "data_point": "post",
+          "value": "$AAPL"
+        },
+        {
+          "source": "stocktwits",
+          "url": "https://stocktwits.com/symbol/AAPL",
+          "retrieved_at": "2026-06-30T03:43:06.285507Z",
+          "data_point": "post",
+          "value": "$AAPL  you liberals your party just called us out.  We’re coming and hell is coming with us.!!!"
+        },
+        {
+          "source": "stocktwits",
+          "url": "https://stocktwits.com/symbol/AAPL",
+          "retrieved_at": "2026-06-30T03:43:06.285510Z",
+          "data_point": "post",
+          "value": "$AAPL  just take a look just take a look…"
+        },
+        {
+          "source": "stocktwits",
+          "url": "https://stocktwits.com/symbol/AAPL",
+          "retrieved_at": "2026-06-30T03:43:06.285512Z",
+          "data_point": "post",
+          "value": "$AAPL"
+        },
+        {
+          "source": "stocktwits",
+          "url": "https://stocktwits.com/symbol/AAPL",
+          "retrieved_at": "2026-06-30T03:43:06.285514Z",
+          "data_point": "post",
+          "value": "$AAPL lying RTTT.  Vzzztrrrdzzzzz"
+        },
+        {
+          "source": "stocktwits",
+          "url": "https://stocktwits.com/symbol/AAPL",
+          "retrieved_at": "2026-06-30T03:43:06.285517Z",
+          "data_point": "post",
+          "value": "$AAPL you democrat wurrrthlezzzz p ovvv ZZZT. Liberals!!!  The part of peadozzz. Karma is coming for the whole Democrat "
+        }
+      ],
+      "raw_data": {
+        "label": "neutral",
+        "sources": [
+          "stocktwits",
+          "seeking_alpha"
+        ],
+        "by_source": {
+          "stocktwits": 30,
+          "seeking_alpha": 4
+        },
+        "bullish": 3,
+        "bearish": 0,
+        "neutral": 31,
+        "stocktwits_bullish_pct": 100.0
+      },
+      "timestamp": "2026-06-30T03:43:06.285532Z",
+      "summary": "Social sentiment: neutral. 34 posts from 2 sources. Bull 3 / Bear 0."
+    },
+    {
+      "agent_name": "valuation_agent",
+      "ticker": "AAPL",
+      "score": -24.0,
+      "confidence": 0.55,
+      "findings": [
+        {
+          "category": "interpretation",
+          "statement": "DCF proxy intrinsic value: $103.24 (15x FCF/share)",
+          "confidence": 0.5,
+          "references": [
+            {
+              "source": "valuation",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:00.798707Z",
+              "data_point": "intrinsic_value_dcf_proxy",
+              "value": 103.24
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "probability",
+          "statement": "Margin of safety: +10.6% vs fair value $315.09",
+          "confidence": 0.55,
+          "references": [
+            {
+              "source": "valuation",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:00.798728Z",
+              "data_point": "margin_of_safety",
+              "value": 10.58
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "P/E: 34.15",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:00.798736Z",
+              "data_point": "P/E",
+              "value": 34.150303
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Forward P/E: 29.32",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:00.798741Z",
+              "data_point": "Forward P/E",
+              "value": 29.320671
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "P/B: 38.81",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:00.798745Z",
+              "data_point": "P/B",
+              "value": 38.80716
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [],
+      "opportunities": [],
+      "references": [
+        {
+          "source": "valuation",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:43:00.798707Z",
+          "data_point": "intrinsic_value_dcf_proxy",
+          "value": 103.24
+        },
+        {
+          "source": "valuation",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:43:00.798728Z",
+          "data_point": "margin_of_safety",
+          "value": 10.58
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:43:00.798736Z",
+          "data_point": "P/E",
+          "value": 34.150303
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:43:00.798741Z",
+          "data_point": "Forward P/E",
+          "value": 29.320671
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:43:00.798745Z",
+          "data_point": "P/B",
+          "value": 38.80716
+        }
+      ],
+      "raw_data": {
+        "price": 281.739990234375,
+        "intrinsic_value": 103.2426255290605,
+        "fair_value": 315.09048,
+        "margin_of_safety_pct": 10.584416820725593
+      },
+      "timestamp": "2026-06-30T03:43:00.818533Z",
+      "summary": "Valuation assessment. MOS: 10.6%."
+    },
+    {
+      "agent_name": "country_risk_agent",
+      "ticker": "AAPL",
+      "score": -3.0,
+      "confidence": 0.5,
+      "findings": [
+        {
+          "category": "fact",
+          "statement": "Primary operating country: US",
+          "confidence": 0.85,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:04.714629Z",
+              "data_point": "country",
+              "value": "US"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "uncertainty",
+          "statement": "Verify FX exposure, China/US/EU trade dependency with 10-K geographic revenue",
+          "confidence": 0.45,
+          "references": [
+            {
+              "source": "country_risk",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:04.714656Z",
+              "data_point": "dependency",
+              "value": "unverified"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [
+        {
+          "category": "risk",
+          "statement": "Sector-country exposure: general geopolitical risk",
+          "confidence": 0.6,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:04.714629Z",
+              "data_point": "country",
+              "value": "US"
+            }
+          ],
+          "impact": "medium",
+          "horizon": "long_term"
+        }
+      ],
+      "opportunities": [],
+      "references": [
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:43:04.714629Z",
+          "data_point": "country",
+          "value": "US"
+        }
+      ],
+      "raw_data": {
+        "country": "US",
+        "sector": null
+      },
+      "timestamp": "2026-06-30T03:43:04.714671Z",
+      "summary": "Country risk review for US. Identified 1 risk factors."
+    },
+    {
+      "agent_name": "company_risk_agent",
+      "ticker": "AAPL",
+      "score": 0.0,
+      "confidence": 0.45,
+      "findings": [
+        {
+          "category": "fact",
+          "statement": "No material company-specific risk headlines detected in recent news scan",
+          "confidence": 0.45,
+          "references": [],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [],
+      "opportunities": [],
+      "references": [],
+      "raw_data": {
+        "risk_keywords_detected": []
+      },
+      "timestamp": "2026-06-30T03:43:16.687902Z",
+      "summary": "Company risk scan complete. 0 risk items, 0 keyword categories."
+    },
+    {
+      "agent_name": "corporate_actions_agent",
+      "ticker": "AAPL",
+      "score": 5.0,
+      "confidence": 0.56,
+      "findings": [
+        {
+          "category": "fact",
+          "statement": "Dividend yield: 38.00%",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:03.084465Z",
+              "data_point": "dividendYield",
+              "value": 0.38
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [],
+      "opportunities": [
+        {
+          "category": "interpretation",
+          "statement": "Active dividend policy supports income investors",
+          "confidence": 0.7,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:03.084465Z",
+              "data_point": "dividendYield",
+              "value": 0.38
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "references": [
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T03:43:03.084465Z",
+          "data_point": "dividendYield",
+          "value": 0.38
+        }
+      ],
+      "raw_data": {
+        "dividend_yield": 0.38,
+        "payout_ratio": 0.1259
+      },
+      "timestamp": "2026-06-30T03:43:03.084510Z",
+      "summary": "Corporate actions scan. Score 5.0."
+    },
+    {
+      "agent_name": "portfolio_agent",
+      "ticker": "AAPL",
+      "score": 0.0,
+      "confidence": 0.2,
+      "findings": [
+        {
+          "category": "uncertainty",
+          "statement": "No portfolio context provided for concentration analysis",
+          "confidence": 0.2,
+          "references": [],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [],
+      "opportunities": [],
+      "references": [],
+      "raw_data": {},
+      "timestamp": "2026-06-30T03:43:16.687936Z",
+      "summary": "Portfolio context unavailable."
+    },
+    {
+      "agent_name": "watchlist_agent",
+      "ticker": "AAPL",
+      "score": 0.0,
+      "confidence": 0.9,
+      "findings": [
+        {
+          "category": "fact",
+          "statement": "AAPL is on active watchlist since 2026-06-30",
+          "confidence": 1.0,
+          "references": [
+            {
+              "source": "watchlist",
+              "url": null,
+              "retrieved_at": "2026-06-30T03:43:16.687953Z",
+              "data_point": "added_at",
+              "value": "2026-06-30 03:39:34.218026"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [],
+      "opportunities": [],
+      "references": [],
+      "raw_data": {
+        "on_watchlist": true,
+        "watchlist_size": 1
+      },
+      "timestamp": "2026-06-30T03:43:16.687963Z",
+      "summary": "AAPL under active watchlist monitoring."
+    },
+    {
+      "agent_name": "alert_agent",
+      "ticker": "AAPL",
+      "score": 0.0,
+      "confidence": 0.5,
+      "findings": [],
+      "risks": [],
+      "opportunities": [],
+      "references": [],
+      "raw_data": {
+        "alerts": [],
+        "alerts_generated": 0,
+        "alert_types": []
+      },
+      "timestamp": "2026-06-30T03:43:16.687980Z",
+      "summary": "Generated 0 relevant alerts (no spam policy applied)."
+    }
+  ],
+  "strategy_conclusions": [
+    {
+      "strategy": "value_investing",
+      "score": -8.099999999999998,
+      "confidence": 0.7150000000000001,
+      "conclusion": "Neutral for value",
+      "horizon": "long_term"
+    },
+    {
+      "strategy": "growth_investing",
+      "score": 21.50833333333333,
+      "confidence": 0.9025000000000001,
+      "conclusion": "Strong for growth",
+      "horizon": "long_term"
+    },
+    {
+      "strategy": "dividend_investing",
+      "score": 12.2,
+      "confidence": 0.72,
+      "conclusion": "Weak for dividends",
+      "horizon": "long_term"
+    },
+    {
+      "strategy": "momentum",
+      "score": 7.333333333333333,
+      "confidence": 0.8775,
+      "conclusion": "Weak for momentum",
+      "horizon": "weekly"
+    },
+    {
+      "strategy": "swing_trading",
+      "score": 8.75,
+      "confidence": 0.83,
+      "conclusion": "Suitable for swing",
+      "horizon": "weekly"
+    },
+    {
+      "strategy": "breakout_trading",
+      "score": 8.75,
+      "confidence": 0.83,
+      "conclusion": "No breakout setup",
+      "horizon": "intraday"
+    },
+    {
+      "strategy": "mean_reversion",
+      "score": -1.0749999999999993,
+      "confidence": 0.69,
+      "conclusion": "Not ideal",
+      "horizon": "weekly"
+    },
+    {
+      "strategy": "sector_rotation",
+      "score": 7.299999999999999,
+      "confidence": 0.815,
+      "conclusion": "Neutral",
+      "horizon": "monthly"
+    },
+    {
+      "strategy": "smart_money",
+      "score": 7.625,
+      "confidence": 0.6950000000000001,
+      "conclusion": "No smart money signal",
+      "horizon": "monthly"
+    }
+  ],
+  "timestamp": "2026-06-30T03:43:16.689873Z"
+}
