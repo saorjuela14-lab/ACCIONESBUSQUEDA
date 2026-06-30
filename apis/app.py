@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apis.routes import analysis, health, portfolio, watchlist
+from apis.routes import analysis, health, portfolio, providers, watchlist
 from config.settings import get_settings
 from database.engine import get_session, init_db
 from orchestration.container import Container, bootstrap
@@ -38,6 +38,7 @@ def create_app() -> FastAPI:
     app.include_router(analysis.router, prefix="/api/v1", tags=["analysis"])
     app.include_router(watchlist.router, prefix="/api/v1", tags=["watchlist"])
     app.include_router(portfolio.router, prefix="/api/v1", tags=["portfolio"])
+    app.include_router(providers.router, prefix="/api/v1", tags=["providers"])
 
     return app
 
