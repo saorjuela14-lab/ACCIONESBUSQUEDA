@@ -5,8 +5,9 @@ __pycache__/
 dist/
 build/
 .env
-data/
-*.db
+data/*.db
+data/__pycache__/
+reports/output/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

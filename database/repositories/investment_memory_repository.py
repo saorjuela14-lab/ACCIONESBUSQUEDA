@@ -32,6 +32,12 @@ class InvestmentMemoryRepository:
         await self._session.commit()
         return record
 
+    async def list_recent(self, limit: int = 10) -> list[InvestmentMemoryRecord]:
+        result = await self._session.execute(
+            select(InvestmentMemoryORM).order_by(InvestmentMemoryORM.created_at.desc()).limit(limit)
+        )
+        return [self._to_domain(r) for r in result.scalars().all()]
+
     async def list_ready_for_evaluation(self, min_age_days: int) -> list[InvestmentMemoryRecord]:
         from datetime import timedelta
         cutoff = datetime.now(timezone.utc) - timedelta(days=min_age_days)

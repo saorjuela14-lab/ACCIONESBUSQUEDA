@@ -30,6 +30,8 @@ dependencies = [
     "python-dotenv>=1.0",
     "structlog>=24.1",
     "orjson>=3.9",
+    "scipy>=1.12",
+    "networkx>=3.2",
 ]
 
 [project.optional-dependencies]
@@ -47,7 +49,7 @@ nexbuy = "main:cli_main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agents*", "services*", "providers*", "apis*", "database*", "cache*", "models*", "reports*", "config*", "utils*", "domain*", "orchestration*"]
+include = ["agents*", "services*", "providers*", "apis*", "database*", "cache*", "models*", "reports*", "config*", "utils*", "domain*", "orchestration*", "data*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

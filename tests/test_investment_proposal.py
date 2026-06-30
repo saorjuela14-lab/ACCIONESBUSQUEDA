@@ -2,6 +2,7 @@
 
 from unittest.mock import AsyncMock, MagicMock
 
+import pandas as pd
 import pytest
 
 from domain.enums import InvestmentRecommendation
@@ -34,6 +35,9 @@ def mock_market():
             "current_price": 100.0 if t == "EXPENSIVE" else 25.0,
         }
     )
+    # Synthetic daily returns for optimizer
+    hist = pd.DataFrame({"Close": [100 + i * 0.5 for i in range(60)]})
+    market.get_history = AsyncMock(return_value=hist)
     return market
 
 

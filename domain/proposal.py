@@ -30,7 +30,28 @@ class AllocationLine(BaseModel):
     units: float
     margin_required: float | None = None
     margin_pct: float | None = None
+    spread_cost_est: float | None = None
+    overnight_financing_est: float | None = None
+    stop_loss_suggested: float | None = None
+    max_loss_est: float | None = None
+    expected_return_pct: float | None = None
+    horizon: str = "medium_term"
+    purchase_order: int = 0
     rationale: str
+
+
+class ExecutiveInvestmentReport(BaseModel):
+    why_selected: list[str] = Field(default_factory=list)
+    why_excluded: list[str] = Field(default_factory=list)
+    key_risks: list[str] = Field(default_factory=list)
+    events_to_monitor: list[str] = Field(default_factory=list)
+    correlation_notes: list[str] = Field(default_factory=list)
+    invalidation_scenarios: list[str] = Field(default_factory=list)
+    expected_return_pct: float | None = None
+    max_loss_est_pct: float | None = None
+    portfolio_risk_score: float | None = None
+    cfd_rationale: list[str] = Field(default_factory=list)
+    narrative: str = ""
 
 
 class InvestmentProposal(BaseModel):
@@ -42,6 +63,12 @@ class InvestmentProposal(BaseModel):
     allocations: list[AllocationLine] = Field(default_factory=list)
     unallocated_cash: float = 0.0
     total_margin_required: float | None = None
+    total_spread_cost: float | None = None
+    total_overnight_est: float | None = None
+    portfolio_expected_return_pct: float | None = None
+    portfolio_max_loss_pct: float | None = None
+    diversification_score: float | None = None
     instrument_summary: str = ""
     warnings: list[str] = Field(default_factory=list)
     summary: str = ""
+    executive_report: ExecutiveInvestmentReport | None = None

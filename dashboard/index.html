@@ -3,122 +3,101 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NexBuy — Investment Committee</title>
+  <title>NexBuy Terminal</title>
   <link rel="stylesheet" href="/dashboard/static/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
 </head>
 <body>
-  <div class="app">
-    <aside class="sidebar">
-      <div class="brand">
-        <span class="logo">NX</span>
-        <div>
-          <h1>NexBuy</h1>
-          <p>Investment Committee</p>
-        </div>
+  <div class="terminal">
+    <header class="term-header">
+      <div class="term-brand"><span class="logo">NX</span> NexBuy Terminal <span class="ver">v2</span></div>
+      <div class="regime" id="market-regime">MARKET —</div>
+      <div class="header-actions">
+        <input id="global-ticker" type="text" placeholder="TICKER" maxlength="10" />
+        <button id="btn-analyze" class="btn primary">Analyze</button>
+        <button id="btn-refresh" class="btn">Refresh</button>
       </div>
-      <nav>
-        <button class="nav active" data-tab="overview">Overview</button>
-        <button class="nav" data-tab="analyze">Análisis</button>
-        <button class="nav" data-tab="correlations">Correlaciones</button>
-        <button class="nav" data-tab="proposal">Propuesta $</button>
-        <button class="nav" data-tab="watchlist">Watchlist</button>
-        <button class="nav" data-tab="alerts">Alertas</button>
-      </nav>
-      <div class="sidebar-footer">
-        <div id="provider-status" class="status-pill">Providers…</div>
-      </div>
-    </aside>
+    </header>
 
-    <main class="content">
-      <header class="topbar">
-        <input id="global-ticker" type="text" placeholder="Ticker (AAPL, ABBV, TSM…)" maxlength="10" />
-        <button id="btn-quick-analyze" class="btn primary">Analizar</button>
-      </header>
+    <section class="indices-row" id="indices-row"></section>
 
-      <!-- OVERVIEW -->
-      <section id="tab-overview" class="tab active">
-        <h2>Dashboard</h2>
-        <div class="grid cards">
-          <div class="card"><h3>Recomendación</h3><div id="ov-rec" class="metric">—</div></div>
-          <div class="card"><h3>Confianza</h3><div id="ov-conf" class="metric">—</div></div>
-          <div class="card"><h3>Score noticias</h3><div id="ov-news" class="metric">—</div></div>
-          <div class="card"><h3>Sentimiento</h3><div id="ov-sent" class="metric">—</div></div>
+    <div class="term-grid">
+      <aside class="col-left">
+        <div class="panel">
+          <h3>Sector Heatmap</h3>
+          <div id="sector-heatmap" class="heatmap"></div>
         </div>
-        <div class="grid two">
-          <div class="card">
-            <h3>Resumen ejecutivo</h3>
-            <p id="ov-summary" class="prose">Selecciona un ticker y pulsa Analizar.</p>
+        <div class="panel">
+          <h3>Economic Calendar</h3>
+          <div id="econ-calendar" class="scroll-list"></div>
+        </div>
+        <div class="panel">
+          <h3>Market News</h3>
+          <div id="market-news" class="scroll-list"></div>
+        </div>
+      </aside>
+
+      <main class="col-center">
+        <div class="panel tabs">
+          <div class="tab-bar">
+            <button class="tab active" data-tab="overview">Overview</button>
+            <button class="tab" data-tab="analysis">Analysis</button>
+            <button class="tab" data-tab="graph">Dependency Graph</button>
+            <button class="tab" data-tab="sentiment">Sentiment</button>
+            <button class="tab" data-tab="proposal">Proposal</button>
           </div>
-          <div class="card">
-            <h3>Impacto inversión (noticias)</h3>
-            <p id="ov-impact" class="prose muted">—</p>
+          <div id="tab-overview" class="tab-pane active">
+            <div class="metrics-row">
+              <div class="metric-card"><label>Recommendation</label><div id="m-rec">—</div></div>
+              <div class="metric-card"><label>Confidence</label><div id="m-conf">—</div></div>
+              <div class="metric-card"><label>News Score</label><div id="m-news">—</div></div>
+              <div class="metric-card"><label>Market Sent.</label><div id="m-msent">—</div></div>
+            </div>
+            <p id="exec-summary" class="prose">Select a ticker and click Analyze.</p>
+            <div id="agents-grid" class="agent-grid"></div>
+          </div>
+          <div id="tab-analysis" class="tab-pane"><pre id="analysis-out" class="mono"></pre></div>
+          <div id="tab-graph" class="tab-pane">
+            <div id="graph-network" class="graph-canvas"></div>
+            <pre id="graph-summary" class="mono small"></pre>
+          </div>
+          <div id="tab-sentiment" class="tab-pane"><div id="sentiment-out"></div></div>
+          <div id="tab-proposal" class="tab-pane">
+            <div class="form-inline">
+              <input id="prop-budget" type="number" value="50" min="1" /> USD
+              <input id="prop-tickers" placeholder="tickers or empty=watchlist" />
+              <select id="prop-risk"><option value="balanced">Balanced</option><option value="conservative">Conservative</option><option value="aggressive">Aggressive</option></select>
+              <button id="btn-proposal" class="btn primary">Build Proposal</button>
+            </div>
+            <pre id="proposal-out" class="mono"></pre>
           </div>
         </div>
-        <div class="card">
-          <h3>Agentes del comité</h3>
-          <div id="ov-agents" class="agent-grid"></div>
+        <div class="panel">
+          <h3>Opportunities / Risks</h3>
+          <div class="split"><div id="opportunities"></div><div id="risks-panel"></div></div>
         </div>
-      </section>
+      </main>
 
-      <!-- ANALYZE -->
-      <section id="tab-analyze" class="tab">
-        <h2>Análisis completo</h2>
-        <div id="analyze-output" class="output-panel">Ejecuta un análisis desde la barra superior.</div>
-      </section>
-
-      <!-- CORRELATIONS -->
-      <section id="tab-correlations" class="tab">
-        <h2>Dependencias de mercado</h2>
-        <p class="subtitle">Correlaciones, macro (petróleo, tasas, EM), empresas vinculadas</p>
-        <button id="btn-correlations" class="btn">Cargar correlaciones</button>
-        <div id="corr-output" class="output-panel"></div>
-      </section>
-
-      <!-- PROPOSAL -->
-      <section id="tab-proposal" class="tab">
-        <h2>Propuesta de inversión</h2>
-        <div class="form-row">
-          <label>Presupuesto ($) <input id="prop-budget" type="number" value="50" min="1" step="1" /></label>
-          <label>Tickers <input id="prop-tickers" type="text" placeholder="ABBV,TSM o vacío=watchlist" /></label>
-          <label>Instrumento
-            <select id="prop-instrument">
-              <option value="auto">Auto (acción o CFD)</option>
-              <option value="stock">Solo acciones</option>
-              <option value="cfd">Solo CFD</option>
-            </select>
-          </label>
-          <label>Riesgo
-            <select id="prop-risk">
-              <option value="conservative">Conservador</option>
-              <option value="balanced" selected>Balanceado</option>
-              <option value="aggressive">Agresivo</option>
-            </select>
-          </label>
-          <label>Margen CFD % <input id="prop-margin" type="number" placeholder="auto" min="5" max="50" /></label>
+      <aside class="col-right">
+        <div class="panel">
+          <h3>Watchlist</h3>
+          <div id="watchlist" class="scroll-list"></div>
         </div>
-        <label class="checkbox"><input id="prop-watchlist" type="checkbox" /> Usar watchlist si tickers vacío</label>
-        <button id="btn-proposal" class="btn primary">Generar propuesta</button>
-        <div id="proposal-output" class="output-panel"></div>
-      </section>
-
-      <!-- WATCHLIST -->
-      <section id="tab-watchlist" class="tab">
-        <h2>Watchlist</h2>
-        <div class="form-row">
-          <input id="wl-ticker" type="text" placeholder="Ticker" maxlength="10" />
-          <button id="btn-wl-add" class="btn">Añadir</button>
-          <button id="btn-wl-scan" class="btn">Scan</button>
+        <div class="panel">
+          <h3>Portfolio</h3>
+          <div id="portfolio-panel"></div>
         </div>
-        <div id="watchlist-output" class="output-panel"></div>
-      </section>
-
-      <!-- ALERTS -->
-      <section id="tab-alerts" class="tab">
-        <h2>Alertas</h2>
-        <button id="btn-alerts-refresh" class="btn">Actualizar</button>
-        <div id="alerts-output" class="output-panel"></div>
-      </section>
-    </main>
+        <div class="panel">
+          <h3>Alerts</h3>
+          <div id="alerts-panel" class="scroll-list"></div>
+        </div>
+        <div class="panel">
+          <h3>Recently Analyzed</h3>
+          <div id="recent-panel" class="scroll-list"></div>
+        </div>
+      </aside>
+    </div>
   </div>
   <div id="toast" class="toast hidden"></div>
   <script src="/dashboard/static/app.js"></script>

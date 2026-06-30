@@ -1,201 +1,178 @@
 const API = "/api/v1";
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
 
-function $(sel) { return document.querySelector(sel); }
-function $all(sel) { return document.querySelectorAll(sel); }
-
-function toast(msg, ms = 4000) {
-  const el = $("#toast");
-  el.textContent = msg;
-  el.classList.remove("hidden");
-  setTimeout(() => el.classList.add("hidden"), ms);
+function toast(msg, ms = 3500) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.classList.remove("hidden");
+  setTimeout(() => t.classList.add("hidden"), ms);
 }
 
 async function api(path, opts = {}) {
-  const res = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...opts.headers },
-    ...opts,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || res.statusText);
-  }
-  return res.json();
+  const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+  return r.json();
 }
 
-function ticker() {
-  return ($("#global-ticker").value || "ABBV").trim().toUpperCase();
-}
+function ticker() { return ($("#global-ticker").value || "VRT").trim().toUpperCase(); }
 
-// Tabs
-$all(".nav").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    $all(".nav").forEach((b) => b.classList.remove("active"));
-    $all(".tab").forEach((t) => t.classList.remove("active"));
-    btn.classList.add("active");
-    $(`#tab-${btn.dataset.tab}`).classList.add("active");
-  });
-});
-
-async function loadProviders() {
-  try {
-    const s = await api("/api/v1/providers/status");
-    const poly = s.providers?.polygon?.authenticated;
-    $("#provider-status").textContent = poly ? "Providers OK" : "Providers partial";
-    $("#provider-status").classList.add(poly ? "ok" : "");
-  } catch {
-    $("#provider-status").textContent = "API offline";
-    $("#provider-status").classList.add("err");
-  }
-}
-
-function renderAgents(reports) {
-  const el = $("#ov-agents");
-  el.innerHTML = reports.map((r) => {
-    const cls = r.score >= 0 ? "pos" : "neg";
-    return `<div class="agent-chip"><span>${r.agent_name.replace("_agent", "")}</span><span class="score ${cls}">${r.score >= 0 ? "+" : ""}${r.score?.toFixed(1)}</span></div>`;
+function renderIndices(indices) {
+  $("#indices-row").innerHTML = indices.map((i) => {
+    const cls = (i.change_pct || 0) >= 0 ? "up" : "down";
+    const sign = (i.change_pct || 0) >= 0 ? "+" : "";
+    return `<div class="idx"><div class="name">${i.name}</div><div class="price">${i.price ?? "—"}</div><div class="chg ${cls}">${sign}${i.change_pct ?? 0}%</div></div>`;
   }).join("");
 }
 
-async function runAnalyze(t) {
-  toast(`Analizando ${t}… (puede tardar ~1 min)`);
-  $("#ov-summary").textContent = "Analizando…";
-  $("#analyze-output").innerHTML = '<span class="loading">Ejecutando comité de inversión…</span>';
-
-  const thesis = await api(`${API}/analyze`, {
-    method: "POST",
-    body: JSON.stringify({ ticker: t }),
-  });
-
-  $("#ov-rec").textContent = (thesis.recommendation || "—").toUpperCase();
-  $("#ov-conf").textContent = thesis.confidence ? `${(thesis.confidence * 100).toFixed(0)}%` : "—";
-  $("#ov-summary").textContent = thesis.executive_summary || "—";
-
-  const news = (thesis.agent_reports || []).find((r) => r.agent_name === "news_agent");
-  const sent = (thesis.agent_reports || []).find((r) => r.agent_name === "sentiment_agent");
-  if (news?.raw_data) {
-    $("#ov-news").textContent = news.score != null ? `${news.score >= 0 ? "+" : ""}${news.score.toFixed(1)}` : "—";
-    $("#ov-impact").textContent = news.raw_data.investment_impact || news.raw_data.actualidad_summary || "—";
-  }
-  if (sent) $("#ov-sent").textContent = `${sent.score >= 0 ? "+" : ""}${sent.score?.toFixed(1)}`;
-
-  renderAgents(thesis.agent_reports || []);
-
-  let html = `<strong>${thesis.ticker}</strong> — ${thesis.recommendation?.toUpperCase()} @ ${(thesis.confidence * 100).toFixed(0)}%\n\n`;
-  html += thesis.executive_summary + "\n\n";
-  html += "— Tesis —\n" + (thesis.investment_thesis || "") + "\n\n";
-
-  for (const r of thesis.agent_reports || []) {
-    if (r.agent_name === "news_agent" && r.raw_data) {
-      html += "— NOTICIAS 2Y —\n" + (r.raw_data.two_year_summary || "") + "\n\n";
-      html += "— NOTICIAS 3M —\n" + (r.raw_data.three_month_summary || "") + "\n\n";
-      html += "— IMPACTO —\n" + (r.raw_data.investment_impact || "") + "\n\n";
-    }
-    if (r.agent_name === "market_dependency_agent" && r.raw_data) {
-      html += "— CORRELACIONES —\n" + (r.summary || "") + "\n\n";
-    }
-  }
-  $("#analyze-output").textContent = html;
-  toast(`${t} listo`);
-  return thesis;
+function renderHeatmap(sectors) {
+  $("#sector-heatmap").innerHTML = sectors.map((s) =>
+    `<div class="heat-cell ${s.regime}"><div>${s.sector}</div><div>${s.change_pct != null ? (s.change_pct >= 0 ? "+" : "") + s.change_pct + "%" : "—"}</div></div>`
+  ).join("");
 }
 
-$("#btn-quick-analyze").addEventListener("click", async () => {
-  try {
-    await runAnalyze(ticker());
-  } catch (e) {
-    toast("Error: " + e.message);
-  }
-});
+function renderDashboard(d) {
+  const regime = $("#market-regime");
+  regime.textContent = `MARKET ${d.market_regime.toUpperCase()} (${d.market_regime_score >= 0 ? "+" : ""}${d.market_regime_score})`;
+  regime.className = `regime ${d.market_regime}`;
+  renderIndices(d.indices || []);
+  renderHeatmap(d.sector_heatmap || []);
+  $("#econ-calendar").innerHTML = (d.economic_calendar || []).map((e) => `<div><b>${e.date}</b> ${e.title}</div>`).join("") || "—";
+  $("#market-news").innerHTML = (d.news_highlights || []).map((n) => `<div>${n.title}</div>`).join("") || "—";
+  $("#m-msent").textContent = `${d.market_sentiment_score >= 0 ? "+" : ""}${d.market_sentiment_score?.toFixed(1)}`;
+  $("#watchlist").innerHTML = (d.watchlist || []).map((t) => `<div class="wl-item" data-t="${t}">${t}</div>`).join("") || "—";
+  $$(".wl-item").forEach((el) => el.onclick = () => { $("#global-ticker").value = el.dataset.t; runAnalyze(); });
+  $("#alerts-panel").innerHTML = (d.active_alerts || []).map((a) => `<div>${a}</div>`).join("") || "No alerts";
+  $("#recent-panel").innerHTML = (d.recently_analyzed || []).map((t) => `<div>${t}</div>`).join("") || "—";
+  const p = d.portfolio;
+  $("#portfolio-panel").innerHTML = p ? `
+    <div><b>${p.name || "Portfolio"}</b></div>
+    <div>Value: $${p.total_value?.toFixed(2)}</div>
+    <div>Return: ${p.return_pct?.toFixed(2)}%</div>
+    <div>Sharpe: ${p.sharpe?.toFixed(2) ?? "—"}</div>
+    <div>Drawdown: ${p.max_drawdown?.toFixed(2) ?? "—"}%</div>
+    <div>Unrealized P&L: $${p.unrealized_pnl?.toFixed(2)}</div>
+    <div>Sectors: ${Object.entries(p.sector_weights || {}).map(([k,v]) => `${k} ${v}%`).join(", ") || "—"}</div>
+    <div>Countries: ${Object.entries(p.country_weights || {}).map(([k,v]) => `${k} ${v}%`).join(", ") || "—"}</div>
+    <div>Cap: ${Object.entries(p.cap_exposure || {}).filter(([,v]) => v > 0).map(([k,v]) => `${k} ${v}%`).join(", ") || "—"}</div>
+  ` : "No portfolio — create via API";
+  renderOpportunities(d.top_opportunities || [], d.top_risks || []);
+}
 
-$("#btn-correlations").addEventListener("click", async () => {
+function renderOpportunities(opps, risks) {
+  const fmt = (items) => items.length
+    ? items.map((o) => `<div class="opp-item" data-t="${o.ticker}"><b>${o.ticker}</b> ${o.recommendation} ${(o.confidence * 100).toFixed(0)}%<br/><span>${o.reason?.slice(0, 80) || ""}</span></div>`).join("")
+  : "—";
+  $("#opportunities").innerHTML = `<h4>Opportunities</h4>${fmt(opps)}`;
+  $("#risks-panel").innerHTML = `<h4>Risks</h4>${fmt(risks)}`;
+  $$(".opp-item").forEach((el) => el.onclick = () => { $("#global-ticker").value = el.dataset.t; runAnalyze(); });
+}
+
+async function loadDashboard() {
+  try {
+    const d = await api(`${API}/dashboard`);
+    renderDashboard(d);
+  } catch (e) { toast("Dashboard: " + e.message); }
+}
+
+async function runAnalyze() {
   const t = ticker();
-  $("#corr-output").innerHTML = '<span class="loading">Calculando correlaciones…</span>';
+  toast(`Analyzing ${t}…`);
   try {
-    const c = await api(`${API}/correlations/${t}`);
-    let html = `<strong>${c.ticker}</strong> — ${c.sector || ""} / ${c.industry || ""}\n\n`;
-    html += c.summary + "\n\n";
-    html += "— Benchmarks —\n";
-    html += (c.benchmark_correlations || []).slice(0, 8).map((p) =>
-      `  ${p.ticker}: ${p.correlation >= 0 ? "+" : ""}${p.correlation} — ${p.interpretation}`
-    ).join("\n") + "\n\n";
-    html += "— Macro / Geopolítica —\n";
-    html += (c.macro_sensitivities || []).map((m) =>
-      `  [${m.sensitivity}] ${m.factor} (${m.proxy_ticker})${m.correlation != null ? ` corr ${m.correlation}` : ""}\n    Escenario: ${m.scenario}\n    Impacto: ${m.impact_if_shock}`
-    ).join("\n\n") + "\n\n";
-    html += "— Empresas vinculadas —\n";
-    html += (c.company_dependencies || []).map((d) =>
-      `  ${d.ticker} (${d.relationship})${d.correlation != null ? ` corr ${d.correlation}` : ""}: ${d.why_it_matters}`
-    ).join("\n") + "\n\n";
-    html += "— EM —\n" + c.emerging_market_exposure;
-    $("#corr-output").textContent = html;
-  } catch (e) {
-    $("#corr-output").textContent = "Error: " + e.message;
-  }
-});
+    const [thesis, sent, graph] = await Promise.all([
+      api(`${API}/analyze`, { method: "POST", body: JSON.stringify({ ticker: t }) }),
+      api(`${API}/sentiment/${t}/engine`),
+      api(`${API}/graph/${t}`),
+    ]);
+    $("#m-rec").textContent = (thesis.recommendation || "").toUpperCase();
+    $("#m-conf").textContent = thesis.confidence ? `${(thesis.confidence * 100).toFixed(0)}%` : "—";
+    $("#exec-summary").textContent = thesis.executive_summary || "";
+    const news = (thesis.agent_reports || []).find((r) => r.agent_name === "news_agent");
+    $("#m-news").textContent = news ? `${news.score >= 0 ? "+" : ""}${news.score?.toFixed(1)}` : "—";
+    $("#agents-grid").innerHTML = (thesis.agent_reports || []).map((r) => {
+      const c = r.score >= 0 ? "pos" : "neg";
+      return `<div class="agent-chip"><span>${r.agent_name.replace("_agent", "")}</span><span class="${c}">${r.score >= 0 ? "+" : ""}${r.score?.toFixed(1)}</span></div>`;
+    }).join("");
+    let txt = `${thesis.ticker} ${thesis.recommendation?.toUpperCase()} @ ${(thesis.confidence * 100).toFixed(0)}%\n\n${thesis.executive_summary}\n\n${thesis.investment_thesis}\n`;
+    if (news?.raw_data) {
+      txt += `\n2Y: ${news.raw_data.two_year_summary || ""}\n3M: ${news.raw_data.three_month_summary || ""}\nIMPACT: ${news.raw_data.investment_impact || ""}`;
+    }
+    const dep = (thesis.agent_reports || []).find((r) => r.agent_name === "market_dependency_agent");
+    if (dep) txt += `\n\nCORRELATIONS:\n${dep.summary}`;
+    $("#analysis-out").textContent = txt;
+    renderSentiment(sent);
+    renderGraph(graph);
+    toast(`${t} done`);
+  } catch (e) { toast("Analyze: " + e.message); }
+}
 
-$("#btn-proposal").addEventListener("click", async () => {
-  $("#proposal-output").innerHTML = '<span class="loading">Generando propuesta (analiza cada ticker)…</span>';
-  const tickersRaw = $("#prop-tickers").value.trim();
+function renderSentiment(s) {
+  const channels = [
+    ["Institutional", s.institutional], ["Retail", s.retail], ["Social", s.social],
+    ["News", s.news], ["Analyst", s.analyst],
+  ];
+  $("#sentiment-out").innerHTML = `
+    <p class="prose">${s.summary}</p>
+    <div class="sent-grid">${channels.map(([label, ch]) => `
+      <div class="sent-card"><h4>${label}</h4>
+        <div class="score" style="color:${ch.score >= 0 ? "var(--green)" : ch.score < 0 ? "var(--red)" : "inherit"}">${ch.score >= 0 ? "+" : ""}${ch.score?.toFixed(1)}</div>
+        <div>Conf ${(ch.confidence * 100).toFixed(0)}% · ${ch.trend} · n=${ch.sample_size}</div>
+        <div style="font-size:10px;color:var(--muted)">${(ch.top_factors || []).slice(0, 2).join("; ")}</div>
+      </div>`).join("")}
+    </div><p style="margin-top:8px;font-size:11px;color:var(--muted)">Sources: ${s.sources_used?.join(", ")} | Failed: ${s.sources_failed?.join(", ") || "none"}</p>`;
+}
+
+function renderGraph(g) {
+  $("#graph-summary").textContent = g.summary + "\n\nBeneficiaries: " + (g.beneficiaries || []).join(", ") + "\nAt risk: " + (g.at_risk || []).join(", ");
+  const nodes = new vis.DataSet((g.nodes || []).map((n) => ({
+    id: n.id, label: n.label?.slice(0, 20) || n.id,
+    color: n.type === "company" ? "#3b82f6" : n.type === "geopolitical" ? "#ef4444" : n.type === "commodity" ? "#f59e0b" : "#64748b",
+  })));
+  const edges = new vis.DataSet((g.edges || []).map((e) => ({
+    from: e.source, to: e.target, title: e.relation,
+    color: { color: e.impact === "positive" ? "#22c55e" : e.impact === "negative" ? "#ef4444" : "#64748b" },
+  })));
+  if ($("#graph-network")._net) $("#graph-network")._net.destroy();
+  $("#graph-network")._net = new vis.Network($("#graph-network"), { nodes, edges }, {
+    physics: { stabilization: true }, interaction: { hover: true },
+  });
+}
+
+async function buildProposal() {
+  const tickers = $("#prop-tickers").value.trim();
   const body = {
     budget: parseFloat($("#prop-budget").value) || 50,
-    tickers: tickersRaw ? tickersRaw.split(",").map((s) => s.trim().toUpperCase()) : null,
-    use_watchlist: $("#prop-watchlist").checked,
-    instrument_mode: $("#prop-instrument").value,
+    tickers: tickers ? tickers.split(",").map((s) => s.trim().toUpperCase()) : null,
+    use_watchlist: !tickers,
     risk_profile: $("#prop-risk").value,
-    cfd_margin_pct: $("#prop-margin").value ? parseFloat($("#prop-margin").value) : null,
+    instrument_mode: "auto",
   };
+  toast("Building proposal…");
   try {
     const p = await api(`${API}/proposal`, { method: "POST", body: JSON.stringify(body) });
-    let html = p.summary + "\n\n" + p.instrument_summary + "\n\n";
-    if (p.warnings?.length) html += "⚠ " + p.warnings.join("\n⚠ ") + "\n\n";
-    if (p.total_margin_required) html += `Margen CFD total: $${p.total_margin_required}\n\n`;
-    html += "— Asignaciones —\n";
-    html += (p.allocations || []).map((a) =>
-      `${a.ticker} [${a.instrument.toUpperCase()}] $${a.allocation_usd} (${a.allocation_pct}%) — ${a.recommendation}\n  ${a.rationale}`
-    ).join("\n\n");
-    html += `\n\nEfectivo sin asignar: $${p.unallocated_cash}`;
-    $("#proposal-output").textContent = html;
-    toast("Propuesta generada");
-  } catch (e) {
-    $("#proposal-output").textContent = "Error: " + e.message;
-  }
-});
-
-async function refreshWatchlist() {
-  const items = await api(`${API}/watchlist`);
-  $("#watchlist-output").innerHTML = items.length
-    ? `<table class="table"><tr><th>Ticker</th><th>Empresa</th><th>Notas</th></tr>${
-        items.map((w) => `<tr><td>${w.ticker}</td><td>${w.company_name || "—"}</td><td>${w.notes || ""}</td></tr>`).join("")
-      }</table>`
-    : "Watchlist vacía.";
+    let out = p.summary + "\n\n" + (p.executive_report?.narrative || "") + "\n\n";
+    if (p.executive_report) {
+      out += "WHY SELECTED:\n" + p.executive_report.why_selected.join("\n") + "\n\n";
+      out += "RISKS:\n" + p.executive_report.key_risks.join("\n") + "\n\n";
+      out += "MONITOR:\n" + p.executive_report.events_to_monitor.join("\n") + "\n\n";
+    }
+    out += (p.allocations || []).map((a) =>
+      `#${a.purchase_order} ${a.ticker} [${a.instrument}] $${a.allocation_usd} — ${a.rationale}`
+    ).join("\n");
+    $("#proposal-out").textContent = out;
+    toast("Proposal ready");
+  } catch (e) { toast("Proposal: " + e.message); }
 }
 
-$("#btn-wl-add").addEventListener("click", async () => {
-  const t = $("#wl-ticker").value.trim().toUpperCase();
-  if (!t) return;
-  try {
-    await api(`${API}/watchlist`, { method: "POST", body: JSON.stringify({ ticker: t }) });
-    $("#wl-ticker").value = "";
-    await refreshWatchlist();
-    toast(`${t} añadido`);
-  } catch (e) { toast(e.message); }
+$$(".tab").forEach((btn) => btn.onclick = () => {
+  $$(".tab").forEach((b) => b.classList.remove("active"));
+  $$(".tab-pane").forEach((p) => p.classList.remove("active"));
+  btn.classList.add("active");
+  $(`#tab-${btn.dataset.tab}`).classList.add("active");
 });
 
-$("#btn-wl-scan").addEventListener("click", async () => {
-  try {
-    const r = await api(`${API}/watchlist/scan`, { method: "POST" });
-    toast(`Scan: ${r.scanned} tickers, ${r.alerts} alertas`);
-  } catch (e) { toast(e.message); }
-});
+$("#btn-analyze").onclick = runAnalyze;
+$("#btn-refresh").onclick = loadDashboard;
+$("#btn-proposal").onclick = buildProposal;
 
-$("#btn-alerts-refresh").addEventListener("click", async () => {
-  try {
-    const alerts = await api(`${API}/alerts`);
-    $("#alerts-output").innerHTML = alerts.length
-      ? alerts.map((a) => `[${a.severity}] ${a.ticker}: ${a.message}`).join("\n")
-      : "Sin alertas activas.";
-  } catch (e) { $("#alerts-output").textContent = e.message; }
-});
-
-loadProviders();
-refreshWatchlist().catch(() => {});
+loadDashboard();

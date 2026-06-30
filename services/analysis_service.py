@@ -47,7 +47,7 @@ class AnalysisService:
         self._technical = TechnicalAgent(market_provider)
         self._macro = MacroAgent(macro_provider, market_provider)
         self._news = NewsAgent(news_provider)
-        self._sentiment = SentimentAgent(sentiment_provider or get_sentiment_provider())
+        self._sentiment = SentimentAgent()
         self._valuation = ValuationAgent(market_provider)
         self._country_risk = CountryRiskAgent(market_provider, news_provider)
         self._company_risk = CompanyRiskAgent(news_provider)
