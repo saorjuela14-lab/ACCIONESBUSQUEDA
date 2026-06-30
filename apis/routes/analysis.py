@@ -12,6 +12,7 @@ from domain.reports import InvestmentThesis
 from models.schemas import AnalyzeRequest
 from providers.macro.factory import get_macro_provider
 from providers.market.factory import get_market_provider
+from providers.sentiment.factory import get_sentiment_provider
 from providers.news.duckduckgo_provider import DuckDuckGoNewsProvider
 from reports.writer import ReportWriter
 from services.analysis_service import AnalysisService
@@ -27,6 +28,7 @@ def _build_analysis_service(session: AsyncSession) -> AnalysisService:
         market_provider=get_market_provider(),
         news_provider=DuckDuckGoNewsProvider(),
         macro_provider=get_macro_provider(),
+        sentiment_provider=get_sentiment_provider(),
         alert_repo=AlertRepository(session),
         memory_repo=InvestmentMemoryRepository(session),
         max_concentration_pct=settings.max_concentration_pct,

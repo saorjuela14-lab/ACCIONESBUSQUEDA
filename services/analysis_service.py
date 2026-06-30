@@ -20,7 +20,8 @@ from database.repositories.alert_repository import AlertRepository
 from database.repositories.investment_memory_repository import InvestmentMemoryRepository
 from domain.entities import Portfolio
 from domain.reports import AgentReport, InvestmentThesis
-from providers.interfaces import MacroProvider, MarketDataProvider, NewsProvider
+from providers.interfaces import MacroProvider, MarketDataProvider, NewsProvider, SentimentProvider
+from providers.sentiment.factory import get_sentiment_provider
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -34,6 +35,7 @@ class AnalysisService:
         market_provider: MarketDataProvider,
         news_provider: NewsProvider,
         macro_provider: MacroProvider,
+        sentiment_provider: SentimentProvider | None = None,
         alert_repo: AlertRepository,
         memory_repo: InvestmentMemoryRepository,
         max_concentration_pct: float = 25.0,
@@ -43,7 +45,7 @@ class AnalysisService:
         self._technical = TechnicalAgent(market_provider)
         self._macro = MacroAgent(macro_provider, market_provider)
         self._news = NewsAgent(news_provider)
-        self._sentiment = SentimentAgent(news_provider)
+        self._sentiment = SentimentAgent(sentiment_provider or get_sentiment_provider())
         self._valuation = ValuationAgent(market_provider)
         self._country_risk = CountryRiskAgent(market_provider, news_provider)
         self._company_risk = CompanyRiskAgent(news_provider)

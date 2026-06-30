@@ -6,6 +6,7 @@ from typing import Any
 import pandas as pd
 
 from domain.reports import NewsItem
+from domain.sentiment import SentimentSnapshot
 
 
 class MarketDataProvider(ABC):
@@ -41,4 +42,10 @@ class MacroProvider(ABC):
 
     @abstractmethod
     async def get_economic_calendar(self, days: int = 7) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+
+class SentimentProvider(ABC):
+    @abstractmethod
+    async def get_sentiment(self, ticker: str, company_name: str | None = None) -> SentimentSnapshot:
         raise NotImplementedError

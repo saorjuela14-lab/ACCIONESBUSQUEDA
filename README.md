@@ -12,6 +12,18 @@ Professional multi-agent investment research, portfolio management, and thesis g
 
 ## Fase 2 — Integraciones de datos
 
+### Fase 2.3 — Sentimiento social (implementado)
+Sin Reddit OAuth — usa fuentes públicas:
+
+| Fuente | Método |
+|--------|--------|
+| **Stocktwits** | API pública por ticker |
+| **Reddit** | Búsqueda `site:reddit.com` (DDG) |
+| **Seeking Alpha** | Búsqueda `site:seekingalpha.com` |
+| **Yahoo Finance** | Búsqueda `site:finance.yahoo.com` |
+
+Cuando Reddit apruebe tu app OAuth, se conecta sin rehacer el agente.
+
 ### Fase 2.2 — Market Data (implementado)
 Cadena de fallback automática: **Polygon → Alpha Vantage → YFinance**
 
