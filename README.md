@@ -24,6 +24,23 @@ Sin Reddit OAuth — usa fuentes públicas:
 
 Cuando Reddit apruebe tu app OAuth, se conecta sin rehacer el agente.
 
+Cuando Reddit apruebe tu app OAuth, se conecta sin rehacer el agente.
+
+### Fase 3 — Automatización (implementado)
+- **Watchlist Engine**: monitoreo automático cada 30 min (horario de mercado)
+- **Alert Engine**: deduplicación 24h, sin spam
+- **Market Monitor**: reportes 08:30 / 11:30 / 15:00 / 17:30 ET
+- **Daily Investment Report**: generado a las 17:30 ET
+- **Investment Memory**: evaluación automática a los 90 días + recalibración de pesos
+
+```bash
+python main.py serve      # API + scheduler integrado
+python main.py scheduler  # Solo scheduler (standalone)
+POST /api/v1/watchlist/scan  # Scan manual
+GET  /api/v1/alerts
+GET  /api/v1/reports/daily/latest
+```
+
 ### Fase 2.2 — Market Data (implementado)
 Cadena de fallback automática: **Polygon → Alpha Vantage → YFinance**
 

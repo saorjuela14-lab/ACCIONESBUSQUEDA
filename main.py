@@ -38,17 +38,10 @@ async def run_analysis(ticker: str) -> None:
 
 
 async def run_scheduler() -> None:
-    from database.engine import init_db
-    from agents.market_monitor import MarketMonitor
-    from providers.macro.factory import get_macro_provider
-    from providers.market.factory import get_market_provider
-    from services.scheduler_service import SchedulerService
+    from services.scheduler_service import start_scheduler
 
     configure_logging()
-    await init_db()
-    monitor = MarketMonitor(get_market_provider(), get_macro_provider())
-    scheduler = SchedulerService(monitor)
-    scheduler.start()
+    scheduler = await start_scheduler()
     logger.info("scheduler.running")
     try:
         while True:

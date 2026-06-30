@@ -22,9 +22,8 @@ from domain.entities import Portfolio
 from domain.reports import AgentReport, InvestmentThesis
 from providers.interfaces import MacroProvider, MarketDataProvider, NewsProvider, SentimentProvider
 from providers.sentiment.factory import get_sentiment_provider
+from services.alert_service import AlertService
 from utils.logging import get_logger
-
-logger = get_logger(__name__)
 
 
 class AnalysisService:
@@ -35,9 +34,9 @@ class AnalysisService:
         market_provider: MarketDataProvider,
         news_provider: NewsProvider,
         macro_provider: MacroProvider,
-        sentiment_provider: SentimentProvider | None = None,
         alert_repo: AlertRepository,
         memory_repo: InvestmentMemoryRepository,
+        sentiment_provider: SentimentProvider | None = None,
         max_concentration_pct: float = 25.0,
     ) -> None:
         self._market = market_provider
@@ -105,8 +104,9 @@ class AnalysisService:
 
         from domain.entities import Alert
 
+        alert_svc = AlertService(self._alert_repo)
         for alert_data in alert_report.raw_data.get("alerts", []):
-            await self._alert_repo.save(Alert(**alert_data))
+            await alert_svc.emit(Alert(**alert_data))
 
         weights = await self._memory_repo.get_agent_weights()
         if not weights:
@@ -114,7 +114,11 @@ class AnalysisService:
 
         thesis = self._director.build_thesis(ticker, reports, weights, float(quote.get("current_price") or 0))
 
-        await self._memory.analyze(ticker, thesis=thesis)
+        await self._memory.analyze(
+            ticker,
+            thesis=thesis,
+            entry_price=float(quote.get("current_price") or 0) or None,
+        )
 
         for alert in alert_report.raw_data.get("alert_types", []):
             logger.info("alert.generated", ticker=ticker, type=alert)

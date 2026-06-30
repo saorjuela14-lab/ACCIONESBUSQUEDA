@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apis.routes import analysis, health, portfolio, providers, watchlist
+from apis.routes import alerts, analysis, health, portfolio, providers, reports, watchlist
 from config.settings import get_settings
 from database.engine import get_session, init_db
 from orchestration.container import Container, bootstrap
@@ -21,7 +21,17 @@ async def lifespan(app: FastAPI):
     await init_db()
     settings = get_settings()
     logger.info("app.startup", env=settings.app_env)
+
+    scheduler = None
+    if settings.scheduler_enabled:
+        from services.scheduler_service import start_scheduler
+        scheduler = await start_scheduler()
+        logger.info("app.scheduler.started")
+
     yield
+
+    if scheduler:
+        scheduler.stop()
     logger.info("app.shutdown")
 
 
@@ -38,6 +48,8 @@ def create_app() -> FastAPI:
     app.include_router(analysis.router, prefix="/api/v1", tags=["analysis"])
     app.include_router(watchlist.router, prefix="/api/v1", tags=["watchlist"])
     app.include_router(portfolio.router, prefix="/api/v1", tags=["portfolio"])
+    app.include_router(alerts.router, prefix="/api/v1", tags=["alerts"])
+    app.include_router(reports.router, prefix="/api/v1", tags=["reports"])
     app.include_router(providers.router, prefix="/api/v1", tags=["providers"])
 
     return app

@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     agent_weights_auto_calibrate: bool = True
     max_concentration_pct: float = 25.0
 
+    scheduler_enabled: bool = True
+    watchlist_scan_interval_minutes: int = 30
+    memory_evaluation_days: int = 90
+    alert_cooldown_hours: int = 24
+
     http_max_retries: int = 3
     http_retry_backoff: float = 1.5
 

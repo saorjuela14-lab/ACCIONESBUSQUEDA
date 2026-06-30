@@ -50,6 +50,7 @@ class InvestmentMemoryORM(Base):
     scenario: Mapped[str] = mapped_column(Text)
     expected_outcome: Mapped[str] = mapped_column(Text)
     recommendation: Mapped[str] = mapped_column(String(32))
+    entry_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     was_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
@@ -77,3 +78,29 @@ class AlertORM(Base):
     description: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     acknowledged: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class WatchlistSnapshotORM(Base):
+    __tablename__ = "watchlist_snapshots"
+
+    ticker: Mapped[str] = mapped_column(String(16), primary_key=True)
+    snapshot_json: Mapped[str] = mapped_column(Text, default="{}")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class MarketReportORM(Base):
+    __tablename__ = "market_reports"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session: Mapped[str] = mapped_column(String(32))
+    report_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class DailyReportORM(Base):
+    __tablename__ = "daily_reports"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    report_date: Mapped[str] = mapped_column(String(10), index=True)
+    report_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

@@ -18,6 +18,7 @@ class InvestmentMemoryAgent(BaseAgent):
         findings: list[Finding] = []
 
         if thesis:
+            entry_price = kwargs.get("entry_price")
             record = InvestmentMemoryRecord(
                 ticker=thesis.ticker,
                 thesis=thesis.investment_thesis,
@@ -27,6 +28,7 @@ class InvestmentMemoryAgent(BaseAgent):
                 scenario=thesis.base_case.name,
                 expected_outcome=thesis.base_case.thesis,
                 recommendation=thesis.recommendation.value,
+                entry_price=entry_price,
             )
             await self._memory.save(record)
             findings.append(

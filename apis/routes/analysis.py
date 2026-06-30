@@ -28,9 +28,9 @@ def _build_analysis_service(session: AsyncSession) -> AnalysisService:
         market_provider=get_market_provider(),
         news_provider=DuckDuckGoNewsProvider(),
         macro_provider=get_macro_provider(),
-        sentiment_provider=get_sentiment_provider(),
         alert_repo=AlertRepository(session),
         memory_repo=InvestmentMemoryRepository(session),
+        sentiment_provider=get_sentiment_provider(),
         max_concentration_pct=settings.max_concentration_pct,
     )
 

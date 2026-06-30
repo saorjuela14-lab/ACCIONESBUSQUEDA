@@ -91,6 +91,7 @@ class InvestmentMemoryRecord(BaseModel):
     scenario: str
     expected_outcome: str
     recommendation: str
+    entry_price: float | None = None
     created_at: datetime = Field(default_factory=utc_now)
     evaluated_at: datetime | None = None
     was_correct: bool | None = None

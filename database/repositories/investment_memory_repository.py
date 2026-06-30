@@ -25,11 +25,23 @@ class InvestmentMemoryRepository:
             scenario=record.scenario,
             expected_outcome=record.expected_outcome,
             recommendation=record.recommendation,
+            entry_price=record.entry_price,
             created_at=record.created_at,
         )
         self._session.add(orm)
         await self._session.commit()
         return record
+
+    async def list_ready_for_evaluation(self, min_age_days: int) -> list[InvestmentMemoryRecord]:
+        from datetime import timedelta
+        cutoff = datetime.now(timezone.utc) - timedelta(days=min_age_days)
+        result = await self._session.execute(
+            select(InvestmentMemoryORM).where(
+                InvestmentMemoryORM.evaluated_at.is_(None),
+                InvestmentMemoryORM.created_at <= cutoff,
+            )
+        )
+        return [self._to_domain(r) for r in result.scalars().all()]
 
     async def list_pending_evaluation(self) -> list[InvestmentMemoryRecord]:
         result = await self._session.execute(
@@ -79,6 +91,7 @@ class InvestmentMemoryRepository:
             scenario=row.scenario,
             expected_outcome=row.expected_outcome,
             recommendation=row.recommendation,
+            entry_price=row.entry_price,
             created_at=row.created_at,
             evaluated_at=row.evaluated_at,
             was_correct=row.was_correct,
