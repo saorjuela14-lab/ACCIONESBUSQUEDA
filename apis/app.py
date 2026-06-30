@@ -1,11 +1,15 @@
 """FastAPI routes and application factory."""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apis.routes import alerts, analysis, health, portfolio, providers, reports, watchlist
+from apis.routes import alerts, analysis, correlations, health, portfolio, proposal, providers, reports, sentiment, watchlist
 from config.settings import get_settings
 from database.engine import get_session, init_db
 from orchestration.container import Container, bootstrap
@@ -44,6 +48,22 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    dashboard_dir = Path(__file__).resolve().parent.parent / "dashboard"
+    if dashboard_dir.exists():
+        app.mount("/dashboard/static", StaticFiles(directory=dashboard_dir), name="dashboard-static")
+
+        @app.get("/dashboard")
+        async def dashboard_index():
+            return FileResponse(dashboard_dir / "index.html")
+
     app.include_router(health.router, tags=["health"])
     app.include_router(analysis.router, prefix="/api/v1", tags=["analysis"])
     app.include_router(watchlist.router, prefix="/api/v1", tags=["watchlist"])
@@ -51,6 +71,9 @@ def create_app() -> FastAPI:
     app.include_router(alerts.router, prefix="/api/v1", tags=["alerts"])
     app.include_router(reports.router, prefix="/api/v1", tags=["reports"])
     app.include_router(providers.router, prefix="/api/v1", tags=["providers"])
+    app.include_router(correlations.router, prefix="/api/v1", tags=["correlations"])
+    app.include_router(proposal.router, prefix="/api/v1", tags=["proposal"])
+    app.include_router(sentiment.router, prefix="/api/v1", tags=["sentiment"])
 
     return app
 

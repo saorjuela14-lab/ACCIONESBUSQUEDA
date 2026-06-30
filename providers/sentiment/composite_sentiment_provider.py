@@ -1,31 +1,27 @@
-"""Composite sentiment provider aggregating all social sources."""
+"""Composite sentiment: StockTwits + Yahoo Finance news (no DuckDuckGo)."""
 
 import asyncio
 
-from domain.enums import NewsSentiment
 from domain.sentiment import SentimentItem, SentimentSnapshot
 from providers.interfaces import SentimentProvider
-from providers.sentiment.reddit_search_provider import RedditSearchProvider
 from providers.sentiment.stocktwits_provider import StocktwitsProvider
-from providers.sentiment.web_sentiment_provider import WebSentimentProvider
+from providers.sentiment.yfinance_news_sentiment_provider import YFinanceNewsSentimentProvider
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
 class CompositeSentimentProvider(SentimentProvider):
-    """Aggregates Stocktwits + Reddit search + Seeking Alpha/Yahoo."""
+    """Aggregates Stocktwits + Yahoo Finance news sentiment."""
 
     def __init__(
         self,
         stocktwits: StocktwitsProvider | None = None,
-        reddit: RedditSearchProvider | None = None,
-        web: WebSentimentProvider | None = None,
+        news: YFinanceNewsSentimentProvider | None = None,
     ) -> None:
         self._providers: list[SentimentProvider] = [
             stocktwits or StocktwitsProvider(),
-            reddit or RedditSearchProvider(),
-            web or WebSentimentProvider(),
+            news or YFinanceNewsSentimentProvider(),
         ]
 
     async def get_sentiment(self, ticker: str, company_name: str | None = None) -> SentimentSnapshot:

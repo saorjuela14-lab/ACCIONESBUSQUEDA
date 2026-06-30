@@ -21,6 +21,7 @@ class InvestmentDirector(BaseAgent):
         "country_risk_agent": 0.8,
         "company_risk_agent": 0.9,
         "corporate_actions_agent": 0.7,
+        "market_dependency_agent": 0.85,
         "portfolio_agent": 1.0,
     }
 

@@ -10,6 +10,7 @@ from agents.fundamental_agent import FundamentalAgent
 from agents.investment_director import InvestmentDirector
 from agents.investment_memory import InvestmentMemoryAgent
 from agents.macro_agent import MacroAgent
+from agents.market_dependency_agent import MarketDependencyAgent
 from agents.news_agent import NewsAgent
 from agents.portfolio_agent import PortfolioAgent
 from agents.sentiment_agent import SentimentAgent
@@ -51,6 +52,7 @@ class AnalysisService:
         self._country_risk = CountryRiskAgent(market_provider, news_provider)
         self._company_risk = CompanyRiskAgent(news_provider)
         self._corporate_actions = CorporateActionsAgent(market_provider, news_provider)
+        self._market_dependency = MarketDependencyAgent(market_provider)
         self._portfolio = PortfolioAgent(market_provider, max_concentration_pct)
         self._watchlist = WatchlistAgent()
         self._alert = AlertAgent()
@@ -81,6 +83,7 @@ class AnalysisService:
             self._country_risk,
             self._company_risk,
             self._corporate_actions,
+            self._market_dependency,
         ]
 
         reports: list[AgentReport] = await asyncio.gather(

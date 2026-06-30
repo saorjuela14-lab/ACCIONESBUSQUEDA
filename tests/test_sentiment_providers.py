@@ -51,22 +51,20 @@ async def test_composite_aggregates_sources():
         sources=["stocktwits"],
         score=20,
     )
-    reddit = AsyncMock()
-    reddit.get_sentiment.return_value = SentimentSnapshot(
+    news = AsyncMock()
+    news.get_sentiment.return_value = SentimentSnapshot(
         ticker="AAPL",
-        items=[SentimentItem(source="reddit", text="bearish", sentiment=NewsSentiment.BEARISH)],
+        items=[SentimentItem(source="yfinance_news", text="bearish", sentiment=NewsSentiment.BEARISH)],
         bearish_count=1,
-        sources=["reddit"],
+        sources=["yfinance_news"],
         score=-15,
     )
-    web = AsyncMock()
-    web.get_sentiment.return_value = SentimentSnapshot(ticker="AAPL", sources=[], score=0)
 
-    provider = CompositeSentimentProvider(stocktwits=stocktwits, reddit=reddit, web=web)
+    provider = CompositeSentimentProvider(stocktwits=stocktwits, news=news)
     snapshot = await provider.get_sentiment("AAPL")
 
     assert len(snapshot.items) == 2
     assert "stocktwits" in snapshot.sources
-    assert "reddit" in snapshot.sources
+    assert "yfinance_news" in snapshot.sources
     assert snapshot.bullish_count == 1
     assert snapshot.bearish_count == 1

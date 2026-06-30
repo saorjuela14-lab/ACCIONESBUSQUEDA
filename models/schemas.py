@@ -31,3 +31,12 @@ class PositionAddRequest(BaseModel):
 
 class ThesisResponse(BaseModel):
     thesis: InvestmentThesis
+
+
+class InvestmentProposalRequest(BaseModel):
+    budget: float = Field(gt=0, description="Total capital to allocate (e.g. 50)")
+    tickers: list[str] | None = Field(default=None, description="Tickers to consider")
+    use_watchlist: bool = Field(default=False, description="Use active watchlist if tickers empty")
+    instrument_mode: str = Field(default="auto", description="auto | stock | cfd")
+    risk_profile: str = Field(default="balanced", description="conservative | balanced | aggressive")
+    cfd_margin_pct: float | None = Field(default=None, ge=5, le=50, description="CFD margin % (default by risk profile)")
