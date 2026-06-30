@@ -1,0 +1,115 @@
+"""Terminal dashboard domain models."""
+
+from datetime import datetime
+
+from pydantic import BaseModel, Field
+
+
+class IndexQuote(BaseModel):
+    symbol: str
+    name: str
+    price: float | None = None
+    change_pct: float | None = None
+
+
+class SectorHeatmapItem(BaseModel):
+    sector: str
+    etf: str
+    change_pct: float | None = None
+    regime: str = "neutral"
+
+
+class EconomicEvent(BaseModel):
+    title: str
+    date: str
+    importance: str = "medium"
+    category: str = "macro"
+
+
+class NewsHighlight(BaseModel):
+    title: str
+    source: str
+    url: str | None = None
+    sentiment: str = "neutral"
+    tickers: list[str] = Field(default_factory=list)
+
+
+class TickerOpportunity(BaseModel):
+    ticker: str
+    company_name: str | None = None
+    recommendation: str
+    confidence: float
+    score: float
+    reason: str
+
+
+class WatchlistMatrixRow(BaseModel):
+    ticker: str
+    company_name: str | None = None
+    price: float | None = None
+    change_pct: float | None = None
+    recommendation: str | None = None
+    confidence: float | None = None
+    news_score: float | None = None
+    technical_score: float | None = None
+    sentiment_score: float | None = None
+    analyzed_at: datetime | None = None
+
+
+class PriceChartPoint(BaseModel):
+    date: str
+    open: float | None = None
+    high: float | None = None
+    low: float | None = None
+    close: float
+    volume: float | None = None
+
+
+class PriceChartData(BaseModel):
+    ticker: str
+    period: str
+    points: list[PriceChartPoint] = Field(default_factory=list)
+
+
+class PortfolioHistoryPoint(BaseModel):
+    timestamp: datetime
+    total_value: float
+    return_pct: float = 0.0
+    cash: float = 0.0
+
+
+class PortfolioDashboardSlice(BaseModel):
+    portfolio_id: str | None = None
+    name: str | None = None
+    total_value: float = 0.0
+    return_pct: float = 0.0
+    sharpe: float | None = None
+    sortino: float | None = None
+    max_drawdown: float | None = None
+    diversification_score: float | None = None
+    sector_weights: dict[str, float] = Field(default_factory=dict)
+    country_weights: dict[str, float] = Field(default_factory=dict)
+    industry_weights: dict[str, float] = Field(default_factory=dict)
+    currency_exposure: dict[str, float] = Field(default_factory=dict)
+    cap_exposure: dict[str, float] = Field(default_factory=dict)
+    unrealized_pnl: float = 0.0
+    realized_pnl: float = 0.0
+
+
+class TerminalDashboard(BaseModel):
+    market_regime: str  # bullish | neutral | bearish
+    market_regime_score: float = 0.0
+    indices: list[IndexQuote] = Field(default_factory=list)
+    sector_heatmap: list[SectorHeatmapItem] = Field(default_factory=list)
+    economic_calendar: list[EconomicEvent] = Field(default_factory=list)
+    market_sentiment_score: float = 0.0
+    market_sentiment_label: str = "neutral"
+    news_highlights: list[NewsHighlight] = Field(default_factory=list)
+    active_alerts: list[str] = Field(default_factory=list)
+    watchlist: list[str] = Field(default_factory=list)
+    top_opportunities: list[TickerOpportunity] = Field(default_factory=list)
+    top_risks: list[TickerOpportunity] = Field(default_factory=list)
+    recently_analyzed: list[str] = Field(default_factory=list)
+    portfolio: PortfolioDashboardSlice | None = None
+    provider_health: dict = Field(default_factory=dict)
+    timestamp: datetime | None = None

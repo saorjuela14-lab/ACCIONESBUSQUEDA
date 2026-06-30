@@ -1,0 +1,2443 @@
+{
+  "id": "19523439-0ed2-4e05-9952-ee086a78d0e0",
+  "ticker": "ABBV",
+  "executive_summary": "Investment committee synthesis for ABBV: weighted score 1.9/100, recommendation HOLD with 64% confidence based on 12 agent reports.",
+  "investment_thesis": "Committee recommends HOLD with composite score 1.9. Verified facts: P/E Ratio: 125.27586 | Forward P/E: 15.637413 | Federal Funds Effective Rate: 3.63 % (-0.27% vs prior) [as of 2026-05-01] | US CPI inflation (YoY): 4.27% as of 2026-05-01. Interpretations: 5m: bearish (score -1.5) | 15m: bearish (score -1.5) | Company news intelligence for ABBVIE INC. (ABBV): No material company developments detected in the current news scan..",
+  "bull_case": {
+    "name": "Bull Case",
+    "probability": 0.2547891845922181,
+    "price_target": 305.25516,
+    "thesis": "Bullish scenario (score 1.9) supported by: fundamental_agent: Fundamental review for ABBVIE INC. based on 13 verified metrics. Score: 10.0.; sentiment_agent: Social sentiment: neutral. 30 posts from 1 sources. Bull 7 / Bear 0.; technical_agent: Multi-timeframe technical analysis across 8 horizons. Daily bias: bullish. Suppo",
+    "catalysts": [
+      "Strong revenue growth supports quality growth profile",
+      "[stocktwits] $ABBV $BMY $LLY $PFE $SLS BIG MOVES IN BIOTECH INNOVATION IS MERGING.\nSLS Next up. ✌️🙏❤️‍🩹",
+      "[stocktwits] $SLS $LLY $PFE $ABBV $BMY \nKelonia is still in Phase 1, so durability is the open question. So Why did Lilly pay  $7B for a cancer therapy with 18 treated patients? At ASCO, Kelonia reported 100% resp"
+    ],
+    "risks": [
+      "Current Ratio at 0.796 indicates balance sheet stress",
+      "Quick Ratio at 0.519 indicates balance sheet stress"
+    ],
+    "confidence": 0.5415208333333333
+  },
+  "bear_case": {
+    "name": "Bear Case",
+    "probability": 0.2452108154077819,
+    "price_target": 203.50344,
+    "thesis": "Bearish scenario (score 1.9) supported by: fundamental_agent: Fundamental review for ABBVIE INC. based on 13 verified metrics. Score: 10.0.; sentiment_agent: Social sentiment: neutral. 30 posts from 1 sources. Bull 7 / Bear 0.; technical_agent: Multi-timeframe technical analysis across 8 horizons. Daily bias: bullish. Suppo",
+    "catalysts": [],
+    "risks": [
+      "Current Ratio at 0.796 indicates balance sheet stress",
+      "Quick Ratio at 0.519 indicates balance sheet stress",
+      "Daily RSI 77.5 indicates overbought conditions",
+      "Elevated inflation may delay Fed rate cuts"
+    ],
+    "confidence": 0.5415208333333333
+  },
+  "base_case": {
+    "name": "Base Case",
+    "probability": 0.5,
+    "price_target": 254.3793,
+    "thesis": "Base scenario (score 1.9) supported by: fundamental_agent: Fundamental review for ABBVIE INC. based on 13 verified metrics. Score: 10.0.; sentiment_agent: Social sentiment: neutral. 30 posts from 1 sources. Bull 7 / Bear 0.; technical_agent: Multi-timeframe technical analysis across 8 horizons. Daily bias: bullish. Suppo",
+    "catalysts": [
+      "Strong revenue growth supports quality growth profile",
+      "[stocktwits] $ABBV $BMY $LLY $PFE $SLS BIG MOVES IN BIOTECH INNOVATION IS MERGING.\nSLS Next up. ✌️🙏❤️‍🩹"
+    ],
+    "risks": [
+      "Current Ratio at 0.796 indicates balance sheet stress",
+      "Quick Ratio at 0.519 indicates balance sheet stress"
+    ],
+    "confidence": 0.6370833333333333
+  },
+  "catalysts": [
+    {
+      "category": "interpretation",
+      "statement": "Strong revenue growth supports quality growth profile",
+      "confidence": 0.7,
+      "references": [
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:10.981012Z",
+          "data_point": "revenueGrowth",
+          "value": 0.124
+        }
+      ],
+      "impact": "medium",
+      "horizon": null
+    },
+    {
+      "category": "interpretation",
+      "statement": "[stocktwits] $ABBV $BMY $LLY $PFE $SLS BIG MOVES IN BIOTECH INNOVATION IS MERGING.\nSLS Next up. ✌️🙏❤️‍🩹",
+      "confidence": 0.55,
+      "references": [
+        {
+          "source": "stocktwits",
+          "url": "https://stocktwits.com/symbol/ABBV",
+          "retrieved_at": "2026-06-30T04:07:24.322382Z",
+          "data_point": "post",
+          "value": "$ABBV $BMY $LLY $PFE $SLS BIG MOVES IN BIOTECH INNOVATION IS MERGING.\nSLS Next up. ✌️🙏❤️‍🩹"
+        }
+      ],
+      "impact": "medium",
+      "horizon": null
+    },
+    {
+      "category": "interpretation",
+      "statement": "[stocktwits] $SLS $LLY $PFE $ABBV $BMY \nKelonia is still in Phase 1, so durability is the open question. So Why did Lilly pay  $7B for a cancer therapy with 18 treated patients? At ASCO, Kelonia reported 100% resp",
+      "confidence": 0.55,
+      "references": [
+        {
+          "source": "stocktwits",
+          "url": "https://stocktwits.com/symbol/ABBV",
+          "retrieved_at": "2026-06-30T04:07:24.322395Z",
+          "data_point": "post",
+          "value": "$SLS $LLY $PFE $ABBV $BMY \nKelonia is still in Phase 1, so durability is the open question. So Why did Lilly pay  $7B fo"
+        }
+      ],
+      "impact": "medium",
+      "horizon": null
+    },
+    {
+      "category": "interpretation",
+      "statement": "Active dividend policy supports income investors",
+      "confidence": 0.7,
+      "references": [
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:17.778034Z",
+          "data_point": "dividendYield",
+          "value": 2.72
+        }
+      ],
+      "impact": null,
+      "horizon": null
+    }
+  ],
+  "risks": [
+    {
+      "category": "risk",
+      "statement": "Current Ratio at 0.796 indicates balance sheet stress",
+      "confidence": 0.75,
+      "references": [
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:10.980991Z",
+          "data_point": "currentRatio",
+          "value": 0.796
+        }
+      ],
+      "impact": "high",
+      "horizon": null
+    },
+    {
+      "category": "risk",
+      "statement": "Quick Ratio at 0.519 indicates balance sheet stress",
+      "confidence": 0.75,
+      "references": [
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:10.981000Z",
+          "data_point": "quickRatio",
+          "value": 0.519
+        }
+      ],
+      "impact": "high",
+      "horizon": null
+    },
+    {
+      "category": "risk",
+      "statement": "Daily RSI 77.5 indicates overbought conditions",
+      "confidence": 0.7,
+      "references": [
+        {
+          "source": "technical",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:21.320492Z",
+          "data_point": "RSI",
+          "value": 77.50969328688151
+        }
+      ],
+      "impact": "medium",
+      "horizon": null
+    },
+    {
+      "category": "risk",
+      "statement": "Elevated inflation may delay Fed rate cuts",
+      "confidence": 0.8,
+      "references": [
+        {
+          "source": "fred",
+          "url": "https://fred.stlouisfed.org/series/CPIAUCSL",
+          "retrieved_at": "2026-06-30T04:07:12.924933Z",
+          "data_point": "CPI_YOY",
+          "value": 4.27
+        }
+      ],
+      "impact": "high",
+      "horizon": "monthly"
+    },
+    {
+      "category": "risk",
+      "statement": "Sector-country exposure: general geopolitical risk",
+      "confidence": 0.6,
+      "references": [
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:17.987309Z",
+          "data_point": "country",
+          "value": "us"
+        }
+      ],
+      "impact": "medium",
+      "horizon": "long_term"
+    },
+    {
+      "category": "risk",
+      "statement": "High payout ratio (326%) may limit dividend sustainability",
+      "confidence": 0.65,
+      "references": [
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:17.778057Z",
+          "data_point": "payoutRatio",
+          "value": 3.2598002
+        }
+      ],
+      "impact": "medium",
+      "horizon": null
+    }
+  ],
+  "recommendation": "hold",
+  "confidence": 0.6370833333333333,
+  "price_target": 254.3793,
+  "agent_reports": [
+    {
+      "agent_name": "fundamental_agent",
+      "ticker": "ABBV",
+      "score": 10.0,
+      "confidence": 0.88,
+      "findings": [
+        {
+          "category": "fact",
+          "statement": "P/E Ratio: 125.27586",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:10.980949Z",
+              "data_point": "trailingPE",
+              "value": 125.27586
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Forward P/E: 15.637413",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:10.980976Z",
+              "data_point": "forwardPE",
+              "value": 15.637413
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "P/B: -67.50996",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:10.980983Z",
+              "data_point": "priceToBook",
+              "value": -67.50996
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "ROA: 0.10032",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:10.980987Z",
+              "data_point": "returnOnAssets",
+              "value": 0.10032
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Current Ratio: 0.796",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:10.980991Z",
+              "data_point": "currentRatio",
+              "value": 0.796
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Quick Ratio: 0.519",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:10.981000Z",
+              "data_point": "quickRatio",
+              "value": 0.519
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Net Margin: 0.05786",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:10.981006Z",
+              "data_point": "profitMargins",
+              "value": 0.05786
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Operating Margin: 0.32156",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:10.981009Z",
+              "data_point": "operatingMargins",
+              "value": 0.32156
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Revenue Growth: 0.124",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:10.981012Z",
+              "data_point": "revenueGrowth",
+              "value": 0.124
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "EPS Growth: -0.462",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:10.981018Z",
+              "data_point": "earningsGrowth",
+              "value": -0.462
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Free Cash Flow: 20811624448",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:10.981022Z",
+              "data_point": "freeCashflow",
+              "value": 20811624448
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Dividend Yield: 2.72",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:10.981026Z",
+              "data_point": "dividendYield",
+              "value": 2.72
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "PEG: 0.41",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:10.981030Z",
+              "data_point": "pegRatio",
+              "value": 0.41
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Analyst consensus: BUY",
+          "confidence": 0.85,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:10.981034Z",
+              "data_point": "recommendationKey",
+              "value": "buy"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "probability",
+          "statement": "Analyst mean target implies +0.0% upside",
+          "confidence": 0.6,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:10.981040Z",
+              "data_point": "targetMeanPrice",
+              "value": 254.3793
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [
+        {
+          "category": "risk",
+          "statement": "Current Ratio at 0.796 indicates balance sheet stress",
+          "confidence": 0.75,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:10.980991Z",
+              "data_point": "currentRatio",
+              "value": 0.796
+            }
+          ],
+          "impact": "high",
+          "horizon": null
+        },
+        {
+          "category": "risk",
+          "statement": "Quick Ratio at 0.519 indicates balance sheet stress",
+          "confidence": 0.75,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:10.981000Z",
+              "data_point": "quickRatio",
+              "value": 0.519
+            }
+          ],
+          "impact": "high",
+          "horizon": null
+        }
+      ],
+      "opportunities": [
+        {
+          "category": "interpretation",
+          "statement": "Strong revenue growth supports quality growth profile",
+          "confidence": 0.7,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:10.981012Z",
+              "data_point": "revenueGrowth",
+              "value": 0.124
+            }
+          ],
+          "impact": "medium",
+          "horizon": null
+        }
+      ],
+      "references": [
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:10.980949Z",
+          "data_point": "trailingPE",
+          "value": 125.27586
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:10.980976Z",
+          "data_point": "forwardPE",
+          "value": 15.637413
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:10.980983Z",
+          "data_point": "priceToBook",
+          "value": -67.50996
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:10.980987Z",
+          "data_point": "returnOnAssets",
+          "value": 0.10032
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:10.980991Z",
+          "data_point": "currentRatio",
+          "value": 0.796
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:10.981000Z",
+          "data_point": "quickRatio",
+          "value": 0.519
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:10.981006Z",
+          "data_point": "profitMargins",
+          "value": 0.05786
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:10.981009Z",
+          "data_point": "operatingMargins",
+          "value": 0.32156
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:10.981012Z",
+          "data_point": "revenueGrowth",
+          "value": 0.124
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:10.981018Z",
+          "data_point": "earningsGrowth",
+          "value": -0.462
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:10.981022Z",
+          "data_point": "freeCashflow",
+          "value": 20811624448
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:10.981026Z",
+          "data_point": "dividendYield",
+          "value": 2.72
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:10.981030Z",
+          "data_point": "pegRatio",
+          "value": 0.41
+        }
+      ],
+      "raw_data": {
+        "info": {
+          "forwardPE": 15.637413,
+          "freeCashflow": 20811624448,
+          "returnOnAssets": 0.10032,
+          "earningsGrowth": -0.462,
+          "targetMeanPrice": 254.3793,
+          "operatingMargins": 0.32156,
+          "industry": "Drug Manufacturers - General",
+          "trailingPE": 125.27586,
+          "pegRatio": 0.41,
+          "currentRatio": 0.796,
+          "sector": "Healthcare",
+          "recommendationKey": "buy",
+          "revenueGrowth": 0.124,
+          "priceToBook": -67.50996,
+          "quickRatio": 0.519,
+          "profitMargins": 0.05786,
+          "dividendYield": 2.72
+        },
+        "company": "ABBVIE INC."
+      },
+      "timestamp": "2026-06-30T04:07:10.981062Z",
+      "summary": "Fundamental review for ABBVIE INC. based on 13 verified metrics. Score: 10.0."
+    },
+    {
+      "agent_name": "technical_agent",
+      "ticker": "ABBV",
+      "score": 3.75,
+      "confidence": 0.83,
+      "findings": [
+        {
+          "category": "interpretation",
+          "statement": "5m: bearish (score -1.5)",
+          "confidence": 0.9500000000000001,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:21.320436Z",
+              "data_point": "5m_score",
+              "value": -1.5
+            }
+          ],
+          "impact": null,
+          "horizon": "intraday"
+        },
+        {
+          "category": "interpretation",
+          "statement": "15m: bearish (score -1.5)",
+          "confidence": 0.81,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:21.320457Z",
+              "data_point": "15m_score",
+              "value": -1.5
+            }
+          ],
+          "impact": null,
+          "horizon": "intraday"
+        },
+        {
+          "category": "interpretation",
+          "statement": "30m: bearish (score -1.5)",
+          "confidence": 0.9500000000000001,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:21.320464Z",
+              "data_point": "30m_score",
+              "value": -1.5
+            }
+          ],
+          "impact": null,
+          "horizon": "intraday"
+        },
+        {
+          "category": "interpretation",
+          "statement": "1H: bullish (score +1.5)",
+          "confidence": 0.8300000000000001,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:21.320473Z",
+              "data_point": "1H_score",
+              "value": 1.5
+            }
+          ],
+          "impact": null,
+          "horizon": "intraday"
+        },
+        {
+          "category": "interpretation",
+          "statement": "4H: bullish (score +1.5)",
+          "confidence": 0.9500000000000001,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:21.320477Z",
+              "data_point": "4H_score",
+              "value": 1.5
+            }
+          ],
+          "impact": null,
+          "horizon": "weekly"
+        },
+        {
+          "category": "interpretation",
+          "statement": "1D: bullish (score +1.5)",
+          "confidence": 0.9500000000000001,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:21.320480Z",
+              "data_point": "1D_score",
+              "value": 1.5
+            }
+          ],
+          "impact": null,
+          "horizon": "monthly"
+        },
+        {
+          "category": "interpretation",
+          "statement": "1W: bullish (score +1.5)",
+          "confidence": 0.9500000000000001,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:21.320484Z",
+              "data_point": "1W_score",
+              "value": 1.5
+            }
+          ],
+          "impact": null,
+          "horizon": "monthly"
+        },
+        {
+          "category": "interpretation",
+          "statement": "1M: bullish (score +1.5)",
+          "confidence": 0.79,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:21.320487Z",
+              "data_point": "1M_score",
+              "value": 1.5
+            }
+          ],
+          "impact": null,
+          "horizon": "long_term"
+        },
+        {
+          "category": "probability",
+          "statement": "Risk/reward ratio estimated at 0.2x",
+          "confidence": 0.65,
+          "references": [
+            {
+              "source": "technical",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:21.320498Z",
+              "data_point": "risk_reward",
+              "value": 0.2
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [
+        {
+          "category": "risk",
+          "statement": "Daily RSI 77.5 indicates overbought conditions",
+          "confidence": 0.7,
+          "references": [
+            {
+              "source": "technical",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:21.320492Z",
+              "data_point": "RSI",
+              "value": 77.50969328688151
+            }
+          ],
+          "impact": "medium",
+          "horizon": null
+        }
+      ],
+      "opportunities": [],
+      "references": [
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:21.320436Z",
+          "data_point": "5m_score",
+          "value": -1.5
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:21.320457Z",
+          "data_point": "15m_score",
+          "value": -1.5
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:21.320464Z",
+          "data_point": "30m_score",
+          "value": -1.5
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:21.320473Z",
+          "data_point": "1H_score",
+          "value": 1.5
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:21.320477Z",
+          "data_point": "4H_score",
+          "value": 1.5
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:21.320480Z",
+          "data_point": "1D_score",
+          "value": 1.5
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:21.320484Z",
+          "data_point": "1W_score",
+          "value": 1.5
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:21.320487Z",
+          "data_point": "1M_score",
+          "value": 1.5
+        }
+      ],
+      "raw_data": {
+        "timeframes": {
+          "5m": {
+            "score": -1.5,
+            "bias": "bearish",
+            "rsi": 29.898080021742928,
+            "atr": 0.5782132829938617,
+            "confidence": 0.9500000000000001,
+            "support": 252.51349868774415,
+            "resistance": 255.80100326538087
+          },
+          "15m": {
+            "score": -1.5,
+            "bias": "bearish",
+            "rsi": 51.88918377191044,
+            "atr": 1.0724312918526786,
+            "confidence": 0.81,
+            "support": 242.81850662231446,
+            "resistance": 255.70599746704102
+          },
+          "30m": {
+            "score": -1.5,
+            "bias": "bearish",
+            "rsi": 74.81360169760589,
+            "atr": 2.265857151576451,
+            "confidence": 0.9500000000000001,
+            "support": 232.93750228881837,
+            "resistance": 255.62050094604493
+          },
+          "1H": {
+            "score": 1.5,
+            "bias": "bullish",
+            "rsi": 73.1295135332607,
+            "atr": 2.926334926060268,
+            "confidence": 0.8300000000000001,
+            "support": 216.0775016784668,
+            "resistance": 255.43999862670898
+          },
+          "4H": {
+            "score": 1.5,
+            "bias": "bullish",
+            "rsi": 73.1295135332607,
+            "atr": 2.926334926060268,
+            "confidence": 0.9500000000000001,
+            "support": 216.0775016784668,
+            "resistance": 255.43999862670898
+          },
+          "1D": {
+            "score": 1.5,
+            "bias": "bullish",
+            "rsi": 77.50969328688151,
+            "atr": 6.6207155500139505,
+            "confidence": 0.9500000000000001,
+            "support": 197.10499954223633,
+            "resistance": 237.72250061035155
+          },
+          "1W": {
+            "score": 1.5,
+            "bias": "bullish",
+            "rsi": 73.78749458850619,
+            "atr": 14.13471336887682,
+            "confidence": 0.9500000000000001,
+            "support": 176.0147719078213,
+            "resistance": 235.61230568222842
+          },
+          "1M": {
+            "score": 1.5,
+            "bias": "bullish",
+            "rsi": 70.92388563049295,
+            "atr": 25.109748733207436,
+            "confidence": 0.79,
+            "support": 94.60344034521812,
+            "resistance": 235.17247287857973
+          }
+        },
+        "trade_levels": {
+          "entry_zone": [
+            197.10499954223633,
+            200.4153573172433
+          ],
+          "stop_loss": 187.1739262172154,
+          "take_profit_1": 267.5514311000279,
+          "take_profit_2": 274.17214665004184,
+          "take_profit_3": 237.72250061035155,
+          "risk_reward_ratio": 0.2
+        },
+        "current_price": 254.31
+      },
+      "timestamp": "2026-06-30T04:07:21.320513Z",
+      "summary": "Multi-timeframe technical analysis across 8 horizons. Daily bias: bullish. Support $197.10, Resistance $237.72."
+    },
+    {
+      "agent_name": "macro_agent",
+      "ticker": "ABBV",
+      "score": -2.0,
+      "confidence": 0.75,
+      "findings": [
+        {
+          "category": "fact",
+          "statement": "Federal Funds Effective Rate: 3.63 % (-0.27% vs prior) [as of 2026-05-01]",
+          "confidence": 0.95,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/series/FEDFUNDS",
+              "retrieved_at": "2026-06-30T04:07:12.924902Z",
+              "data_point": "FEDFUNDS",
+              "value": 3.63
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "US CPI inflation (YoY): 4.27% as of 2026-05-01",
+          "confidence": 0.95,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/series/CPIAUCSL",
+              "retrieved_at": "2026-06-30T04:07:12.924933Z",
+              "data_point": "CPI_YOY",
+              "value": 4.27
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Unemployment Rate: 4.30 % (+0.00% vs prior) [as of 2026-05-01]",
+          "confidence": 0.95,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/series/UNRATE",
+              "retrieved_at": "2026-06-30T04:07:12.924944Z",
+              "data_point": "UNRATE",
+              "value": 4.3
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Gross Domestic Product: 31865.72 billions USD (+1.41% vs prior) [as of 2026-01-01]",
+          "confidence": 0.95,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/series/GDP",
+              "retrieved_at": "2026-06-30T04:07:12.924951Z",
+              "data_point": "GDP",
+              "value": 31865.721
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Yield curve spread (10Y-2Y): 0.28%",
+          "confidence": 0.95,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/series/T10Y2Y",
+              "retrieved_at": "2026-06-30T04:07:12.924957Z",
+              "data_point": "T10Y2Y",
+              "value": 0.28
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "M2 money supply: $23,052B (+1.09% vs prior)",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "fred",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:12.924962Z",
+              "data_point": "M2SL",
+              "value": 23052.3
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "VIX (FRED) at 18.41",
+          "confidence": 0.95,
+          "references": [
+            {
+              "source": "fred",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:12.924967Z",
+              "data_point": "VIXCLS",
+              "value": 18.41
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "US 10Y yield at 4.38%",
+          "confidence": 0.95,
+          "references": [
+            {
+              "source": "fred",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:12.924971Z",
+              "data_point": "US10Y",
+              "value": 4.38
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "DXY: 101.11 (-0.25%)",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:12.924975Z",
+              "data_point": "DXY",
+              "value": 101.11
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "OIL: 70.75 (+2.20%)",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:12.924980Z",
+              "data_point": "OIL",
+              "value": 70.75
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "GOLD: 4022.30 (-1.38%)",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:12.924984Z",
+              "data_point": "GOLD",
+              "value": 4022.3
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "BTC: 59397.36 (-0.23%)",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:12.924987Z",
+              "data_point": "BTC",
+              "value": 59397.3594
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Upcoming: FOMC Press Release on 2026-06-30 (impact: high)",
+          "confidence": 0.85,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/releases/calendar",
+              "retrieved_at": "2026-06-30T04:07:13.746085Z",
+              "data_point": "release",
+              "value": "FOMC Press Release"
+            }
+          ],
+          "impact": null,
+          "horizon": "weekly"
+        },
+        {
+          "category": "fact",
+          "statement": "Upcoming: FOMC Press Release on 2026-07-01 (impact: high)",
+          "confidence": 0.85,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/releases/calendar",
+              "retrieved_at": "2026-06-30T04:07:13.746099Z",
+              "data_point": "release",
+              "value": "FOMC Press Release"
+            }
+          ],
+          "impact": null,
+          "horizon": "weekly"
+        },
+        {
+          "category": "fact",
+          "statement": "Upcoming: Employment Situation on 2026-07-02 (impact: high)",
+          "confidence": 0.85,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/releases/calendar",
+              "retrieved_at": "2026-06-30T04:07:13.746103Z",
+              "data_point": "release",
+              "value": "Employment Situation"
+            }
+          ],
+          "impact": null,
+          "horizon": "weekly"
+        },
+        {
+          "category": "fact",
+          "statement": "Upcoming: FOMC Press Release on 2026-07-02 (impact: high)",
+          "confidence": 0.85,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/releases/calendar",
+              "retrieved_at": "2026-06-30T04:07:13.746106Z",
+              "data_point": "release",
+              "value": "FOMC Press Release"
+            }
+          ],
+          "impact": null,
+          "horizon": "weekly"
+        },
+        {
+          "category": "fact",
+          "statement": "Upcoming: Industrial Production and Capacity Utilization on 2026-07-02 (impact: medium)",
+          "confidence": 0.85,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/releases/calendar",
+              "retrieved_at": "2026-06-30T04:07:13.746108Z",
+              "data_point": "release",
+              "value": "Industrial Production and Capacity Utilization"
+            }
+          ],
+          "impact": null,
+          "horizon": "weekly"
+        },
+        {
+          "category": "interpretation",
+          "statement": "Monetary policy stance: restrictive (Fed Funds at 3.63%)",
+          "confidence": 0.8,
+          "references": [
+            {
+              "source": "fred",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:13.746115Z",
+              "data_point": "FEDFUNDS",
+              "value": 3.63
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [
+        {
+          "category": "risk",
+          "statement": "Elevated inflation may delay Fed rate cuts",
+          "confidence": 0.8,
+          "references": [
+            {
+              "source": "fred",
+              "url": "https://fred.stlouisfed.org/series/CPIAUCSL",
+              "retrieved_at": "2026-06-30T04:07:12.924933Z",
+              "data_point": "CPI_YOY",
+              "value": 4.27
+            }
+          ],
+          "impact": "high",
+          "horizon": "monthly"
+        }
+      ],
+      "opportunities": [],
+      "references": [
+        {
+          "source": "fred",
+          "url": "https://fred.stlouisfed.org/series/FEDFUNDS",
+          "retrieved_at": "2026-06-30T04:07:12.924902Z",
+          "data_point": "FEDFUNDS",
+          "value": 3.63
+        },
+        {
+          "source": "fred",
+          "url": "https://fred.stlouisfed.org/series/CPIAUCSL",
+          "retrieved_at": "2026-06-30T04:07:12.924933Z",
+          "data_point": "CPI_YOY",
+          "value": 4.27
+        },
+        {
+          "source": "fred",
+          "url": "https://fred.stlouisfed.org/series/UNRATE",
+          "retrieved_at": "2026-06-30T04:07:12.924944Z",
+          "data_point": "UNRATE",
+          "value": 4.3
+        },
+        {
+          "source": "fred",
+          "url": "https://fred.stlouisfed.org/series/GDP",
+          "retrieved_at": "2026-06-30T04:07:12.924951Z",
+          "data_point": "GDP",
+          "value": 31865.721
+        },
+        {
+          "source": "fred",
+          "url": "https://fred.stlouisfed.org/series/T10Y2Y",
+          "retrieved_at": "2026-06-30T04:07:12.924957Z",
+          "data_point": "T10Y2Y",
+          "value": 0.28
+        },
+        {
+          "source": "fred",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:12.924962Z",
+          "data_point": "M2SL",
+          "value": 23052.3
+        },
+        {
+          "source": "fred",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:12.924967Z",
+          "data_point": "VIXCLS",
+          "value": 18.41
+        },
+        {
+          "source": "fred",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:12.924971Z",
+          "data_point": "US10Y",
+          "value": 4.38
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:12.924975Z",
+          "data_point": "DXY",
+          "value": 101.11
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:12.924980Z",
+          "data_point": "OIL",
+          "value": 70.75
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:12.924984Z",
+          "data_point": "GOLD",
+          "value": 4022.3
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:12.924987Z",
+          "data_point": "BTC",
+          "value": 59397.3594
+        }
+      ],
+      "raw_data": {
+        "indicators": {
+          "VIX": {
+            "symbol": "VIXCLS",
+            "value": 18.41,
+            "change_pct": -2.54,
+            "source": "fred",
+            "label": "CBOE Volatility Index",
+            "date": "2026-06-26",
+            "unit": "index"
+          },
+          "DXY": {
+            "symbol": "DX-Y.NYB",
+            "value": 101.11,
+            "change_pct": -0.25
+          },
+          "US10Y": {
+            "symbol": "DGS10",
+            "value": 4.38,
+            "change_pct": -0.45,
+            "source": "fred",
+            "label": "10-Year Treasury Constant Maturity",
+            "date": "2026-06-26",
+            "unit": "%"
+          },
+          "SP500": {
+            "symbol": "^GSPC",
+            "value": 7440.4302,
+            "change_pct": 1.18
+          },
+          "NASDAQ": {
+            "symbol": "^IXIC",
+            "value": 25820.1406,
+            "change_pct": 2.07
+          },
+          "GOLD": {
+            "symbol": "GC=F",
+            "value": 4022.3,
+            "change_pct": -1.38
+          },
+          "OIL": {
+            "symbol": "CL=F",
+            "value": 70.75,
+            "change_pct": 2.2
+          },
+          "BTC": {
+            "symbol": "BTC-USD",
+            "value": 59397.3594,
+            "change_pct": -0.23
+          },
+          "FED_FUNDS": {
+            "symbol": "FEDFUNDS",
+            "value": 3.63,
+            "change_pct": -0.27,
+            "source": "fred",
+            "label": "Federal Funds Effective Rate",
+            "date": "2026-05-01",
+            "unit": "%"
+          },
+          "CPI": {
+            "symbol": "CPIAUCSL",
+            "value": 333.979,
+            "change_pct": 0.47,
+            "source": "fred",
+            "label": "Consumer Price Index (All Urban)",
+            "date": "2026-05-01",
+            "unit": "index"
+          },
+          "UNEMPLOYMENT": {
+            "symbol": "UNRATE",
+            "value": 4.3,
+            "change_pct": 0.0,
+            "source": "fred",
+            "label": "Unemployment Rate",
+            "date": "2026-05-01",
+            "unit": "%"
+          },
+          "GDP": {
+            "symbol": "GDP",
+            "value": 31865.721,
+            "change_pct": 1.41,
+            "source": "fred",
+            "label": "Gross Domestic Product",
+            "date": "2026-01-01",
+            "unit": "billions USD"
+          },
+          "YIELD_2Y": {
+            "symbol": "DGS2",
+            "value": 4.07,
+            "change_pct": -0.49,
+            "source": "fred",
+            "label": "2-Year Treasury Constant Maturity",
+            "date": "2026-06-26",
+            "unit": "%"
+          },
+          "YIELD_CURVE": {
+            "symbol": "T10Y2Y",
+            "value": 0.28,
+            "change_pct": -9.68,
+            "source": "fred",
+            "label": "10Y minus 2Y Treasury Spread",
+            "date": "2026-06-29",
+            "unit": "%"
+          },
+          "M2": {
+            "symbol": "M2SL",
+            "value": 23052.3,
+            "change_pct": 1.09,
+            "source": "fred",
+            "label": "M2 Money Stock",
+            "date": "2026-05-01",
+            "unit": "billions USD"
+          },
+          "INDUSTRIAL_PRODUCTION": {
+            "symbol": "INDPRO",
+            "value": 102.6475,
+            "change_pct": 0.14,
+            "source": "fred",
+            "label": "Industrial Production Index",
+            "date": "2026-05-01",
+            "unit": "index"
+          },
+          "CONSUMER_SENTIMENT": {
+            "symbol": "UMCSENT",
+            "value": 44.8,
+            "change_pct": -10.04,
+            "source": "fred",
+            "label": "U. of Michigan Consumer Sentiment",
+            "date": "2026-05-01",
+            "unit": "index"
+          },
+          "CPI_YOY": {
+            "symbol": "CPIAUCSL",
+            "value": 4.27,
+            "change_pct": null,
+            "source": "fred",
+            "label": "CPI Inflation (YoY)",
+            "date": "2026-05-01",
+            "unit": "%"
+          }
+        },
+        "fred": {
+          "FED_FUNDS": {
+            "key": "FED_FUNDS",
+            "series_id": "FEDFUNDS",
+            "label": "Federal Funds Effective Rate",
+            "unit": "%",
+            "category": "monetary",
+            "value": 3.63,
+            "previous_value": 3.64,
+            "change_pct": -0.27,
+            "date": "2026-05-01",
+            "source": "fred"
+          },
+          "CPI": {
+            "key": "CPI",
+            "series_id": "CPIAUCSL",
+            "label": "Consumer Price Index (All Urban)",
+            "unit": "index",
+            "category": "inflation",
+            "value": 333.979,
+            "previous_value": 332.407,
+            "change_pct": 0.47,
+            "date": "2026-05-01",
+            "source": "fred"
+          },
+          "UNEMPLOYMENT": {
+            "key": "UNEMPLOYMENT",
+            "series_id": "UNRATE",
+            "label": "Unemployment Rate",
+            "unit": "%",
+            "category": "employment",
+            "value": 4.3,
+            "previous_value": 4.3,
+            "change_pct": 0.0,
+            "date": "2026-05-01",
+            "source": "fred"
+          },
+          "GDP": {
+            "key": "GDP",
+            "series_id": "GDP",
+            "label": "Gross Domestic Product",
+            "unit": "billions USD",
+            "category": "growth",
+            "value": 31865.721,
+            "previous_value": 31422.526,
+            "change_pct": 1.41,
+            "date": "2026-01-01",
+            "source": "fred"
+          },
+          "YIELD_10Y": {
+            "key": "YIELD_10Y",
+            "series_id": "DGS10",
+            "label": "10-Year Treasury Constant Maturity",
+            "unit": "%",
+            "category": "rates",
+            "value": 4.38,
+            "previous_value": 4.4,
+            "change_pct": -0.45,
+            "date": "2026-06-26",
+            "source": "fred"
+          },
+          "YIELD_2Y": {
+            "key": "YIELD_2Y",
+            "series_id": "DGS2",
+            "label": "2-Year Treasury Constant Maturity",
+            "unit": "%",
+            "category": "rates",
+            "value": 4.07,
+            "previous_value": 4.09,
+            "change_pct": -0.49,
+            "date": "2026-06-26",
+            "source": "fred"
+          },
+          "YIELD_CURVE": {
+            "key": "YIELD_CURVE",
+            "series_id": "T10Y2Y",
+            "label": "10Y minus 2Y Treasury Spread",
+            "unit": "%",
+            "category": "rates",
+            "value": 0.28,
+            "previous_value": 0.31,
+            "change_pct": -9.68,
+            "date": "2026-06-29",
+            "source": "fred"
+          },
+          "M2": {
+            "key": "M2",
+            "series_id": "M2SL",
+            "label": "M2 Money Stock",
+            "unit": "billions USD",
+            "category": "liquidity",
+            "value": 23052.3,
+            "previous_value": 22804.5,
+            "change_pct": 1.09,
+            "date": "2026-05-01",
+            "source": "fred"
+          },
+          "INDUSTRIAL_PRODUCTION": {
+            "key": "INDUSTRIAL_PRODUCTION",
+            "series_id": "INDPRO",
+            "label": "Industrial Production Index",
+            "unit": "index",
+            "category": "growth",
+            "value": 102.6475,
+            "previous_value": 102.509,
+            "change_pct": 0.14,
+            "date": "2026-05-01",
+            "source": "fred"
+          },
+          "CONSUMER_SENTIMENT": {
+            "key": "CONSUMER_SENTIMENT",
+            "series_id": "UMCSENT",
+            "label": "U. of Michigan Consumer Sentiment",
+            "unit": "index",
+            "category": "growth",
+            "value": 44.8,
+            "previous_value": 49.8,
+            "change_pct": -10.04,
+            "date": "2026-05-01",
+            "source": "fred"
+          },
+          "VIX": {
+            "key": "VIX",
+            "series_id": "VIXCLS",
+            "label": "CBOE Volatility Index",
+            "unit": "index",
+            "category": "risk",
+            "value": 18.41,
+            "previous_value": 18.89,
+            "change_pct": -2.54,
+            "date": "2026-06-26",
+            "source": "fred"
+          },
+          "CPI_YOY": {
+            "key": "CPI_YOY",
+            "series_id": "CPIAUCSL",
+            "label": "CPI Inflation (YoY)",
+            "unit": "%",
+            "category": "inflation",
+            "value": 4.27,
+            "previous_value": null,
+            "change_pct": null,
+            "date": "2026-05-01",
+            "source": "fred",
+            "raw_cpi_index": 333.98
+          }
+        },
+        "sector": null
+      },
+      "timestamp": "2026-06-30T04:07:13.746133Z",
+      "summary": "Macro assessment for ABBV (None) using FRED + market data. Score: -2.0."
+    },
+    {
+      "agent_name": "news_agent",
+      "ticker": "ABBV",
+      "score": 0.0,
+      "confidence": 0.35,
+      "findings": [
+        {
+          "category": "interpretation",
+          "statement": "Company news intelligence for ABBVIE INC. (ABBV): No material company developments detected in the current news scan.",
+          "confidence": 0.35,
+          "references": [],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [],
+      "opportunities": [],
+      "references": [],
+      "raw_data": {
+        "news_count": 0,
+        "topic_counts": {},
+        "actualidad_summary": "Company news intelligence for ABBVIE INC. (ABBV): No material company developments detected in the current news scan.",
+        "grouped_headlines": {}
+      },
+      "timestamp": "2026-06-30T04:08:23.735115Z",
+      "summary": "No recent company developments found for ABBVIE INC. (ABBV)."
+    },
+    {
+      "agent_name": "sentiment_agent",
+      "ticker": "ABBV",
+      "score": 3.888888888888889,
+      "confidence": 0.925,
+      "findings": [
+        {
+          "category": "fact",
+          "statement": "Stocktwits labeled sentiment: 100% bullish (7 bull / 0 bear / 23 neutral)",
+          "confidence": 0.75,
+          "references": [
+            {
+              "source": "stocktwits",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:24.322359Z",
+              "data_point": "bullish_pct",
+              "value": 100.0
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Collected 30 social posts from: stocktwits",
+          "confidence": 0.7,
+          "references": [],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "[stocktwits] $SLS $GILD $ABBV  r/gabri71 deep cut \nIn conclusions the Authors state ‘The longer OS observed in patients who subsequently underwent allo-HSCT refrains the fact that stem cell transplantation after t",
+          "confidence": 0.5,
+          "references": [
+            {
+              "source": "stocktwits",
+              "url": "https://stocktwits.com/symbol/ABBV",
+              "retrieved_at": "2026-06-30T04:07:24.322374Z",
+              "data_point": "post",
+              "value": "$SLS $GILD $ABBV  r/gabri71 deep cut \nIn conclusions the Authors state ‘The longer OS observed in patients who subsequen"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "[stocktwits] $ABBV\nCurrent Stock Price: $254.22\nContracts to trade: $255.0 ABBV Jul 02 2026 Call\nEntry: $2.21\nExit: $3.04\nROI: 37%\nHold ~31 days\n\nShared as daily free alerts and for educational purposes only. http",
+          "confidence": 0.5,
+          "references": [
+            {
+              "source": "stocktwits",
+              "url": "https://stocktwits.com/symbol/ABBV",
+              "retrieved_at": "2026-06-30T04:07:24.322387Z",
+              "data_point": "post",
+              "value": "$ABBV\nCurrent Stock Price: $254.22\nContracts to trade: $255.0 ABBV Jul 02 2026 Call\nEntry: $2.21\nExit: $3.04\nROI: 37%\nHo"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "[stocktwits] $SLS $LLY $PFE $ABBV $BMY  \n \nSELLAS Announces Positive Phase 2 Preliminary Data of SLS009 in r/r AML Achieving a 100% Response Rate in Patients with ASXL1 Mutation At the Optimal Dose Level \n \nhttps:",
+          "confidence": 0.5,
+          "references": [
+            {
+              "source": "stocktwits",
+              "url": "https://stocktwits.com/symbol/ABBV",
+              "retrieved_at": "2026-06-30T04:07:24.322391Z",
+              "data_point": "post",
+              "value": "$SLS $LLY $PFE $ABBV $BMY  \n \nSELLAS Announces Positive Phase 2 Preliminary Data of SLS009 in r/r AML Achieving a 100% R"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "[stocktwits] $SLS $GILD $ABBV   \nAza+VEN, Best Available Treatment (BAT) for Control ARM Patients, Recently FAILED 4 Large Phase 3 AML Remission Maintenance Trials conducted by $ABBV and MDACC.",
+          "confidence": 0.5,
+          "references": [
+            {
+              "source": "stocktwits",
+              "url": "https://stocktwits.com/symbol/ABBV",
+              "retrieved_at": "2026-06-30T04:07:24.322398Z",
+              "data_point": "post",
+              "value": "$SLS $GILD $ABBV   \nAza+VEN, Best Available Treatment (BAT) for Control ARM Patients, Recently FAILED 4 Large Phase 3 AM"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "[stocktwits] $SLS Is any day now a long time wait for a 10x to 20x + ROI ?  \n \n5 years in the making Now as Imminent as Imminent Gets  \n \nKeep in Mind  \n-- While we continue to wait for near miraculous extended Su",
+          "confidence": 0.5,
+          "references": [
+            {
+              "source": "stocktwits",
+              "url": "https://stocktwits.com/symbol/ABBV",
+              "retrieved_at": "2026-06-30T04:07:24.322402Z",
+              "data_point": "post",
+              "value": "$SLS Is any day now a long time wait for a 10x to 20x + ROI ?  \n \n5 years in the making Now as Imminent as Imminent Gets"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "[stocktwits] $SLS $GILD $ABBV  \n- Dec 8th 2024 - 60th Event PR Launched the Share Price  \n- Jan 23rd 2025 - IDMC Unblinded Actual Phase 3 MOS and IR Data from the 60th Event Interim Analysis / the Share Price Laun",
+          "confidence": 0.5,
+          "references": [
+            {
+              "source": "stocktwits",
+              "url": "https://stocktwits.com/symbol/ABBV",
+              "retrieved_at": "2026-06-30T04:07:24.322404Z",
+              "data_point": "post",
+              "value": "$SLS $GILD $ABBV  \n- Dec 8th 2024 - 60th Event PR Launched the Share Price  \n- Jan 23rd 2025 - IDMC Unblinded Actual Pha"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [],
+      "opportunities": [
+        {
+          "category": "interpretation",
+          "statement": "[stocktwits] $ABBV $BMY $LLY $PFE $SLS BIG MOVES IN BIOTECH INNOVATION IS MERGING.\nSLS Next up. ✌️🙏❤️‍🩹",
+          "confidence": 0.55,
+          "references": [
+            {
+              "source": "stocktwits",
+              "url": "https://stocktwits.com/symbol/ABBV",
+              "retrieved_at": "2026-06-30T04:07:24.322382Z",
+              "data_point": "post",
+              "value": "$ABBV $BMY $LLY $PFE $SLS BIG MOVES IN BIOTECH INNOVATION IS MERGING.\nSLS Next up. ✌️🙏❤️‍🩹"
+            }
+          ],
+          "impact": "medium",
+          "horizon": null
+        },
+        {
+          "category": "interpretation",
+          "statement": "[stocktwits] $SLS $LLY $PFE $ABBV $BMY \nKelonia is still in Phase 1, so durability is the open question. So Why did Lilly pay  $7B for a cancer therapy with 18 treated patients? At ASCO, Kelonia reported 100% resp",
+          "confidence": 0.55,
+          "references": [
+            {
+              "source": "stocktwits",
+              "url": "https://stocktwits.com/symbol/ABBV",
+              "retrieved_at": "2026-06-30T04:07:24.322395Z",
+              "data_point": "post",
+              "value": "$SLS $LLY $PFE $ABBV $BMY \nKelonia is still in Phase 1, so durability is the open question. So Why did Lilly pay  $7B fo"
+            }
+          ],
+          "impact": "medium",
+          "horizon": null
+        }
+      ],
+      "references": [
+        {
+          "source": "stocktwits",
+          "url": "https://stocktwits.com/symbol/ABBV",
+          "retrieved_at": "2026-06-30T04:07:24.322374Z",
+          "data_point": "post",
+          "value": "$SLS $GILD $ABBV  r/gabri71 deep cut \nIn conclusions the Authors state ‘The longer OS observed in patients who subsequen"
+        },
+        {
+          "source": "stocktwits",
+          "url": "https://stocktwits.com/symbol/ABBV",
+          "retrieved_at": "2026-06-30T04:07:24.322382Z",
+          "data_point": "post",
+          "value": "$ABBV $BMY $LLY $PFE $SLS BIG MOVES IN BIOTECH INNOVATION IS MERGING.\nSLS Next up. ✌️🙏❤️‍🩹"
+        },
+        {
+          "source": "stocktwits",
+          "url": "https://stocktwits.com/symbol/ABBV",
+          "retrieved_at": "2026-06-30T04:07:24.322387Z",
+          "data_point": "post",
+          "value": "$ABBV\nCurrent Stock Price: $254.22\nContracts to trade: $255.0 ABBV Jul 02 2026 Call\nEntry: $2.21\nExit: $3.04\nROI: 37%\nHo"
+        },
+        {
+          "source": "stocktwits",
+          "url": "https://stocktwits.com/symbol/ABBV",
+          "retrieved_at": "2026-06-30T04:07:24.322391Z",
+          "data_point": "post",
+          "value": "$SLS $LLY $PFE $ABBV $BMY  \n \nSELLAS Announces Positive Phase 2 Preliminary Data of SLS009 in r/r AML Achieving a 100% R"
+        },
+        {
+          "source": "stocktwits",
+          "url": "https://stocktwits.com/symbol/ABBV",
+          "retrieved_at": "2026-06-30T04:07:24.322395Z",
+          "data_point": "post",
+          "value": "$SLS $LLY $PFE $ABBV $BMY \nKelonia is still in Phase 1, so durability is the open question. So Why did Lilly pay  $7B fo"
+        },
+        {
+          "source": "stocktwits",
+          "url": "https://stocktwits.com/symbol/ABBV",
+          "retrieved_at": "2026-06-30T04:07:24.322398Z",
+          "data_point": "post",
+          "value": "$SLS $GILD $ABBV   \nAza+VEN, Best Available Treatment (BAT) for Control ARM Patients, Recently FAILED 4 Large Phase 3 AM"
+        },
+        {
+          "source": "stocktwits",
+          "url": "https://stocktwits.com/symbol/ABBV",
+          "retrieved_at": "2026-06-30T04:07:24.322402Z",
+          "data_point": "post",
+          "value": "$SLS Is any day now a long time wait for a 10x to 20x + ROI ?  \n \n5 years in the making Now as Imminent as Imminent Gets"
+        },
+        {
+          "source": "stocktwits",
+          "url": "https://stocktwits.com/symbol/ABBV",
+          "retrieved_at": "2026-06-30T04:07:24.322404Z",
+          "data_point": "post",
+          "value": "$SLS $GILD $ABBV  \n- Dec 8th 2024 - 60th Event PR Launched the Share Price  \n- Jan 23rd 2025 - IDMC Unblinded Actual Pha"
+        }
+      ],
+      "raw_data": {
+        "label": "neutral",
+        "sources": [
+          "stocktwits"
+        ],
+        "by_source": {
+          "stocktwits": 30
+        },
+        "bullish": 7,
+        "bearish": 0,
+        "neutral": 23,
+        "stocktwits_bullish_pct": 100.0
+      },
+      "timestamp": "2026-06-30T04:07:24.322425Z",
+      "summary": "Social sentiment: neutral. 30 posts from 1 sources. Bull 7 / Bear 0."
+    },
+    {
+      "agent_name": "valuation_agent",
+      "ticker": "ABBV",
+      "score": 0.0,
+      "confidence": 0.55,
+      "findings": [
+        {
+          "category": "interpretation",
+          "statement": "DCF proxy intrinsic value: $176.69 (15x FCF/share)",
+          "confidence": 0.5,
+          "references": [
+            {
+              "source": "valuation",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:11.127740Z",
+              "data_point": "intrinsic_value_dcf_proxy",
+              "value": 176.69
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "probability",
+          "statement": "Margin of safety: +0.0% vs fair value $254.38",
+          "confidence": 0.55,
+          "references": [
+            {
+              "source": "valuation",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:11.127759Z",
+              "data_point": "margin_of_safety",
+              "value": 0.03
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "P/E: 125.28",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:11.127766Z",
+              "data_point": "P/E",
+              "value": 125.27586
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Forward P/E: 15.64",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:11.127771Z",
+              "data_point": "Forward P/E",
+              "value": 15.637413
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "P/B: -67.51",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:11.127774Z",
+              "data_point": "P/B",
+              "value": -67.50996
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [],
+      "opportunities": [],
+      "references": [
+        {
+          "source": "valuation",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:11.127740Z",
+          "data_point": "intrinsic_value_dcf_proxy",
+          "value": 176.69
+        },
+        {
+          "source": "valuation",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:11.127759Z",
+          "data_point": "margin_of_safety",
+          "value": 0.03
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:11.127766Z",
+          "data_point": "P/E",
+          "value": 125.27586
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:11.127771Z",
+          "data_point": "Forward P/E",
+          "value": 15.637413
+        },
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:11.127774Z",
+          "data_point": "P/B",
+          "value": -67.50996
+        }
+      ],
+      "raw_data": {
+        "price": 254.31,
+        "intrinsic_value": 176.6898546391592,
+        "fair_value": 254.3793,
+        "margin_of_safety_pct": 0.02724278272642403
+      },
+      "timestamp": "2026-06-30T04:07:11.175807Z",
+      "summary": "Valuation assessment. MOS: 0.0%."
+    },
+    {
+      "agent_name": "country_risk_agent",
+      "ticker": "ABBV",
+      "score": -3.0,
+      "confidence": 0.5,
+      "findings": [
+        {
+          "category": "fact",
+          "statement": "Primary operating country: us",
+          "confidence": 0.85,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:17.987309Z",
+              "data_point": "country",
+              "value": "us"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "uncertainty",
+          "statement": "Verify FX exposure, China/US/EU trade dependency with 10-K geographic revenue",
+          "confidence": 0.45,
+          "references": [
+            {
+              "source": "country_risk",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:17.987333Z",
+              "data_point": "dependency",
+              "value": "unverified"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [
+        {
+          "category": "risk",
+          "statement": "Sector-country exposure: general geopolitical risk",
+          "confidence": 0.6,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:17.987309Z",
+              "data_point": "country",
+              "value": "us"
+            }
+          ],
+          "impact": "medium",
+          "horizon": "long_term"
+        }
+      ],
+      "opportunities": [],
+      "references": [
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:17.987309Z",
+          "data_point": "country",
+          "value": "us"
+        }
+      ],
+      "raw_data": {
+        "country": "us",
+        "sector": null
+      },
+      "timestamp": "2026-06-30T04:07:17.987348Z",
+      "summary": "Country risk review for us. Identified 1 risk factors."
+    },
+    {
+      "agent_name": "company_risk_agent",
+      "ticker": "ABBV",
+      "score": 0.0,
+      "confidence": 0.65,
+      "findings": [
+        {
+          "category": "fact",
+          "statement": "AbbVie Inc. (ABBV) Stock Price, News, Quote & History - Yahoo Finance",
+          "confidence": 0.55,
+          "references": [
+            {
+              "source": "web",
+              "url": "https://finance.yahoo.com/quote/ABBV/",
+              "retrieved_at": "2026-06-30T04:07:31.851352Z",
+              "data_point": "risk_news",
+              "value": "AbbVie Inc. (ABBV) Stock Price, News, Quote & History - Yahoo Finance"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "AbbVie (ABBV) Stock Price & Overview",
+          "confidence": 0.55,
+          "references": [
+            {
+              "source": "web",
+              "url": "https://stockanalysis.com/stocks/abbv/",
+              "retrieved_at": "2026-06-30T04:07:31.851387Z",
+              "data_point": "risk_news",
+              "value": "AbbVie (ABBV) Stock Price & Overview"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "Pharmaceutical Research & Development | AbbVie",
+          "confidence": 0.55,
+          "references": [
+            {
+              "source": "web",
+              "url": "https://www.abbvie.com/",
+              "retrieved_at": "2026-06-30T04:07:31.851393Z",
+              "data_point": "risk_news",
+              "value": "Pharmaceutical Research & Development | AbbVie"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "ABBV Stock Price | AbbVie Inc. Stock Quote (U.S.: NYSE) | MarketWatch",
+          "confidence": 0.55,
+          "references": [
+            {
+              "source": "web",
+              "url": "https://www.marketwatch.com/investing/stock/abbv",
+              "retrieved_at": "2026-06-30T04:07:31.851397Z",
+              "data_point": "risk_news",
+              "value": "ABBV Stock Price | AbbVie Inc. Stock Quote (U.S.: NYSE) | MarketWatch"
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        },
+        {
+          "category": "fact",
+          "statement": "No material company-specific risk headlines detected in recent news scan",
+          "confidence": 0.45,
+          "references": [],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [],
+      "opportunities": [],
+      "references": [
+        {
+          "source": "web",
+          "url": "https://finance.yahoo.com/quote/ABBV/",
+          "retrieved_at": "2026-06-30T04:07:31.851352Z",
+          "data_point": "risk_news",
+          "value": "AbbVie Inc. (ABBV) Stock Price, News, Quote & History - Yahoo Finance"
+        },
+        {
+          "source": "web",
+          "url": "https://stockanalysis.com/stocks/abbv/",
+          "retrieved_at": "2026-06-30T04:07:31.851387Z",
+          "data_point": "risk_news",
+          "value": "AbbVie (ABBV) Stock Price & Overview"
+        },
+        {
+          "source": "web",
+          "url": "https://www.abbvie.com/",
+          "retrieved_at": "2026-06-30T04:07:31.851393Z",
+          "data_point": "risk_news",
+          "value": "Pharmaceutical Research & Development | AbbVie"
+        },
+        {
+          "source": "web",
+          "url": "https://www.marketwatch.com/investing/stock/abbv",
+          "retrieved_at": "2026-06-30T04:07:31.851397Z",
+          "data_point": "risk_news",
+          "value": "ABBV Stock Price | AbbVie Inc. Stock Quote (U.S.: NYSE) | MarketWatch"
+        }
+      ],
+      "raw_data": {
+        "risk_keywords_detected": []
+      },
+      "timestamp": "2026-06-30T04:07:31.851431Z",
+      "summary": "Company risk scan complete. 0 risk items, 0 keyword categories."
+    },
+    {
+      "agent_name": "corporate_actions_agent",
+      "ticker": "ABBV",
+      "score": 0.0,
+      "confidence": 0.56,
+      "findings": [
+        {
+          "category": "fact",
+          "statement": "Dividend yield: 272.00%",
+          "confidence": 0.9,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:17.778034Z",
+              "data_point": "dividendYield",
+              "value": 2.72
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [
+        {
+          "category": "risk",
+          "statement": "High payout ratio (326%) may limit dividend sustainability",
+          "confidence": 0.65,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:17.778057Z",
+              "data_point": "payoutRatio",
+              "value": 3.2598002
+            }
+          ],
+          "impact": "medium",
+          "horizon": null
+        }
+      ],
+      "opportunities": [
+        {
+          "category": "interpretation",
+          "statement": "Active dividend policy supports income investors",
+          "confidence": 0.7,
+          "references": [
+            {
+              "source": "yfinance",
+              "url": null,
+              "retrieved_at": "2026-06-30T04:07:17.778034Z",
+              "data_point": "dividendYield",
+              "value": 2.72
+            }
+          ],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "references": [
+        {
+          "source": "yfinance",
+          "url": null,
+          "retrieved_at": "2026-06-30T04:07:17.778034Z",
+          "data_point": "dividendYield",
+          "value": 2.72
+        }
+      ],
+      "raw_data": {
+        "dividend_yield": 2.72,
+        "payout_ratio": 3.2598002
+      },
+      "timestamp": "2026-06-30T04:07:17.778074Z",
+      "summary": "Corporate actions scan. Score 0.0."
+    },
+    {
+      "agent_name": "portfolio_agent",
+      "ticker": "ABBV",
+      "score": 0.0,
+      "confidence": 0.2,
+      "findings": [
+        {
+          "category": "uncertainty",
+          "statement": "No portfolio context provided for concentration analysis",
+          "confidence": 0.2,
+          "references": [],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [],
+      "opportunities": [],
+      "references": [],
+      "raw_data": {},
+      "timestamp": "2026-06-30T04:08:23.735163Z",
+      "summary": "Portfolio context unavailable."
+    },
+    {
+      "agent_name": "watchlist_agent",
+      "ticker": "ABBV",
+      "score": 0.0,
+      "confidence": 0.95,
+      "findings": [
+        {
+          "category": "fact",
+          "statement": "ABBV is not on the active watchlist",
+          "confidence": 1.0,
+          "references": [],
+          "impact": null,
+          "horizon": null
+        }
+      ],
+      "risks": [],
+      "opportunities": [],
+      "references": [],
+      "raw_data": {
+        "on_watchlist": false,
+        "watchlist_size": 1
+      },
+      "timestamp": "2026-06-30T04:08:23.735189Z",
+      "summary": "ABBV not in watchlist."
+    },
+    {
+      "agent_name": "alert_agent",
+      "ticker": "ABBV",
+      "score": 0.0,
+      "confidence": 0.5,
+      "findings": [],
+      "risks": [],
+      "opportunities": [],
+      "references": [],
+      "raw_data": {
+        "alerts": [],
+        "alerts_generated": 0,
+        "alert_types": []
+      },
+      "timestamp": "2026-06-30T04:08:23.735209Z",
+      "summary": "Generated 0 relevant alerts (no spam policy applied)."
+    }
+  ],
+  "strategy_conclusions": [
+    {
+      "strategy": "value_investing",
+      "score": 3.0,
+      "confidence": 0.7150000000000001,
+      "conclusion": "Neutral for value",
+      "horizon": "long_term"
+    },
+    {
+      "strategy": "growth_investing",
+      "score": 8.166666666666666,
+      "confidence": 0.9025000000000001,
+      "conclusion": "Weak for growth",
+      "horizon": "long_term"
+    },
+    {
+      "strategy": "dividend_investing",
+      "score": 3.0,
+      "confidence": 0.72,
+      "conclusion": "Weak for dividends",
+      "horizon": "long_term"
+    },
+    {
+      "strategy": "momentum",
+      "score": 3.7916666666666665,
+      "confidence": 0.8775,
+      "conclusion": "Weak for momentum",
+      "horizon": "weekly"
+    },
+    {
+      "strategy": "swing_trading",
+      "score": 3.75,
+      "confidence": 0.83,
+      "conclusion": "Poor for swing",
+      "horizon": "weekly"
+    },
+    {
+      "strategy": "breakout_trading",
+      "score": 3.75,
+      "confidence": 0.83,
+      "conclusion": "No breakout setup",
+      "horizon": "intraday"
+    },
+    {
+      "strategy": "mean_reversion",
+      "score": 2.625,
+      "confidence": 0.69,
+      "conclusion": "Not ideal",
+      "horizon": "weekly"
+    },
+    {
+      "strategy": "sector_rotation",
+      "score": 1.6,
+      "confidence": 0.815,
+      "conclusion": "Neutral",
+      "horizon": "monthly"
+    },
+    {
+      "strategy": "smart_money",
+      "score": 2.625,
+      "confidence": 0.6950000000000001,
+      "conclusion": "No smart money signal",
+      "horizon": "monthly"
+    }
+  ],
+  "timestamp": "2026-06-30T04:08:23.737608Z"
+}
