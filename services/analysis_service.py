@@ -73,9 +73,8 @@ class AnalysisService:
 
         logger.info("analysis.start", ticker=ticker)
 
-        evidence_agents = [
+        context_agents = [
             self._fundamental,
-            self._technical,
             self._macro,
             self._news,
             self._sentiment,
@@ -86,26 +85,33 @@ class AnalysisService:
             self._market_dependency,
         ]
 
-        reports: list[AgentReport] = await asyncio.gather(
-            *[
-                agent.analyze(
-                    ticker,
-                    company_name=company_name,
-                    sector=quote.get("sector"),
-                    industry=quote.get("industry"),
-                )
-                for agent in evidence_agents
-            ]
+        common_kwargs = {
+            "company_name": company_name,
+            "sector": quote.get("sector"),
+            "industry": quote.get("industry"),
+        }
+
+        prior_reports: list[AgentReport] = list(
+            await asyncio.gather(
+                *[agent.analyze(ticker, **common_kwargs) for agent in context_agents]
+            )
         )
-        reports = list(reports)
+
+        technical_report = await self._technical.analyze(
+            ticker,
+            **common_kwargs,
+            prior_reports=prior_reports,
+        )
+
+        reports: list[AgentReport] = prior_reports + [technical_report]
 
         portfolio_report = await self._portfolio.analyze(ticker, portfolio=portfolio)
         watchlist_report = await self._watchlist.analyze(ticker, watchlist=watchlist or [])
         reports.extend([portfolio_report, watchlist_report])
 
         technical_report = next(r for r in reports if r.agent_name == "technical_agent")
-        sentiment_report = next(r for r in reports if r.agent_name == "sentiment_agent")
-        news_report = next(r for r in reports if r.agent_name == "news_agent")
+        sentiment_report = next(r for r in prior_reports if r.agent_name == "sentiment_agent")
+        news_report = next(r for r in prior_reports if r.agent_name == "news_agent")
 
         alert_report = await self._alert.analyze(
             ticker,

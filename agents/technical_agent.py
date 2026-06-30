@@ -1,10 +1,14 @@
-"""Multi-timeframe technical analysis agent."""
+"""Multi-timeframe technical analysis agent — runs after prior agents with full context."""
 
 import asyncio
 
 import numpy as np
 
 from agents.base import BaseAgent
+from agents.technical.context import (
+    build_prior_context,
+    correlate_technical_with_context,
+)
 from agents.technical.indicators import (
     build_trade_levels,
     detect_support_resistance,
@@ -33,6 +37,9 @@ class TechnicalAgent(BaseAgent):
         self._market = market_provider
 
     async def analyze(self, ticker: str, **kwargs) -> AgentReport:
+        prior_reports: list[AgentReport] = kwargs.get("prior_reports") or []
+        prior_ctx = build_prior_context(prior_reports) if prior_reports else None
+
         quote = await self._market.get_quote(ticker)
         price = float(quote.get("current_price") or 0)
 
@@ -79,6 +86,27 @@ class TechnicalAgent(BaseAgent):
             )
 
         avg_score = score / valid_frames if valid_frames else 0.0
+        raw_technical_score = self._clamp_score(avg_score * 10)
+        base_confidence = self._clamp_confidence(0.35 + valid_frames * 0.06)
+
+        # Context-aware correlation layer (requires prior agent reports)
+        context_result = None
+        final_score = raw_technical_score
+        final_confidence = base_confidence
+        if prior_ctx and prior_reports:
+            context_result = correlate_technical_with_context(
+                technical_score=raw_technical_score,
+                daily_bias=daily.get("bias", "neutral"),
+                daily_rsi=daily.get("rsi"),
+                ctx=prior_ctx,
+            )
+            final_score = self._clamp_score(raw_technical_score + context_result.score_adjustment)
+            final_confidence = self._clamp_confidence(
+                base_confidence + context_result.confidence_adjustment
+            )
+            findings.extend(context_result.findings)
+            risks.extend(context_result.risks)
+            opportunities.extend(context_result.opportunities)
 
         if daily.get("rsi") is not None:
             rsi = daily["rsi"]
@@ -113,11 +141,19 @@ class TechnicalAgent(BaseAgent):
                 )
             )
 
+        context_summary = ""
+        if prior_ctx and context_result:
+            context_summary = (
+                f" Context-informed: {len(context_result.correlation_notes)} cross-agent correlations; "
+                f"fundamental {prior_ctx.fundamental_score:+.1f}, narrative {prior_ctx.narrative_score:+.1f}, "
+                f"macro {prior_ctx.macro_score:+.1f}."
+            )
+
         return AgentReport(
             agent_name=self.name,
             ticker=ticker.upper(),
-            score=self._clamp_score(avg_score * 10),
-            confidence=self._clamp_confidence(0.35 + valid_frames * 0.06),
+            score=final_score,
+            confidence=final_confidence,
             findings=findings,
             risks=risks,
             opportunities=opportunities,
@@ -126,11 +162,18 @@ class TechnicalAgent(BaseAgent):
                 "timeframes": timeframe_results,
                 "trade_levels": trade_levels,
                 "current_price": price,
+                "raw_technical_score": raw_technical_score,
+                "context_adjustment": context_result.score_adjustment if context_result else 0.0,
+                "prior_agent_scores": prior_ctx.scores if prior_ctx else {},
+                "cross_agent_correlations": context_result.correlation_notes if context_result else [],
+                "prior_summaries": prior_ctx.summaries if prior_ctx else {},
             },
             summary=(
-                f"Multi-timeframe technical analysis across {valid_frames} horizons. "
+                f"Multi-timeframe technical analysis across {valid_frames} horizons "
+                f"({'with' if prior_reports else 'without'} prior committee context). "
                 f"Daily bias: {daily.get('bias', 'neutral')}. "
                 f"Support ${support:.2f}, Resistance ${resistance:.2f}."
+                f"{context_summary}"
             ),
         )
 
