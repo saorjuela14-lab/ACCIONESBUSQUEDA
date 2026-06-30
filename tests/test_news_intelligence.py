@@ -53,8 +53,8 @@ def test_build_actualidad_summary_groups_topics():
     grouped = group_by_category(items)
     summary = build_actualidad_summary("ABBV", "AbbVie", grouped)
     assert "AbbVie" in summary
-    assert "FDA" in summary or "Regulatory" in summary
-    assert "acquisition" in summary.lower() or "M&A" in summary
+    assert "Regulatorio" in summary or "FDA" in summary
+    assert "acquisition" in summary.lower() or "adquisiciones" in summary.lower()
 
 
 def test_dedupe_news():
@@ -64,6 +64,39 @@ def test_dedupe_news():
         NewsItem(title="Different headline", source="c"),
     ]
     assert len(dedupe_news(items)) == 2
+
+
+def test_filter_rejects_wikipedia_and_homepage():
+    from providers.news.intelligence import filter_relevant_news, is_relevant_news_item
+
+    assert is_relevant_news_item(
+        NewsItem(title="AbbVie - Wikipedia", source="web", url="https://en.wikipedia.org/wiki/AbbVie"),
+        "ABBV",
+        "AbbVie Inc.",
+    ) is False
+    assert is_relevant_news_item(
+        NewsItem(
+            title="FDA approves AbbVie Skyrizi for new indication",
+            source="Reuters",
+            url="https://reuters.com/article",
+            snippet="Regulatory win expands addressable market",
+        ),
+        "ABBV",
+        "AbbVie Inc.",
+    ) is True
+    filtered = filter_relevant_news(
+        [
+            NewsItem(title="Welcome to AbbVie", source="web", url="https://abbvie.com"),
+            NewsItem(
+                title="AbbVie completes acquisition of biotech firm",
+                source="Bloomberg",
+                url="https://bloomberg.com/news",
+            ),
+        ],
+        "ABBV",
+        "AbbVie Inc.",
+    )
+    assert len(filtered) == 1
 
 
 def test_score_from_developments_balances_risks():

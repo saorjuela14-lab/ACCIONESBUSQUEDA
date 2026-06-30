@@ -13,7 +13,7 @@ from models.schemas import AnalyzeRequest
 from providers.macro.factory import get_macro_provider
 from providers.market.factory import get_market_provider
 from providers.sentiment.factory import get_sentiment_provider
-from providers.news.duckduckgo_provider import DuckDuckGoNewsProvider
+from providers.news.factory import get_news_provider
 from reports.writer import ReportWriter
 from services.analysis_service import AnalysisService
 
@@ -26,7 +26,7 @@ def _build_analysis_service(session: AsyncSession) -> AnalysisService:
     settings = get_settings()
     return AnalysisService(
         market_provider=get_market_provider(),
-        news_provider=DuckDuckGoNewsProvider(),
+        news_provider=get_news_provider(),
         macro_provider=get_macro_provider(),
         alert_repo=AlertRepository(session),
         memory_repo=InvestmentMemoryRepository(session),

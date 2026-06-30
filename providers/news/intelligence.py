@@ -120,14 +120,14 @@ _TOPIC_KEYWORDS: dict[NewsTopicCategory, tuple[str, ...]] = {
 }
 
 _TOPIC_LABELS: dict[NewsTopicCategory, str] = {
-    NewsTopicCategory.MERGERS_ACQUISITIONS: "M&A and acquisitions",
-    NewsTopicCategory.LITIGATION: "Litigation and legal",
-    NewsTopicCategory.REGULATORY: "Regulatory and approvals",
-    NewsTopicCategory.PRODUCT_PIPELINE: "Products and pipeline",
-    NewsTopicCategory.EARNINGS: "Earnings and guidance",
-    NewsTopicCategory.MANAGEMENT: "Management and leadership",
-    NewsTopicCategory.STRATEGIC: "Strategic moves",
-    NewsTopicCategory.GENERAL: "General coverage",
+    NewsTopicCategory.MERGERS_ACQUISITIONS: "M&A y adquisiciones",
+    NewsTopicCategory.LITIGATION: "Demandas y litigios",
+    NewsTopicCategory.REGULATORY: "Regulatorio y aprobaciones (FDA/EMA)",
+    NewsTopicCategory.PRODUCT_PIPELINE: "Productos y pipeline",
+    NewsTopicCategory.EARNINGS: "Resultados y guidance",
+    NewsTopicCategory.MANAGEMENT: "Management y liderazgo",
+    NewsTopicCategory.STRATEGIC: "Movimientos estratégicos",
+    NewsTopicCategory.GENERAL: "Cobertura general",
 }
 
 _POSITIVE = {"beat", "surge", "rally", "upgrade", "growth", "profit", "buy", "bullish", "record", "approved", "approval"}
@@ -148,6 +148,103 @@ _NEGATIVE = {
     "fine",
 }
 
+_FINANCE_SITES = "site:reuters.com OR site:bloomberg.com OR site:finance.yahoo.com OR site:seekingalpha.com"
+_PHARMA_SITES = "site:fiercepharma.com OR site:biopharmadive.com OR site:statnews.com"
+
+_LOW_QUALITY_URL_FRAGMENTS = (
+    "wikipedia.org",
+    "/investors",
+    "/investor-relations",
+    "linkedin.com",
+    "facebook.com",
+    "twitter.com",
+    "x.com",
+    "glassdoor.com",
+    "indeed.com",
+)
+
+_LOW_QUALITY_TITLE_FRAGMENTS = (
+    "welcome to",
+    "official site",
+    "careers at",
+    "investor relations",
+    "stock quote",
+    "stock price",
+)
+
+_NOISE_TITLE_FRAGMENTS = (
+    "best stocks to buy",
+    "no-brainer",
+    "stocks to buy right now",
+    "rockets ",
+    "52-week high",
+    "winning streak",
+    "dividend stocks to buy",
+    "valuation check",
+)
+
+
+def _short_company_name(company_name: str) -> str:
+    for suffix in (" Inc.", " Inc", " Corp.", " Corp", " Ltd.", " Ltd", " PLC", " Co."):
+        if company_name.endswith(suffix):
+            return company_name[: -len(suffix)].strip()
+    return company_name.strip()
+
+
+def is_relevant_news_item(item: NewsItem, ticker: str, company_name: str) -> bool:
+    text = f"{item.title} {item.snippet or ''} {item.url or ''}".lower()
+    url = (item.url or "").lower()
+    title = item.title.lower()
+
+    if any(fragment in url for fragment in _LOW_QUALITY_URL_FRAGMENTS):
+        return False
+    if any(fragment in title for fragment in _LOW_QUALITY_TITLE_FRAGMENTS):
+        return False
+    if any(fragment in title for fragment in _NOISE_TITLE_FRAGMENTS) and not item.snippet:
+        return False
+    if title.strip() in {ticker.lower(), company_name.lower(), _short_company_name(company_name).lower()}:
+        return False
+
+    short_name = _short_company_name(company_name).lower()
+    tokens = {ticker.lower(), short_name.lower()}
+    if short_name:
+        tokens.add(short_name.split()[0].lower())
+
+    if not any(token and token in text for token in tokens):
+        return False
+
+    if item.snippet and len(item.snippet) > 40:
+        return True
+
+    # Require some news-like signal beyond bare ticker mention
+    news_signals = (
+        "approval",
+        "acqui",
+        "merger",
+        "lawsuit",
+        "litigation",
+        "earnings",
+        "fda",
+        "trial",
+        "ceo",
+        "guidance",
+        "revenue",
+        "patent",
+        "settlement",
+        "deal",
+        "launch",
+        "pipeline",
+        "dividend",
+        "buyback",
+        "downgrade",
+        "upgrade",
+    )
+    return any(signal in text for signal in news_signals) or item.published_at is not None
+
+
+def filter_relevant_news(items: list[NewsItem], ticker: str, company_name: str) -> list[NewsItem]:
+    return [item for item in items if is_relevant_news_item(item, ticker, company_name)]
+
 
 def is_pharma_sector(sector: str | None, industry: str | None) -> bool:
     sector_l = (sector or "").lower()
@@ -163,27 +260,34 @@ def build_intelligence_queries(
     sector: str | None = None,
     industry: str | None = None,
 ) -> list[tuple[NewsTopicCategory, str]]:
-    name = company_name or ticker
+    name = _short_company_name(company_name or ticker)
+    news_sites = _FINANCE_SITES
+    if is_pharma_sector(sector, industry):
+        news_sites = f"{_FINANCE_SITES} OR {_PHARMA_SITES}"
+
     queries: list[tuple[NewsTopicCategory, str]] = [
-        (NewsTopicCategory.MERGERS_ACQUISITIONS, f"{name} acquisition merger acquire company deal"),
-        (NewsTopicCategory.LITIGATION, f"{ticker} {name} lawsuit litigation settlement legal"),
-        (NewsTopicCategory.EARNINGS, f"{name} earnings results guidance quarterly"),
-        (NewsTopicCategory.MANAGEMENT, f"{name} CEO executive leadership board change"),
-        (NewsTopicCategory.STRATEGIC, f"{name} partnership restructuring strategy spin-off"),
-        (NewsTopicCategory.GENERAL, f"{ticker} {name} company news developments"),
+        (NewsTopicCategory.MERGERS_ACQUISITIONS, f"({news_sites}) {ticker} {name} acquisition merger deal 2025 2026"),
+        (NewsTopicCategory.LITIGATION, f"({news_sites}) {ticker} {name} lawsuit litigation settlement patent"),
+        (NewsTopicCategory.EARNINGS, f"({news_sites}) {ticker} {name} earnings guidance revenue quarterly"),
+        (NewsTopicCategory.MANAGEMENT, f"({news_sites}) {name} CEO executive leadership appoint resign"),
+        (NewsTopicCategory.STRATEGIC, f"({news_sites}) {name} partnership restructuring spin-off strategy"),
     ]
 
     if is_pharma_sector(sector, industry):
         queries.extend(
             [
-                (NewsTopicCategory.REGULATORY, f"{name} FDA approval drug regulatory decision"),
-                (NewsTopicCategory.PRODUCT_PIPELINE, f"{name} clinical trial phase drug pipeline therapy"),
-                (NewsTopicCategory.LITIGATION, f"{name} patent litigation humira skyrizi rinvoq"),
+                (NewsTopicCategory.REGULATORY, f"({news_sites}) {name} FDA approval drug regulatory 2025 2026"),
+                (NewsTopicCategory.PRODUCT_PIPELINE, f"({news_sites}) {name} clinical trial phase pipeline therapy"),
+                (NewsTopicCategory.LITIGATION, f"({news_sites}) {name} humira skyrizi rinvoq patent biosimilar"),
             ]
         )
     else:
-        queries.append((NewsTopicCategory.REGULATORY, f"{ticker} {name} regulatory SEC investigation approval"))
-        queries.append((NewsTopicCategory.PRODUCT_PIPELINE, f"{name} product launch pipeline innovation"))
+        queries.extend(
+            [
+                (NewsTopicCategory.REGULATORY, f"({news_sites}) {ticker} {name} regulatory SEC investigation approval"),
+                (NewsTopicCategory.PRODUCT_PIPELINE, f"({news_sites}) {name} product launch pipeline innovation"),
+            ]
+        )
 
     return queries
 
@@ -259,10 +363,14 @@ def _format_item(item: NewsItem) -> str:
     date = ""
     if item.published_at:
         date = f" ({item.published_at.strftime('%Y-%m-%d')})"
-    snippet = ""
-    if item.snippet and item.snippet.lower() not in item.title.lower():
-        snippet = f" — {item.snippet[:120].strip()}"
-    return f"{item.title}{date}{snippet}"
+
+    if item.snippet and len(item.snippet) > 30:
+        body = item.snippet[:220].strip()
+        if item.title.lower() not in body.lower()[:40]:
+            return f"{body}{date}"
+        return f"{item.title}: {body}{date}"
+
+    return f"{item.title}{date}"
 
 
 def build_actualidad_summary(
@@ -272,7 +380,7 @@ def build_actualidad_summary(
 ) -> str:
     """Narrative summary of recent company developments by topic."""
     name = company_name or ticker
-    sections: list[str] = [f"Company news intelligence for {name} ({ticker}):"]
+    sections: list[str] = [f"Actualidad reciente de {name} ({ticker}):"]
 
     priority_order = [
         NewsTopicCategory.REGULATORY,
@@ -290,14 +398,13 @@ def build_actualidad_summary(
         items = grouped.get(category, [])
         label = _TOPIC_LABELS[category]
         if not items:
-            sections.append(f"{label}: no recent coverage found in scan.")
             continue
         covered += 1
         highlights = "; ".join(_format_item(item) for item in items[:3])
         sections.append(f"{label}: {highlights}")
 
     if covered == 0:
-        sections.append("No material company developments detected in the current news scan.")
+        sections.append("No se detectaron desarrollos materiales en el escaneo actual de noticias.")
 
     return " ".join(sections)
 

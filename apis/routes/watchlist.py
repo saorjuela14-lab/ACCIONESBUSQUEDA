@@ -11,7 +11,7 @@ from database.repositories.watchlist_snapshot_repository import WatchlistSnapsho
 from domain.entities import WatchlistItem
 from models.schemas import WatchlistAddRequest
 from providers.market.factory import get_market_provider
-from providers.news.duckduckgo_provider import DuckDuckGoNewsProvider
+from providers.news.factory import get_news_provider
 from services.alert_service import AlertService
 from services.watchlist_monitor_service import WatchlistMonitorService
 from services.watchlist_service import WatchlistService
@@ -30,7 +30,7 @@ def _build_monitor(session: AsyncSession) -> WatchlistMonitorService:
         WatchlistSnapshotRepository(session),
         AlertService(AlertRepository(session), settings.alert_cooldown_hours),
         get_market_provider(),
-        DuckDuckGoNewsProvider(),
+        get_news_provider(),
     )
 
 

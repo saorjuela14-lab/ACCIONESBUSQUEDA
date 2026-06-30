@@ -17,7 +17,7 @@ from database.repositories.watchlist_snapshot_repository import WatchlistSnapsho
 from domain.enums import MarketSession
 from providers.macro.factory import get_macro_provider
 from providers.market.factory import get_market_provider
-from providers.news.duckduckgo_provider import DuckDuckGoNewsProvider
+from providers.news.factory import get_news_provider
 from reports.writer import ReportWriter
 from services.alert_service import AlertService
 from services.daily_report_service import DailyReportService
@@ -45,7 +45,7 @@ class SchedulerService:
     async def _build_daily_report_service(self, session) -> DailyReportService:
         market = get_market_provider()
         macro = get_macro_provider()
-        news = DuckDuckGoNewsProvider()
+        news = get_news_provider()
         alert_repo = AlertRepository(session)
         return DailyReportService(
             market_monitor=MarketMonitor(market, macro),
@@ -91,7 +91,7 @@ class SchedulerService:
 
         async for session in get_session():
             market = get_market_provider()
-            news = DuckDuckGoNewsProvider()
+            news = get_news_provider()
             alert_repo = AlertRepository(session)
             monitor = WatchlistMonitorService(
                 WatchlistRepository(session),

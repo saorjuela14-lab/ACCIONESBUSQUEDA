@@ -8,6 +8,7 @@ from providers.news.intelligence import (
     build_actualidad_summary,
     build_intelligence_queries,
     dedupe_news,
+    filter_relevant_news,
     group_by_category,
     score_from_developments,
 )
@@ -25,13 +26,22 @@ class NewsAgent(BaseAgent):
         industry = kwargs.get("industry")
 
         queries = build_intelligence_queries(ticker, company_name, sector, industry)
-        all_news: list[NewsItem] = []
 
-        for category, query in queries:
-            items = await self._news.search_news(query, max_results=4, hint_category=category)
-            all_news.extend(items)
+        provider = self._news
+        if hasattr(provider, "collect_company_intelligence"):
+            all_news = await provider.collect_company_intelligence(
+                ticker, queries, max_per_query=3, max_ticker_news=15
+            )
+        else:
+            all_news: list[NewsItem] = []
+            if hasattr(provider, "get_company_news"):
+                all_news.extend(await provider.get_company_news(ticker, max_results=15))
+            for category, query in queries:
+                items = await provider.search_news(query, max_results=3, hint_category=category)
+                all_news.extend(items)
 
         unique_news = dedupe_news(all_news)
+        unique_news = filter_relevant_news(unique_news, ticker, company_name)
         grouped = group_by_category(unique_news)
         actualidad = build_actualidad_summary(ticker, company_name, grouped)
 
