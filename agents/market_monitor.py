@@ -81,15 +81,18 @@ class MarketMonitor(BaseAgent):
                 continue
 
         macro = await self._macro.get_macro_snapshot()
-        macro_events = [
-            Finding(
-                category=EvidenceCategory.FACT,
-                statement=f"{name}: {data.get('value')} ({data.get('change_pct'):+.2f}%)",
-                confidence=0.9,
-                references=[Reference(source="yfinance", data_point=name, value=data.get("value"))],
+        macro_events = []
+        for name, data in macro.get("indicators", {}).items():
+            chg = data.get("change_pct")
+            chg_txt = f" ({chg:+.2f}%)" if chg is not None else ""
+            macro_events.append(
+                Finding(
+                    category=EvidenceCategory.FACT,
+                    statement=f"{name}: {data.get('value')}{chg_txt}",
+                    confidence=0.9,
+                    references=[Reference(source="yfinance", data_point=name, value=data.get("value"))],
+                )
             )
-            for name, data in macro.get("indicators", {}).items()
-        ]
 
         report_type_map = {
             MarketSession.PRE_MARKET: ReportType.PRE_MARKET,
