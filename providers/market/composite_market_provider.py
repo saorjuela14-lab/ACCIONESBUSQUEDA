@@ -124,6 +124,11 @@ class CompositeMarketDataProvider(MarketDataProvider):
                 errors.append(f"{provider_name}: not implemented for {operation}")
             except Exception as exc:
                 errors.append(f"{provider_name}: {exc}")
+                # Treat 429 as rate limit exhaustion for this provider
+                if "429" in str(exc):
+                    daily_limit, per_minute_limit = self._limits(provider_name)
+                    for _ in range(per_minute_limit or 5):
+                        self._tracker.record(provider_name)
                 logger.warning(
                     "market.provider.failed",
                     operation=operation,
