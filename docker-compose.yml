@@ -5,27 +5,59 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nexbuy:nexbuy@postgres:5432/nexbuy
+      REDIS_URL: redis://redis:6379/0
+      SCHEDULER_ENABLED: "true"
     volumes:
-      - ./data:/app/data
       - ./reports:/app/reports
       - ./logs:/app/logs
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_started
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   scheduler:
     build: .
     command: ["python", "main.py", "scheduler"]
     env_file:
       - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nexbuy:nexbuy@postgres:5432/nexbuy
+      REDIS_URL: redis://redis:6379/0
     volumes:
-      - ./data:/app/data
       - ./reports:/app/reports
       - ./logs:/app/logs
     depends_on:
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: nexbuy
+      POSTGRES_PASSWORD: nexbuy
+      POSTGRES_DB: nexbuy
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexbuy -d nexbuy"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
@@ -36,4 +68,5 @@ services:
     restart: unless-stopped
 
 volumes:
+  pg_data:
   redis_data:

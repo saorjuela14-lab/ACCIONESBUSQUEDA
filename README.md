@@ -89,6 +89,9 @@ python main.py scheduler
 docker compose up -d
 ```
 
+Producción usa PostgreSQL automáticamente vía `docker-compose.yml`.
+Kubernetes: `kubectl apply -f k8s/deployment.yaml`
+
 ## API Endpoints
 
 | Method | Endpoint | Description |
