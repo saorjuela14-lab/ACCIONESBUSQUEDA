@@ -10,7 +10,7 @@ from database.repositories.alert_repository import AlertRepository
 from database.repositories.investment_memory_repository import InvestmentMemoryRepository
 from database.repositories.portfolio_repository import PortfolioRepository
 from database.repositories.watchlist_repository import WatchlistRepository
-from providers.macro.yfinance_macro_provider import YFinanceMacroProvider
+from providers.macro.factory import get_macro_provider
 from providers.market.yfinance_provider import YFinanceProvider
 from providers.news.duckduckgo_provider import DuckDuckGoNewsProvider
 from services.analysis_service import AnalysisService
@@ -26,7 +26,7 @@ class Container(containers.DeclarativeContainer):
 
     market_provider = providers.Singleton(YFinanceProvider)
     news_provider = providers.Singleton(DuckDuckGoNewsProvider)
-    macro_provider = providers.Singleton(YFinanceMacroProvider)
+    macro_provider = providers.Singleton(get_macro_provider)
 
     session = providers.Dependency(instance_of=AsyncSession)
 

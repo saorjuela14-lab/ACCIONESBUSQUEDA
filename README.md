@@ -10,6 +10,21 @@ Professional multi-agent investment research, portfolio management, and thesis g
 - **FastAPI** REST API, **APScheduler** for automated market reports
 - **SQLite + Redis** (production-ready for PostgreSQL/Redis Cloud)
 
+## Fase 2 — Integraciones de datos
+
+### FRED (implementado)
+Con `FRED_API_KEY` en `.env`, el `macro_agent` consume datos verificados:
+- Fed Funds Rate, CPI (YoY), Unemployment, GDP
+- Yield curve (10Y-2Y), M2, Industrial Production
+- Calendario económico (CPI, Employment, FOMC, GDP)
+
+```bash
+# .env
+FRED_API_KEY=your_key_here
+```
+
+Registro gratuito: https://fred.stlouisfed.org/docs/api/api_key.html
+
 ## Quick Start
 
 ```bash

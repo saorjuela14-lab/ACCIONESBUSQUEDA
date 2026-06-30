@@ -40,13 +40,13 @@ async def run_analysis(ticker: str) -> None:
 async def run_scheduler() -> None:
     from database.engine import init_db
     from agents.market_monitor import MarketMonitor
-    from providers.macro.yfinance_macro_provider import YFinanceMacroProvider
+    from providers.macro.factory import get_macro_provider
     from providers.market.yfinance_provider import YFinanceProvider
     from services.scheduler_service import SchedulerService
 
     configure_logging()
     await init_db()
-    monitor = MarketMonitor(YFinanceProvider(), YFinanceMacroProvider())
+    monitor = MarketMonitor(YFinanceProvider(), get_macro_provider())
     scheduler = SchedulerService(monitor)
     scheduler.start()
     logger.info("scheduler.running")

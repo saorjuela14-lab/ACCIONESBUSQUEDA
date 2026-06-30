@@ -10,7 +10,7 @@ from database.repositories.portfolio_repository import PortfolioRepository
 from database.repositories.watchlist_repository import WatchlistRepository
 from domain.reports import InvestmentThesis
 from models.schemas import AnalyzeRequest
-from providers.macro.yfinance_macro_provider import YFinanceMacroProvider
+from providers.macro.factory import get_macro_provider
 from providers.market.yfinance_provider import YFinanceProvider
 from providers.news.duckduckgo_provider import DuckDuckGoNewsProvider
 from reports.writer import ReportWriter
@@ -26,7 +26,7 @@ def _build_analysis_service(session: AsyncSession) -> AnalysisService:
     return AnalysisService(
         market_provider=YFinanceProvider(),
         news_provider=DuckDuckGoNewsProvider(),
-        macro_provider=YFinanceMacroProvider(),
+        macro_provider=get_macro_provider(),
         alert_repo=AlertRepository(session),
         memory_repo=InvestmentMemoryRepository(session),
         max_concentration_pct=settings.max_concentration_pct,
