@@ -1,0 +1,164 @@
+"""Cloud scheduler — market reports, watchlist scans, daily reports, memory evaluation."""
+
+from zoneinfo import ZoneInfo
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
+
+from agents.market_monitor import MarketMonitor
+from config.settings import get_settings
+from database.engine import get_session, init_db
+from database.repositories.alert_repository import AlertRepository
+from database.repositories.investment_memory_repository import InvestmentMemoryRepository
+from database.repositories.report_repository import ReportRepository
+from database.repositories.watchlist_repository import WatchlistRepository
+from database.repositories.watchlist_snapshot_repository import WatchlistSnapshotRepository
+from domain.enums import MarketSession
+from providers.macro.factory import get_macro_provider
+from providers.market.factory import get_market_provider
+from providers.news.factory import get_news_provider
+from reports.writer import ReportWriter
+from services.alert_service import AlertService
+from services.daily_report_service import DailyReportService
+from services.memory_evaluation_service import MemoryEvaluationService
+from services.watchlist_monitor_service import WatchlistMonitorService
+from utils.logging import get_logger
+from utils.market_hours import should_run_automation
+
+logger = get_logger(__name__)
+
+SESSION_MAP = {
+    "08:30": MarketSession.PRE_MARKET,
+    "11:30": MarketSession.MID_SESSION,
+    "15:00": MarketSession.POWER_HOUR,
+    "17:30": MarketSession.POST_MARKET,
+}
+
+
+class SchedulerService:
+    def __init__(self) -> None:
+        self._settings = get_settings()
+        self._scheduler = AsyncIOScheduler(timezone=ZoneInfo(self._settings.market_timezone))
+        self._writer = ReportWriter()
+
+    async def _build_daily_report_service(self, session) -> DailyReportService:
+        market = get_market_provider()
+        macro = get_macro_provider()
+        news = get_news_provider()
+        alert_repo = AlertRepository(session)
+        return DailyReportService(
+            market_monitor=MarketMonitor(market, macro),
+            watchlist_monitor=WatchlistMonitorService(
+                WatchlistRepository(session),
+                WatchlistSnapshotRepository(session),
+                AlertService(alert_repo, self._settings.alert_cooldown_hours),
+                market,
+                news,
+            ),
+            report_repo=ReportRepository(session),
+            alert_repo=alert_repo,
+            watchlist_repo=WatchlistRepository(session),
+            market_provider=market,
+        )
+
+    async def _run_market_report(self, session_type: MarketSession) -> None:
+        if not should_run_automation():
+            logger.info("scheduler.skipped", job="market_report", reason="outside_automation_hours")
+            return
+
+        market = get_market_provider()
+        macro = get_macro_provider()
+        monitor = MarketMonitor(market, macro)
+        report = await monitor.generate_market_report(session_type)
+
+        async for session in get_session():
+            repo = ReportRepository(session)
+            await repo.save_market_report(report)
+            break
+
+        self._writer.write_market_report(report)
+        logger.info(
+            "scheduler.market_report",
+            session=session_type.value,
+            strong=report.strong_sectors,
+            weak=report.weak_sectors,
+        )
+
+    async def _run_watchlist_scan(self) -> None:
+        if not should_run_automation():
+            return
+
+        async for session in get_session():
+            market = get_market_provider()
+            news = get_news_provider()
+            alert_repo = AlertRepository(session)
+            monitor = WatchlistMonitorService(
+                WatchlistRepository(session),
+                WatchlistSnapshotRepository(session),
+                AlertService(alert_repo, self._settings.alert_cooldown_hours),
+                market,
+                news,
+            )
+            result = await monitor.scan_all()
+            logger.info("scheduler.watchlist_scan", **{k: v for k, v in result.items() if k != "changes"})
+            break
+
+    async def _run_daily_report(self) -> None:
+        async for session in get_session():
+            service = await self._build_daily_report_service(session)
+            await service.generate_daily_report()
+            break
+
+        async for session in get_session():
+            memory_svc = MemoryEvaluationService(
+                InvestmentMemoryRepository(session),
+                get_market_provider(),
+            )
+            await memory_svc.evaluate_pending()
+            break
+
+    def start(self) -> None:
+        for time_str in self._settings.report_schedule:
+            session = SESSION_MAP.get(time_str, MarketSession.MID_SESSION)
+            hour, minute = time_str.split(":")
+            self._scheduler.add_job(
+                self._run_market_report,
+                CronTrigger(hour=int(hour), minute=int(minute)),
+                args=[session],
+                id=f"market_report_{time_str}",
+                replace_existing=True,
+            )
+
+        # Daily investment report + memory evaluation at post-market (17:30)
+        self._scheduler.add_job(
+            self._run_daily_report,
+            CronTrigger(hour=17, minute=30),
+            id="daily_investment_report",
+            replace_existing=True,
+        )
+
+        # Watchlist scan every N minutes during market hours
+        self._scheduler.add_job(
+            self._run_watchlist_scan,
+            IntervalTrigger(minutes=self._settings.watchlist_scan_interval_minutes),
+            id="watchlist_scan",
+            replace_existing=True,
+        )
+
+        self._scheduler.start()
+        logger.info(
+            "scheduler.started",
+            report_times=self._settings.report_schedule,
+            watchlist_interval=self._settings.watchlist_scan_interval_minutes,
+        )
+
+    def stop(self) -> None:
+        self._scheduler.shutdown(wait=False)
+
+
+async def start_scheduler() -> SchedulerService:
+    await init_db()
+    scheduler = SchedulerService()
+    scheduler.start()
+    return scheduler
