@@ -4,6 +4,8 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 
 const charts = {};
+let lastProposal = null;
+let lastPortfolioId = null;
 
 function toast(msg, ms = 3500) {
   const t = $("#toast");
@@ -97,6 +99,7 @@ function renderProviderHealth(health) {
 
 async function loadDailyBriefing() {
   const el = $("#daily-briefing");
+  $("#btn-export-briefing").href = `${API}/reports/daily/latest/export`;
   try {
     const r = await api(`${API}/reports/daily/latest`);
     $("#briefing-date").textContent = r.date ? new Date(r.date).toLocaleDateString() : "";
@@ -206,6 +209,9 @@ function renderDashboard(d) {
     <div>Countries: ${Object.entries(p.country_weights || {}).map(([k,v]) => `${k} ${v}%`).join(", ") || "—"}</div>
   ` : "No portfolio — create via API";
   renderPortfolioPies(p);
+  lastPortfolioId = p?.portfolio_id || null;
+  if (p?.portfolio_id) loadPortfolioHistory(p.portfolio_id);
+  else destroyChart("portfolio-history-chart");
   renderOpportunities(d.top_opportunities || [], d.top_risks || []);
   renderProviderHealth(d.provider_health);
 }
@@ -222,20 +228,43 @@ async function loadPriceChart(t) {
   try {
     const data = await api(`${API}/market/${t}/chart?period=6mo`);
     const labels = data.points.map((p) => p.date);
-    const prices = data.points.map((p) => p.close);
+    const closes = data.points.map((p) => p.close);
+    const highs = data.points.map((p) => p.high ?? p.close);
+    const lows = data.points.map((p) => p.low ?? p.close);
     makeChart("price-chart", {
       type: "line",
       data: {
         labels,
-        datasets: [{
-          label: t,
-          data: prices,
-          borderColor: "#3b82f6",
-          backgroundColor: "rgba(59,130,246,0.1)",
-          fill: true,
-          tension: 0.2,
-          pointRadius: 0,
-        }],
+        datasets: [
+          {
+            label: "High",
+            data: highs,
+            borderColor: "rgba(34,197,94,0.35)",
+            backgroundColor: "transparent",
+            borderWidth: 1,
+            pointRadius: 0,
+            tension: 0.1,
+          },
+          {
+            label: "Close",
+            data: closes,
+            borderColor: "#3b82f6",
+            backgroundColor: "rgba(59,130,246,0.12)",
+            fill: true,
+            tension: 0.2,
+            pointRadius: 0,
+            borderWidth: 2,
+          },
+          {
+            label: "Low",
+            data: lows,
+            borderColor: "rgba(239,68,68,0.35)",
+            backgroundColor: "transparent",
+            borderWidth: 1,
+            pointRadius: 0,
+            tension: 0.1,
+          },
+        ],
       },
       options: {
         responsive: true,
@@ -248,6 +277,68 @@ async function loadPriceChart(t) {
       },
     });
   } catch { destroyChart("price-chart"); }
+}
+
+async function loadSentimentTrend(t) {
+  try {
+    const hist = await api(`${API}/sentiment/${t}/history?limit=60`);
+    if (!hist.length) { destroyChart("sentiment-trend-chart"); return; }
+    makeChart("sentiment-trend-chart", {
+      type: "line",
+      data: {
+        labels: hist.map((h) => new Date(h.timestamp).toLocaleDateString()),
+        datasets: [{
+          label: "Sentiment",
+          data: hist.map((h) => h.aggregated_score),
+          borderColor: "#8b5cf6",
+          backgroundColor: "rgba(139,92,246,0.15)",
+          fill: true,
+          tension: 0.3,
+          pointRadius: 2,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: "#7d8fa3", maxTicksLimit: 6 }, grid: { color: "#1e2a38" } },
+          y: { min: -100, max: 100, ticks: { color: "#7d8fa3" }, grid: { color: "#1e2a38" } },
+        },
+      },
+    });
+  } catch { destroyChart("sentiment-trend-chart"); }
+}
+
+async function loadPortfolioHistory(portfolioId) {
+  try {
+    const hist = await api(`${API}/portfolios/${portfolioId}/history`);
+    if (!hist.length) { destroyChart("portfolio-history-chart"); return; }
+    makeChart("portfolio-history-chart", {
+      type: "line",
+      data: {
+        labels: hist.map((h) => new Date(h.timestamp).toLocaleDateString()),
+        datasets: [{
+          label: "Portfolio Value",
+          data: hist.map((h) => h.total_value),
+          borderColor: "#22c55e",
+          backgroundColor: "rgba(34,197,94,0.12)",
+          fill: true,
+          tension: 0.2,
+          pointRadius: hist.length > 30 ? 0 : 2,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: "#7d8fa3", maxTicksLimit: 5 }, grid: { color: "#1e2a38" } },
+          y: { ticks: { color: "#7d8fa3" }, grid: { color: "#1e2a38" } },
+        },
+      },
+    });
+  } catch { destroyChart("portfolio-history-chart"); }
 }
 
 function renderScenarios(thesis) {
@@ -330,6 +421,7 @@ async function runAnalyze() {
     }
     $("#analysis-out").textContent = txt;
     renderSentiment(sent);
+    await loadSentimentTrend(t);
     renderGraph(graph);
     renderCorrelations(corr);
     await loadWatchlistMatrix();
@@ -426,6 +518,7 @@ async function buildProposal() {
   toast("Building proposal…");
   try {
     const p = await api(`${API}/proposal`, { method: "POST", body: JSON.stringify(body) });
+    lastProposal = p;
     renderProposalVisual(p);
     let out = p.summary + "\n\n" + (p.executive_report?.narrative || "") + "\n\n";
     if (p.executive_report) {
@@ -443,6 +536,38 @@ async function buildProposal() {
     $("#proposal-out").textContent = out;
     toast("Proposal ready");
   } catch (e) { toast("Proposal: " + e.message); }
+}
+
+async function applyProposal() {
+  if (!lastProposal) { toast("Genera una propuesta primero"); return; }
+  let pid = lastPortfolioId;
+  if (!pid) {
+    try {
+      const p = await api(`${API}/portfolios/default`, { method: "POST" });
+      pid = p.id;
+      lastPortfolioId = pid;
+    } catch (e) { toast("Portfolio: " + e.message); return; }
+  }
+  toast("Aplicando propuesta…");
+  try {
+    await api(`${API}/proposal/apply`, {
+      method: "POST",
+      body: JSON.stringify({ portfolio_id: pid, proposal: lastProposal }),
+    });
+    $("#proposal-apply-msg").textContent = `Propuesta aplicada al portfolio ${pid}`;
+    toast("Propuesta aplicada");
+    await loadDashboard();
+  } catch (e) { toast("Apply: " + e.message); }
+}
+
+async function createPortfolio() {
+  toast("Creando portfolio CEO…");
+  try {
+    const p = await api(`${API}/portfolios/default`, { method: "POST" });
+    lastPortfolioId = p.id;
+    toast(`Portfolio ${p.name} creado ($${p.initial_capital})`);
+    await loadDashboard();
+  } catch (e) { toast("Portfolio: " + e.message); }
 }
 
 async function scanWatchlist() {
@@ -464,6 +589,8 @@ $$(".tab").forEach((btn) => btn.onclick = () => {
 $("#btn-analyze").onclick = runAnalyze;
 $("#btn-refresh").onclick = loadDashboard;
 $("#btn-proposal").onclick = buildProposal;
+$("#btn-apply-proposal").onclick = applyProposal;
+$("#btn-create-portfolio").onclick = createPortfolio;
 $("#btn-scan").onclick = scanWatchlist;
 $("#btn-shock").onclick = simulateShock;
 

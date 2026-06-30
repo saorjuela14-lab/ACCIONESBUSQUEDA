@@ -30,3 +30,12 @@ class SentimentEngineReport(BaseModel):
     sources_failed: list[str] = Field(default_factory=list)
     summary: str = ""
     timestamp: datetime | None = None
+
+
+class SentimentHistoryPoint(BaseModel):
+    timestamp: datetime
+    aggregated_score: float
+    label: str = "neutral"
+    retail_score: float = 0.0
+    news_score: float = 0.0
+    institutional_score: float = 0.0

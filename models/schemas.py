@@ -3,6 +3,7 @@
 from pydantic import BaseModel, Field
 
 from domain.enums import StrategyType
+from domain.proposal import InvestmentProposal
 from domain.reports import InvestmentThesis
 
 
@@ -40,3 +41,9 @@ class InvestmentProposalRequest(BaseModel):
     instrument_mode: str = Field(default="auto", description="auto | stock | cfd")
     risk_profile: str = Field(default="balanced", description="conservative | balanced | aggressive")
     cfd_margin_pct: float | None = Field(default=None, ge=5, le=50, description="CFD margin % (default by risk profile)")
+    use_llm_narrative: bool = Field(default=True, description="Enrich with LLM if OPENAI_API_KEY set")
+
+
+class ProposalApplyRequest(BaseModel):
+    portfolio_id: str
+    proposal: InvestmentProposal

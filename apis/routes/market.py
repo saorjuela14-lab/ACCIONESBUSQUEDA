@@ -22,6 +22,9 @@ async def get_price_chart(
             points.append(
                 PriceChartPoint(
                     date=date_str,
+                    open=round(float(row["Open"]), 4) if "Open" in row else None,
+                    high=round(float(row["High"]), 4) if "High" in row else None,
+                    low=round(float(row["Low"]), 4) if "Low" in row else None,
                     close=round(float(row["Close"]), 4),
                     volume=vol,
                 )

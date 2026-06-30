@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from domain.enums import NewsSentiment
 from domain.sentiment import SentimentSnapshot
 from domain.sentiment_v2 import SentimentChannel, SentimentEngineReport
-from providers.sentiment.composite_sentiment_provider import CompositeSentimentProvider
+from providers.sentiment.reddit_search_provider import RedditSearchProvider
 from providers.sentiment.stocktwits_provider import StocktwitsProvider
 from providers.sentiment.yfinance_news_sentiment_provider import YFinanceNewsSentimentProvider
 from utils.logging import get_logger
@@ -24,11 +24,8 @@ class SentimentEngineService:
 
     def __init__(self) -> None:
         self._stocktwits = StocktwitsProvider()
+        self._reddit = RedditSearchProvider()
         self._news = YFinanceNewsSentimentProvider()
-        self._composite = CompositeSentimentProvider(
-            stocktwits=self._stocktwits,
-            news=self._news,
-        )
 
     def _channel_from_snapshot(
         self,
@@ -106,10 +103,11 @@ class SentimentEngineService:
         sources_used: list[str] = []
         sources_failed: list[str] = []
 
-        st_result = news_result = None
+        st_result = news_result = reddit_result = None
         tasks = {
             "stocktwits": self._stocktwits.get_sentiment(ticker, company_name),
             "yfinance_news": self._news.get_sentiment(ticker, company_name),
+            "reddit": self._reddit.get_sentiment(ticker, company_name),
         }
         results = await asyncio.gather(*tasks.values(), return_exceptions=True)
         for key, result in zip(tasks.keys(), results):
@@ -120,11 +118,17 @@ class SentimentEngineService:
                 sources_used.append(key)
                 if key == "stocktwits":
                     st_result = result
+                elif key == "reddit":
+                    reddit_result = result
                 else:
                     news_result = result
 
         retail = self._channel_from_snapshot("retail", st_result, ["StockTwits stream"])
-        social = retail  # same source for now; extensible
+        social = self._channel_from_snapshot(
+            "social",
+            reddit_result,
+            [i.text[:50] for i in (reddit_result.items[:3] if reddit_result else [])],
+        )
 
         if news_result:
             institutional, analyst, news_ch = self._split_news_channels(news_result)

@@ -15,6 +15,7 @@ from providers.market.factory import get_market_provider
 from providers.sentiment.factory import get_sentiment_provider
 from providers.news.factory import get_news_provider
 from reports.writer import ReportWriter
+from services.llm_narrative_service import LLMNarrativeService
 from services.analysis_service import AnalysisService
 
 router = APIRouter()
@@ -51,6 +52,10 @@ async def analyze_ticker(
             raise HTTPException(status_code=404, detail="Portfolio not found")
 
     thesis = await service.analyze_ticker(request.ticker, portfolio=portfolio, watchlist=watchlist)
+    llm = LLMNarrativeService()
+    extra = await llm.enrich_thesis_summary(thesis)
+    if extra:
+        thesis.executive_summary = f"{extra}\n\n{thesis.executive_summary}"
     ReportWriter().write_thesis(thesis)
     return thesis
 

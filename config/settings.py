@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     polygon_api_base_url: str = "https://api.massive.com"
     alpha_vantage_api_key: str = ""
     news_api_key: str = ""
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
 
     # Provider rate limits (free tiers)
     polygon_daily_limit: int = 1000

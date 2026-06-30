@@ -104,3 +104,27 @@ class DailyReportORM(Base):
     report_date: Mapped[str] = mapped_column(String(10), index=True)
     report_json: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class SentimentHistoryORM(Base):
+    __tablename__ = "sentiment_history"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    ticker: Mapped[str] = mapped_column(String(16), index=True)
+    aggregated_score: Mapped[float] = mapped_column(Float)
+    label: Mapped[str] = mapped_column(String(16))
+    retail_score: Mapped[float] = mapped_column(Float, default=0.0)
+    news_score: Mapped[float] = mapped_column(Float, default=0.0)
+    institutional_score: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+
+
+class PortfolioSnapshotORM(Base):
+    __tablename__ = "portfolio_snapshots"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    portfolio_id: Mapped[str] = mapped_column(String(36), index=True)
+    total_value: Mapped[float] = mapped_column(Float)
+    return_pct: Mapped[float] = mapped_column(Float, default=0.0)
+    cash: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)

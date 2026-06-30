@@ -58,6 +58,9 @@ class WatchlistMatrixRow(BaseModel):
 
 class PriceChartPoint(BaseModel):
     date: str
+    open: float | None = None
+    high: float | None = None
+    low: float | None = None
     close: float
     volume: float | None = None
 
@@ -66,6 +69,13 @@ class PriceChartData(BaseModel):
     ticker: str
     period: str
     points: list[PriceChartPoint] = Field(default_factory=list)
+
+
+class PortfolioHistoryPoint(BaseModel):
+    timestamp: datetime
+    total_value: float
+    return_pct: float = 0.0
+    cash: float = 0.0
 
 
 class PortfolioDashboardSlice(BaseModel):

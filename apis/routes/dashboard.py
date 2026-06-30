@@ -7,6 +7,7 @@ from database.engine import get_session
 from database.repositories.alert_repository import AlertRepository
 from database.repositories.investment_memory_repository import InvestmentMemoryRepository
 from database.repositories.portfolio_repository import PortfolioRepository
+from database.repositories.portfolio_snapshot_repository import PortfolioSnapshotRepository
 from database.repositories.watchlist_repository import WatchlistRepository
 from domain.dashboard import PortfolioDashboardSlice, TerminalDashboard, TickerOpportunity, WatchlistMatrixRow
 from domain.enums import InvestmentRecommendation
@@ -112,6 +113,9 @@ async def get_terminal_dashboard(
                 cap_exposure=cap_w,
                 currency_exposure={"USD": 100.0} if total else {},
                 unrealized_pnl=round(unrealized, 2),
+            )
+            await PortfolioSnapshotRepository(session).save(
+                p.id, total, p.return_pct, p.cash
             )
         except Exception:
             pass

@@ -34,7 +34,10 @@
     <section class="panel briefing-panel">
       <div class="panel-head">
         <h3>Briefing Diario CEO</h3>
-        <span id="briefing-date" class="muted"></span>
+        <div>
+          <a id="btn-export-briefing" class="btn" href="#" target="_blank">Exportar</a>
+          <span id="briefing-date" class="muted"></span>
+        </div>
       </div>
       <div id="daily-briefing" class="briefing-body">Cargando briefing…</div>
     </section>
@@ -122,7 +125,11 @@
             <pre id="graph-summary" class="mono small"></pre>
           </div>
 
-          <div id="tab-sentiment" class="tab-pane"><div id="sentiment-out"></div></div>
+          <div id="tab-sentiment" class="tab-pane">
+            <div id="sentiment-out"></div>
+            <h4 class="subhead">Tendencia Sentiment (histórico)</h4>
+            <div class="chart-box small"><canvas id="sentiment-trend-chart"></canvas></div>
+          </div>
 
           <div id="tab-proposal" class="tab-pane">
             <div class="form-inline">
@@ -134,7 +141,9 @@
                 <option value="aggressive">Aggressive</option>
               </select>
               <button id="btn-proposal" class="btn primary">Build Proposal</button>
+              <button id="btn-apply-proposal" class="btn">Aplicar al Portfolio</button>
             </div>
+            <p id="proposal-apply-msg" class="muted" style="font-size:11px"></p>
             <div class="proposal-visual">
               <div class="chart-box small"><canvas id="proposal-chart"></canvas></div>
               <div id="proposal-table"></div>
@@ -156,7 +165,9 @@
         </div>
         <div class="panel">
           <h3>Portfolio</h3>
+          <button id="btn-create-portfolio" class="btn" style="margin-bottom:6px;width:100%">Crear Portfolio CEO</button>
           <div id="portfolio-panel"></div>
+          <div class="chart-box small"><canvas id="portfolio-history-chart"></canvas></div>
           <div class="chart-box small"><canvas id="sector-chart"></canvas></div>
           <div class="chart-box small"><canvas id="cap-chart"></canvas></div>
         </div>
