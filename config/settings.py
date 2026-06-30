@@ -31,8 +31,15 @@ class Settings(BaseSettings):
     tradingview_enabled: bool = False
     tradingview_api_key: str = ""
     fred_api_key: str = ""
+    polygon_api_key: str = ""
+    polygon_api_base_url: str = "https://api.massive.com"
     alpha_vantage_api_key: str = ""
     news_api_key: str = ""
+
+    # Provider rate limits (free tiers)
+    polygon_daily_limit: int = 1000
+    polygon_per_minute_limit: int = 5
+    alpha_vantage_daily_limit: int = 25
 
     market_timezone: str = "America/New_York"
     report_times: str = "08:30,11:30,15:00,17:30"

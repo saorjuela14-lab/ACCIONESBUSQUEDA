@@ -12,6 +12,18 @@ Professional multi-agent investment research, portfolio management, and thesis g
 
 ## Fase 2 — Integraciones de datos
 
+### Fase 2.2 — Market Data (implementado)
+Cadena de fallback automática: **Polygon → Alpha Vantage → YFinance**
+
+```bash
+POLYGON_API_KEY=your_key
+ALPHA_VANTAGE_API_KEY=your_key
+POLYGON_PER_MINUTE_LIMIT=5
+ALPHA_VANTAGE_DAILY_LIMIT=25
+```
+
+Si Polygon agota su cuota por minuto o falla, Alpha Vantage toma el relevo. Si Alpha Vantage agota sus 25 req/día, YFinance complementa.
+
 ### FRED (implementado)
 Con `FRED_API_KEY` en `.env`, el `macro_agent` consume datos verificados:
 - Fed Funds Rate, CPI (YoY), Unemployment, GDP

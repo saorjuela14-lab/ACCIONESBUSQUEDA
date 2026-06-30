@@ -7,14 +7,14 @@ from database.engine import get_session
 from database.repositories.portfolio_repository import PortfolioRepository
 from domain.entities import Portfolio
 from models.schemas import PortfolioCreateRequest, PositionAddRequest
-from providers.market.yfinance_provider import YFinanceProvider
+from providers.market.factory import get_market_provider
 from services.portfolio_service import PortfolioService
 
 router = APIRouter()
 
 
 def _build_service(session: AsyncSession) -> PortfolioService:
-    return PortfolioService(PortfolioRepository(session), YFinanceProvider())
+    return PortfolioService(PortfolioRepository(session), get_market_provider())
 
 
 @router.get("/portfolios", response_model=list[Portfolio])

@@ -7,14 +7,14 @@ from database.engine import get_session
 from database.repositories.watchlist_repository import WatchlistRepository
 from domain.entities import WatchlistItem
 from models.schemas import WatchlistAddRequest
-from providers.market.yfinance_provider import YFinanceProvider
+from providers.market.factory import get_market_provider
 from services.watchlist_service import WatchlistService
 
 router = APIRouter()
 
 
 def _build_service(session: AsyncSession) -> WatchlistService:
-    return WatchlistService(WatchlistRepository(session), YFinanceProvider())
+    return WatchlistService(WatchlistRepository(session), get_market_provider())
 
 
 @router.get("/watchlist", response_model=list[WatchlistItem])

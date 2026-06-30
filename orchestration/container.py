@@ -11,7 +11,7 @@ from database.repositories.investment_memory_repository import InvestmentMemoryR
 from database.repositories.portfolio_repository import PortfolioRepository
 from database.repositories.watchlist_repository import WatchlistRepository
 from providers.macro.factory import get_macro_provider
-from providers.market.yfinance_provider import YFinanceProvider
+from providers.market.factory import get_market_provider
 from providers.news.duckduckgo_provider import DuckDuckGoNewsProvider
 from services.analysis_service import AnalysisService
 from services.portfolio_service import PortfolioService
@@ -24,7 +24,7 @@ class Container(containers.DeclarativeContainer):
 
     config = providers.Singleton(get_settings)
 
-    market_provider = providers.Singleton(YFinanceProvider)
+    market_provider = providers.Singleton(get_market_provider)
     news_provider = providers.Singleton(DuckDuckGoNewsProvider)
     macro_provider = providers.Singleton(get_macro_provider)
 
