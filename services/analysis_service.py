@@ -84,7 +84,15 @@ class AnalysisService:
         ]
 
         reports: list[AgentReport] = await asyncio.gather(
-            *[agent.analyze(ticker, company_name=company_name) for agent in evidence_agents]
+            *[
+                agent.analyze(
+                    ticker,
+                    company_name=company_name,
+                    sector=quote.get("sector"),
+                    industry=quote.get("industry"),
+                )
+                for agent in evidence_agents
+            ]
         )
         reports = list(reports)
 

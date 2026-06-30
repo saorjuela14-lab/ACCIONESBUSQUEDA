@@ -5,6 +5,7 @@ from typing import Any
 
 import pandas as pd
 
+from domain.enums import NewsTopicCategory
 from domain.reports import NewsItem
 from domain.sentiment import SentimentSnapshot
 
@@ -31,7 +32,12 @@ class MarketDataProvider(ABC):
 
 class NewsProvider(ABC):
     @abstractmethod
-    async def search_news(self, query: str, max_results: int = 10) -> list[NewsItem]:
+    async def search_news(
+        self,
+        query: str,
+        max_results: int = 10,
+        hint_category: NewsTopicCategory | None = None,
+    ) -> list[NewsItem]:
         raise NotImplementedError
 
 

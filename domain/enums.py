@@ -26,6 +26,17 @@ class NewsSentiment(StrEnum):
     NEUTRAL = "neutral"
 
 
+class NewsTopicCategory(StrEnum):
+    MERGERS_ACQUISITIONS = "mergers_acquisitions"
+    LITIGATION = "litigation"
+    REGULATORY = "regulatory"
+    PRODUCT_PIPELINE = "product_pipeline"
+    EARNINGS = "earnings"
+    MANAGEMENT = "management"
+    STRATEGIC = "strategic"
+    GENERAL = "general"
+
+
 class ImpactLevel(StrEnum):
     VERY_HIGH = "very_high"
     HIGH = "high"

@@ -12,6 +12,7 @@ from domain.enums import (
     InvestmentRecommendation,
     MarketSession,
     NewsSentiment,
+    NewsTopicCategory,
     ReportType,
     StrategyType,
     TimeHorizon,
@@ -127,6 +128,8 @@ class NewsItem(BaseModel):
     sentiment: NewsSentiment = NewsSentiment.NEUTRAL
     impact: ImpactLevel = ImpactLevel.MEDIUM
     horizon: TimeHorizon = TimeHorizon.WEEKLY
+    category: NewsTopicCategory = NewsTopicCategory.GENERAL
+    snippet: str | None = None
     catalysts: list[str] = Field(default_factory=list)
     risks: list[str] = Field(default_factory=list)
     related_tickers: list[str] = Field(default_factory=list)
