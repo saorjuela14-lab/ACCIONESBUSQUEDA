@@ -8,10 +8,12 @@ from database.repositories.alert_repository import AlertRepository
 from database.repositories.investment_memory_repository import InvestmentMemoryRepository
 from database.repositories.portfolio_repository import PortfolioRepository
 from database.repositories.watchlist_repository import WatchlistRepository
-from domain.dashboard import PortfolioDashboardSlice, TerminalDashboard, TickerOpportunity
+from domain.dashboard import PortfolioDashboardSlice, TerminalDashboard, TickerOpportunity, WatchlistMatrixRow
 from domain.enums import InvestmentRecommendation
+from providers.market.factory import get_market_provider
 from services.market_dashboard_service import MarketDashboardService
 from services.provider_diagnostics import get_providers_status
+from services.watchlist_matrix_service import WatchlistMatrixService
 
 router = APIRouter()
 
@@ -56,8 +58,8 @@ async def get_terminal_dashboard(
     watchlist_items = await WatchlistRepository(session).list_active()
     watchlist = [w.ticker for w in watchlist_items]
 
-    alerts_raw = await AlertRepository(session).list_active()
-    alerts = [f"[{a.severity.value}] {a.ticker}: {a.message}" for a in alerts_raw[:15]]
+    alerts_raw = await AlertRepository(session).list_unacknowledged(15)
+    alerts = [f"[{a.severity.value}] {a.ticker}: {a.title}" for a in alerts_raw[:15]]
 
     portfolio_slice = None
     portfolios = await PortfolioRepository(session).list_all()
@@ -133,3 +135,13 @@ async def get_terminal_dashboard(
         recently_analyzed=recently,
         provider_health=provider_health,
     )
+
+
+@router.get("/dashboard/watchlist-matrix", response_model=list[WatchlistMatrixRow])
+async def get_watchlist_matrix(
+    session: AsyncSession = Depends(get_session),
+) -> list[WatchlistMatrixRow]:
+    watchlist = await WatchlistRepository(session).list_active()
+    tickers = [w.ticker for w in watchlist]
+    memory = await InvestmentMemoryRepository(session).latest_by_ticker(tickers)
+    return await WatchlistMatrixService(get_market_provider()).build(watchlist, memory)

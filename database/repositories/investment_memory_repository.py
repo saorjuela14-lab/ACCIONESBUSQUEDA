@@ -38,6 +38,24 @@ class InvestmentMemoryRepository:
         )
         return [self._to_domain(r) for r in result.scalars().all()]
 
+    async def latest_by_ticker(self, tickers: list[str] | None = None) -> dict[str, InvestmentMemoryRecord]:
+        """Most recent memory record per ticker (for watchlist matrix)."""
+        result = await self._session.execute(
+            select(InvestmentMemoryORM).order_by(InvestmentMemoryORM.created_at.desc())
+        )
+        wanted = {t.upper() for t in tickers} if tickers else None
+        latest: dict[str, InvestmentMemoryRecord] = {}
+        for row in result.scalars().all():
+            t = row.ticker.upper()
+            if t in latest:
+                continue
+            if wanted is not None and t not in wanted:
+                continue
+            latest[t] = self._to_domain(row)
+            if wanted is not None and len(latest) >= len(wanted):
+                break
+        return latest
+
     async def list_ready_for_evaluation(self, min_age_days: int) -> list[InvestmentMemoryRecord]:
         from datetime import timedelta
         cutoff = datetime.now(timezone.utc) - timedelta(days=min_age_days)

@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apis.routes import alerts, analysis, correlations, dashboard, graph, health, portfolio, proposal, providers, reports, sentiment, watchlist
+from apis.routes import alerts, analysis, correlations, dashboard, graph, health, market, portfolio, proposal, providers, reports, sentiment, watchlist
 from config.settings import get_settings
 from database.engine import get_session, init_db
 from orchestration.container import Container, bootstrap
@@ -73,6 +73,7 @@ def create_app() -> FastAPI:
     app.include_router(providers.router, prefix="/api/v1", tags=["providers"])
     app.include_router(correlations.router, prefix="/api/v1", tags=["correlations"])
     app.include_router(dashboard.router, prefix="/api/v1", tags=["dashboard"])
+    app.include_router(market.router, prefix="/api/v1", tags=["market"])
     app.include_router(graph.router, prefix="/api/v1", tags=["graph"])
     app.include_router(proposal.router, prefix="/api/v1", tags=["proposal"])
     app.include_router(sentiment.router, prefix="/api/v1", tags=["sentiment"])

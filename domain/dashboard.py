@@ -43,6 +43,31 @@ class TickerOpportunity(BaseModel):
     reason: str
 
 
+class WatchlistMatrixRow(BaseModel):
+    ticker: str
+    company_name: str | None = None
+    price: float | None = None
+    change_pct: float | None = None
+    recommendation: str | None = None
+    confidence: float | None = None
+    news_score: float | None = None
+    technical_score: float | None = None
+    sentiment_score: float | None = None
+    analyzed_at: datetime | None = None
+
+
+class PriceChartPoint(BaseModel):
+    date: str
+    close: float
+    volume: float | None = None
+
+
+class PriceChartData(BaseModel):
+    ticker: str
+    period: str
+    points: list[PriceChartPoint] = Field(default_factory=list)
+
+
 class PortfolioDashboardSlice(BaseModel):
     portfolio_id: str | None = None
     name: str | None = None

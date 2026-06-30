@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NexBuy Terminal</title>
+  <title>NexBuy CEO Terminal</title>
   <link rel="stylesheet" href="/dashboard/static/styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
@@ -11,16 +11,51 @@
 <body>
   <div class="terminal">
     <header class="term-header">
-      <div class="term-brand"><span class="logo">NX</span> NexBuy Terminal <span class="ver">v2</span></div>
+      <div class="term-brand"><span class="logo">NX</span> NexBuy CEO Terminal <span class="ver">v3</span></div>
       <div class="regime" id="market-regime">MARKET —</div>
       <div class="header-actions">
         <input id="global-ticker" type="text" placeholder="TICKER" maxlength="10" />
         <button id="btn-analyze" class="btn primary">Analyze</button>
+        <button id="btn-scan" class="btn">Scan WL</button>
         <button id="btn-refresh" class="btn">Refresh</button>
       </div>
     </header>
 
+    <section class="ceo-bar" id="ceo-bar">
+      <div class="ceo-kpi"><label>Portfolio</label><div id="ceo-portfolio">—</div></div>
+      <div class="ceo-kpi"><label>Return</label><div id="ceo-return">—</div></div>
+      <div class="ceo-kpi"><label>Alertas</label><div id="ceo-alerts">—</div></div>
+      <div class="ceo-kpi"><label>Watchlist</label><div id="ceo-watchlist-count">—</div></div>
+      <div class="ceo-kpi"><label>Actualizado</label><div id="ceo-updated">—</div></div>
+    </section>
+
     <section class="indices-row" id="indices-row"></section>
+
+    <section class="panel briefing-panel">
+      <div class="panel-head">
+        <h3>Briefing Diario CEO</h3>
+        <span id="briefing-date" class="muted"></span>
+      </div>
+      <div id="daily-briefing" class="briefing-body">Cargando briefing…</div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h3>Watchlist Matrix</h3>
+        <span class="muted">Clic en fila para analizar</span>
+      </div>
+      <div class="table-wrap">
+        <table class="matrix-table" id="watchlist-matrix">
+          <thead>
+            <tr>
+              <th>Ticker</th><th>Precio</th><th>Δ%</th><th>Rec</th><th>Conf</th>
+              <th>News</th><th>Tech</th><th>Sent</th>
+            </tr>
+          </thead>
+          <tbody id="matrix-body"><tr><td colspan="8">Cargando…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
 
     <div class="term-grid">
       <aside class="col-left">
@@ -43,36 +78,71 @@
           <div class="tab-bar">
             <button class="tab active" data-tab="overview">Overview</button>
             <button class="tab" data-tab="analysis">Analysis</button>
+            <button class="tab" data-tab="correlations">Correlations</button>
             <button class="tab" data-tab="graph">Dependency Graph</button>
             <button class="tab" data-tab="sentiment">Sentiment</button>
             <button class="tab" data-tab="proposal">Proposal</button>
           </div>
+
           <div id="tab-overview" class="tab-pane active">
             <div class="metrics-row">
               <div class="metric-card"><label>Recommendation</label><div id="m-rec">—</div></div>
               <div class="metric-card"><label>Confidence</label><div id="m-conf">—</div></div>
-              <div class="metric-card"><label>News Score</label><div id="m-news">—</div></div>
+              <div class="metric-card"><label>Price Target</label><div id="m-target">—</div></div>
               <div class="metric-card"><label>Market Sent.</label><div id="m-msent">—</div></div>
             </div>
-            <p id="exec-summary" class="prose">Select a ticker and click Analyze.</p>
+            <div class="scenarios-row" id="scenarios-row"></div>
+            <p id="exec-summary" class="prose">Selecciona un ticker y pulsa Analyze.</p>
+            <div class="chart-box"><canvas id="price-chart"></canvas></div>
+            <h4 class="subhead">Correlaciones Técnicas (contexto comité)</h4>
+            <ul id="tech-correlations" class="corr-list"></ul>
             <div id="agents-grid" class="agent-grid"></div>
           </div>
+
           <div id="tab-analysis" class="tab-pane"><pre id="analysis-out" class="mono"></pre></div>
+
+          <div id="tab-correlations" class="tab-pane">
+            <div id="correlations-out"></div>
+          </div>
+
           <div id="tab-graph" class="tab-pane">
+            <div class="form-inline">
+              <label>Simular shock:</label>
+              <select id="shock-node">
+                <option value="hormuz">Hormuz</option>
+                <option value="oil">Oil</option>
+                <option value="fed">Fed</option>
+                <option value="china">China</option>
+                <option value="TSM">TSM</option>
+              </select>
+              <button id="btn-shock" class="btn">Simular</button>
+            </div>
+            <pre id="shock-out" class="mono small"></pre>
             <div id="graph-network" class="graph-canvas"></div>
             <pre id="graph-summary" class="mono small"></pre>
           </div>
+
           <div id="tab-sentiment" class="tab-pane"><div id="sentiment-out"></div></div>
+
           <div id="tab-proposal" class="tab-pane">
             <div class="form-inline">
               <input id="prop-budget" type="number" value="50" min="1" /> USD
-              <input id="prop-tickers" placeholder="tickers or empty=watchlist" />
-              <select id="prop-risk"><option value="balanced">Balanced</option><option value="conservative">Conservative</option><option value="aggressive">Aggressive</option></select>
+              <input id="prop-tickers" placeholder="tickers o vacío=watchlist" />
+              <select id="prop-risk">
+                <option value="balanced">Balanced</option>
+                <option value="conservative">Conservative</option>
+                <option value="aggressive">Aggressive</option>
+              </select>
               <button id="btn-proposal" class="btn primary">Build Proposal</button>
+            </div>
+            <div class="proposal-visual">
+              <div class="chart-box small"><canvas id="proposal-chart"></canvas></div>
+              <div id="proposal-table"></div>
             </div>
             <pre id="proposal-out" class="mono"></pre>
           </div>
         </div>
+
         <div class="panel">
           <h3>Opportunities / Risks</h3>
           <div class="split"><div id="opportunities"></div><div id="risks-panel"></div></div>
@@ -87,6 +157,8 @@
         <div class="panel">
           <h3>Portfolio</h3>
           <div id="portfolio-panel"></div>
+          <div class="chart-box small"><canvas id="sector-chart"></canvas></div>
+          <div class="chart-box small"><canvas id="cap-chart"></canvas></div>
         </div>
         <div class="panel">
           <h3>Alerts</h3>
@@ -98,6 +170,8 @@
         </div>
       </aside>
     </div>
+
+    <footer class="term-footer" id="provider-health">Providers: —</footer>
   </div>
   <div id="toast" class="toast hidden"></div>
   <script src="/dashboard/static/app.js"></script>
