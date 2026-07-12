@@ -125,53 +125,61 @@ Evidence Agents → Alert Engine → Investment Director → Investment Memory
 
 Flujo recomendado: **GitHub como fuente única** — escribes los cambios en Cursor (Cloud Agent), el código vive en el repo; no necesitas clonar en tu PC.
 
-### 1. Desplegar en Hugging Face Spaces (gratis, sin tarjeta)
+### Opción recomendada: SnapDeploy (gratis, sin tarjeta)
 
-[Hugging Face Spaces](https://huggingface.co/spaces) ofrece hosting Docker **sin pedir tarjeta de crédito** en el plan gratuito (CPU Basic).
+[SnapDeploy](https://snapdeploy.dev) permite desplegar contenedores Docker **sin pedir tarjeta**. El contenedor duerme tras inactividad y despierta solo (~60 s).
 
-1. Crea cuenta en [huggingface.co/join](https://huggingface.co/join) (gratis, sin tarjeta).
-2. Ve a [huggingface.co/spaces/new](https://huggingface.co/spaces/new):
-   - **Space name:** `nexbuy-ceo` (o el que prefieras)
-   - **License:** MIT
-   - **SDK:** Docker
-   - **Visibility:** Public
-3. En el Space recién creado → **Settings** → **Repository** → **Link to GitHub** → selecciona `saorjuela14-lab/ACCIONESBUSQUEDA` y rama `main`.
-4. En **Settings → Variables and secrets** → **Secrets**, añade:
+1. Entra en [snapdeploy.dev](https://snapdeploy.dev) → **Sign up with GitHub** (no tarjeta).
+2. **New deployment** → **GitHub** → autoriza acceso al repo `saorjuela14-lab/ACCIONESBUSQUEDA`.
+3. Configura el servicio:
+   - **Branch:** `main`
+   - **Builder:** Dockerfile (detecta `./Dockerfile`)
+   - **Port:** `8000`
+   - **Health check:** `/health`
+4. Variables de entorno:
 
-   | Secret | Valor |
-   |--------|--------|
+   | Variable | Valor |
+   |----------|--------|
    | `DASHBOARD_ACCESS_TOKEN` | `Portafolio111` |
+   | `APP_ENV` | `production` |
+   | `SCHEDULER_ENABLED` | `true` |
 
-5. Opcional (cuando tengas keys): `FRED_API_KEY`, `POLYGON_API_KEY`, `ALPHA_VANTAGE_API_KEY`.
-6. El Space construye el `Dockerfile` automáticamente. La URL será algo como:
+5. Pulsa **Deploy**. Te dará una URL tipo `https://tu-app.snapdeploy.dev`.
+6. Cada push a `main` puede redeployar automáticamente (si activas auto-deploy en SnapDeploy).
 
-   `https://huggingface.co/spaces/TU_USUARIO/nexbuy-ceo`
+**Alternativa por imagen Docker:** GitHub Actions publica la imagen en  
+`ghcr.io/saorjuela14-lab/accionesbusqueda/nexbuy-ceo:latest`  
+En SnapDeploy elige **Deploy from Docker image** y pega esa URL.
 
-   La app responde en la URL pública del Space (botón **"Open app"**).
+### Hugging Face (solo si tienes plan PRO)
 
-> **Nota:** En el plan gratuito el Space puede dormir tras inactividad (~1 min al despertar). La base SQLite es efímera: se reinicia en cada rebuild del Space.
+Tu cuenta `sergio14orjuela` está activa, pero **los Spaces Docker/Gradio en plan gratuito ahora requieren suscripción PRO** en Hugging Face (error 402). Sin PRO no se puede crear el Space desde la API.
 
-### 2. Acceder al panel
+Si más adelante contratas PRO:
+
+1. Vincular GitHub: [huggingface.co/settings/connected-applications](https://huggingface.co/settings/connected-applications) → **Connect GitHub**.
+2. Crear Space → SDK **Docker** → enlazar repo `ACCIONESBUSQUEDA`.
+3. Secret: `DASHBOARD_ACCESS_TOKEN` = `Portafolio111`.
+
+El `README.md` ya incluye el bloque YAML (`sdk: docker`, `app_port: 8000`) que Hugging Face necesita.
+
+> **Seguridad:** No compartas tu token `hf_...` en chats. Si lo hiciste, revócalo en [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) y crea uno nuevo.
+
+### Acceder al panel
 
 | URL | Uso |
 |-----|-----|
-| `https://TU-USUARIO-nexbuy-ceo.hf.space/login` | Pantalla de acceso |
-| `https://TU-USUARIO-nexbuy-ceo.hf.space/dashboard` | Panel CEO (PWA, móvil y escritorio) |
-
-(La URL exacta aparece al pulsar **Open app** en tu Space.)
+| `https://TU-APP.snapdeploy.dev/login` | Pantalla de acceso |
+| `https://TU-APP.snapdeploy.dev/dashboard` | Panel CEO (PWA, móvil y escritorio) |
 
 - Token de acceso: **`Portafolio111`**
 - En el celular: abre `/login`, entra con el token y usa **Añadir a pantalla de inicio** (PWA).
 
-### 3. Cómo pedir cambios sin PC local
+### Cómo pedir cambios sin PC local
 
 1. Escribe aquí en Cursor lo que quieres (watchlist, UI, nuevas fases).
 2. El agente hace commit → push a `main` en GitHub.
-3. Hugging Face reconstruye el Space automáticamente (si está vinculado al repo).
-
-### Alternativa: Koyeb (también sin tarjeta en plan Starter)
-
-Si prefieres otra opción: [koyeb.com](https://www.koyeb.com) — plan gratuito, conecta el mismo repo GitHub, tipo **Web Service** con `Dockerfile`, y añade `DASHBOARD_ACCESS_TOKEN=Portafolio111` en variables de entorno.
+3. SnapDeploy (o GHCR + redeploy) actualiza el panel en unos minutos.
 
 ## Disclaimer
 

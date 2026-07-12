@@ -1,0 +1,32 @@
+# Publica imagen Docker en GitHub Container Registry (gratis, sin tarjeta).
+# SnapDeploy u otra plataforma puede desplegar desde esta imagen o desde el repo.
+name: Publish Docker image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/saorjuela14-lab/accionesbusqueda/nexbuy-ceo:latest
+            ghcr.io/saorjuela14-lab/accionesbusqueda/nexbuy-ceo:${{ github.sha }}
