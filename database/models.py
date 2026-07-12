@@ -107,6 +107,16 @@ class DailyReportORM(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class DailyTradeReportORM(Base):
+    __tablename__ = "daily_trade_reports"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    report_date: Mapped[str] = mapped_column(String(10), index=True)
+    session: Mapped[str] = mapped_column(String(32), default="pre_market")
+    report_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class SentimentHistoryORM(Base):
     __tablename__ = "sentiment_history"
 

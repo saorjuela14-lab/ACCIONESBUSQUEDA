@@ -54,6 +54,7 @@ class Settings(BaseSettings):
 
     scheduler_enabled: bool = True
     watchlist_scan_interval_minutes: int = 30
+    daily_trade_sessions: str = "08:30,11:30"
     memory_evaluation_days: int = 90
     alert_cooldown_hours: int = 24
 
@@ -70,6 +71,10 @@ class Settings(BaseSettings):
     @property
     def report_schedule(self) -> list[str]:
         return [t.strip() for t in self.report_times.split(",") if t.strip()]
+
+    @property
+    def daily_trade_schedule(self) -> list[str]:
+        return [t.strip() for t in self.daily_trade_sessions.split(",") if t.strip()]
 
 
 @lru_cache

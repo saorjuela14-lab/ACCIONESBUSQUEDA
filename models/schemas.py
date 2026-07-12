@@ -79,3 +79,9 @@ class DiscoveryResearchRequest(BaseModel):
 class DiscoveryAnalyzeRequest(DiscoveryResearchRequest):
     analyze_top: int = Field(default=3, ge=1, le=5)
     portfolio_id: str | None = None
+
+
+class DailyTradeGenerateRequest(BaseModel):
+    session: str = Field(default="pre_market", description="pre_market | mid_session | post_market")
+    max_picks: int = Field(default=8, ge=1, le=15)
+    exclude_tickers: list[str] | None = None
