@@ -85,3 +85,15 @@ class DailyTradeGenerateRequest(BaseModel):
     session: str = Field(default="pre_market", description="pre_market | mid_session | post_market")
     max_picks: int = Field(default=8, ge=1, le=15)
     exclude_tickers: list[str] | None = None
+
+
+class DiscoverProposalRequest(BaseModel):
+    budget: float = Field(gt=0, description="Capital total para la propuesta")
+    themes: list[str] | None = None
+    max_candidates: int = Field(default=15, ge=1, le=30)
+    proposal_top: int = Field(default=4, ge=1, le=6, description="Top N descubiertos para propuesta")
+    risk_profile: str = Field(default="balanced")
+    instrument_mode: str = Field(default="auto")
+    add_to_watchlist: bool = Field(default=True)
+    use_llm_narrative: bool = Field(default=True)
+    portfolio_id: str | None = None

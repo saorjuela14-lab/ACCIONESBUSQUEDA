@@ -127,6 +127,7 @@ class TechnicalSnapshot(BaseModel):
 class TechnicalChartData(BaseModel):
     ticker: str
     period: str
+    chart_timeframe: str = "1D"
     points: list[TechnicalChartPoint] = Field(default_factory=list)
     snapshot: TechnicalSnapshot | None = None
     trade_levels: dict = Field(default_factory=dict)

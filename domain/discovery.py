@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field
 
+from domain.proposal import InvestmentProposal
 from domain.reports import InvestmentThesis
 
 
@@ -45,3 +46,11 @@ class DiscoveryAnalyzeResult(BaseModel):
     discovery: DiscoveryReport
     analyses: list[InvestmentThesis] = Field(default_factory=list)
     recommendation_summary: str = ""
+
+
+class DiscoveryProposalResult(BaseModel):
+    discovery: DiscoveryReport
+    tickers_selected: list[str] = Field(default_factory=list)
+    proposal: InvestmentProposal
+    watchlist_added: list[str] = Field(default_factory=list)
+    summary: str = ""

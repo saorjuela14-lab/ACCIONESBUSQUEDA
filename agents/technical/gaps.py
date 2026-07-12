@@ -133,3 +133,9 @@ GAP_TIMEFRAME_CONFIG: list[tuple[str, str, str, float, str | None]] = [
     ("30m", "1mo", "30m", 0.1, None),
     ("15m", "5d", "15m", 0.08, None),
 ]
+
+GAP_TIMEFRAME_BY_LABEL: dict[str, tuple[str, str, str, float, str | None]] = {
+    cfg[0]: cfg for cfg in GAP_TIMEFRAME_CONFIG
+}
+
+VALID_CHART_TIMEFRAMES = list(GAP_TIMEFRAME_BY_LABEL.keys())

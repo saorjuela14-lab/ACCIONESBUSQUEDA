@@ -283,6 +283,7 @@ body.modal-open { overflow: hidden; }
 .trade-rec-card .tr-btns .btn { font-size: 10px; padding: 2px 6px; }
 
 .tech-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0.5rem 0; flex-wrap: wrap; }
+.tech-toolbar-controls { display: flex; gap: 6px; flex-wrap: wrap; }
 .tech-toolbar select { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 4px; font-size: 11px; }
 .tech-kpi-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 6px; margin-bottom: 0.5rem; }
 .tech-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }

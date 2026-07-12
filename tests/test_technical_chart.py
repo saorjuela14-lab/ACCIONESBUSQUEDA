@@ -47,3 +47,30 @@ async def test_technical_chart_insufficient_data():
 
     assert data.points == []
     assert "insuficientes" in data.summary.lower()
+
+
+@pytest.mark.asyncio
+async def test_technical_chart_intraday_timeframe():
+    market = MagicMock()
+    hourly = _ohlcv(60)
+    hourly.index = pd.date_range("2025-01-02 09:30", periods=60, freq="h")
+    market.get_history = AsyncMock(return_value=hourly)
+
+    svc = TechnicalChartService(market)
+    data = await svc.build("AAPL", chart_timeframe="1H")
+
+    assert data.chart_timeframe == "1H"
+    assert len(data.points) >= 20
+    assert " " in data.points[0].date
+    assert data.gaps is not None
+
+
+@pytest.mark.asyncio
+async def test_technical_chart_invalid_timeframe_defaults_daily():
+    market = MagicMock()
+    market.get_history = AsyncMock(return_value=_ohlcv())
+
+    svc = TechnicalChartService(market)
+    data = await svc.build("AAPL", chart_timeframe="INVALID")
+
+    assert data.chart_timeframe == "1D"
