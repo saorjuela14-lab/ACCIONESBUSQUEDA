@@ -2,7 +2,14 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#060a0f" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="NexBuy" />
+  <link rel="manifest" href="/dashboard/static/manifest.json" />
+  <link rel="icon" href="/dashboard/static/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/dashboard/static/icon.svg" />
   <title>NexBuy CEO Terminal</title>
   <link rel="stylesheet" href="/dashboard/static/styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -183,8 +190,20 @@
     </div>
 
     <footer class="term-footer" id="provider-health">Providers: —</footer>
+
+    <nav class="mobile-nav" id="mobile-nav" aria-label="Navegación móvil">
+      <button type="button" data-scroll="ceo-bar" class="mob-nav-btn active">Inicio</button>
+      <button type="button" data-scroll="watchlist-matrix" class="mob-nav-btn">Matrix</button>
+      <button type="button" id="mob-analyze" class="mob-nav-btn primary">Analizar</button>
+      <button type="button" data-tab="proposal" class="mob-nav-btn">Propuesta</button>
+      <button type="button" data-scroll="portfolio-panel" class="mob-nav-btn">Portfolio</button>
+    </nav>
   </div>
   <div id="toast" class="toast hidden"></div>
   <script src="/dashboard/static/app.js"></script>
-</body>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/dashboard/static/sw.js").catch(() => {});
+    }
+  </script>
 </html>

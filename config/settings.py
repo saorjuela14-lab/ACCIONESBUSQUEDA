@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     news_api_key: str = ""
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
+    dashboard_access_token: str = ""
+    public_base_url: str = ""
 
     # Provider rate limits (free tiers)
     polygon_daily_limit: int = 1000

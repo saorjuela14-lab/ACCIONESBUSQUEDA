@@ -133,3 +133,56 @@ body { background: var(--bg); color: var(--text); font-size: 13px; }
 }
 .toast { position: fixed; bottom: 1rem; right: 1rem; background: var(--panel); border: 1px solid var(--border); padding: 0.75rem; border-radius: 6px; z-index: 100; }
 .toast.hidden { display: none; }
+
+/* Login */
+.login-page { display: grid; place-items: center; min-height: 100vh; padding: 1rem; }
+.login-card {
+  width: 100%; max-width: 360px; background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 1.5rem;
+}
+.login-card label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 4px; }
+.login-card input {
+  width: 100%; background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); padding: 0.65rem; border-radius: 6px; font-size: 16px;
+}
+.login-error { color: var(--red); font-size: 12px; margin-top: 0.5rem; }
+.login-error.hidden { display: none; }
+
+/* Mobile bottom nav */
+.mobile-nav {
+  display: none; position: fixed; bottom: 0; left: 0; right: 0; z-index: 60;
+  background: var(--surface); border-top: 1px solid var(--border);
+  padding: 0.35rem 0.25rem calc(0.35rem + env(safe-area-inset-bottom));
+  grid-template-columns: repeat(5, 1fr); gap: 2px;
+}
+.mob-nav-btn {
+  background: transparent; border: none; color: var(--muted);
+  font-size: 10px; padding: 0.5rem 0.25rem; border-radius: 6px; cursor: pointer;
+  min-height: 44px;
+}
+.mob-nav-btn.primary { color: var(--accent); font-weight: 700; }
+.mob-nav-btn.active { color: var(--text); background: var(--panel); }
+
+@media (max-width: 900px) {
+  .term-header { flex-wrap: wrap; gap: 0.5rem; }
+  .regime { order: 3; width: 100%; text-align: left; font-size: 12px; }
+  .header-actions { flex: 1; flex-wrap: wrap; }
+  .header-actions input { flex: 1; min-width: 70px; font-size: 16px; }
+  .btn { min-height: 44px; padding: 0.5rem 0.85rem; }
+  .ceo-bar { grid-template-columns: repeat(2, 1fr); }
+  .term-grid { grid-template-columns: 1fr; }
+  .col-left { order: 3; }
+  .col-right { order: 2; }
+  .col-center { order: 1; }
+  .metrics-row { grid-template-columns: repeat(2, 1fr); }
+  .tab-bar { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+  .tab { flex-shrink: 0; min-height: 40px; }
+  .matrix-table { font-size: 11px; }
+  .matrix-table th, .matrix-table td { padding: 8px 6px; }
+  .graph-canvas { height: 220px; }
+  .chart-box { height: 180px; }
+  .term-footer { padding-bottom: calc(3.5rem + env(safe-area-inset-bottom)); }
+  .mobile-nav { display: grid; }
+  .toast { bottom: calc(4rem + env(safe-area-inset-bottom)); left: 1rem; right: 1rem; }
+  .briefing-panel, .panel { margin-left: 0.35rem; margin-right: 0.35rem; }
+}

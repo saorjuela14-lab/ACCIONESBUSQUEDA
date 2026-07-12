@@ -5,11 +5,12 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apis.routes import alerts, analysis, correlations, dashboard, graph, health, market, portfolio, proposal, providers, reports, sentiment, watchlist
+from apis.middleware.access_auth import AccessTokenMiddleware
+from apis.routes import alerts, analysis, auth, correlations, dashboard, graph, health, market, portfolio, proposal, providers, reports, sentiment, watchlist
 from config.settings import get_settings
 from database.engine import get_session, init_db
 from orchestration.container import Container, bootstrap
@@ -55,16 +56,26 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(AccessTokenMiddleware)
 
     dashboard_dir = Path(__file__).resolve().parent.parent / "dashboard"
     if dashboard_dir.exists():
         app.mount("/dashboard/static", StaticFiles(directory=dashboard_dir), name="dashboard-static")
 
+        @app.get("/")
+        async def root():
+            return RedirectResponse(url="/dashboard")
+
         @app.get("/dashboard")
         async def dashboard_index():
             return FileResponse(dashboard_dir / "index.html")
 
+        @app.get("/login")
+        async def login_page():
+            return FileResponse(dashboard_dir / "login.html")
+
     app.include_router(health.router, tags=["health"])
+    app.include_router(auth.router, prefix="/api/v1", tags=["auth"])
     app.include_router(analysis.router, prefix="/api/v1", tags=["analysis"])
     app.include_router(watchlist.router, prefix="/api/v1", tags=["watchlist"])
     app.include_router(portfolio.router, prefix="/api/v1", tags=["portfolio"])

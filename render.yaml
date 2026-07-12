@@ -1,0 +1,25 @@
+# Render.com — despliegue público (celular + PC)
+# https://render.com → New Web Service → conectar repo
+services:
+  - type: web
+    name: nexbuy-ceo
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: DATABASE_URL
+        value: sqlite+aiosqlite:///./data/nexbuy.db
+      - key: SCHEDULER_ENABLED
+        value: "true"
+      - key: DASHBOARD_ACCESS_TOKEN
+        generateValue: true
+      - key: POLYGON_API_KEY
+        sync: false
+      - key: FRED_API_KEY
+        sync: false
+      - key: ALPHA_VANTAGE_API_KEY
+        sync: false

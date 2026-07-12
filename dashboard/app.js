@@ -7,6 +7,53 @@ const charts = {};
 let lastProposal = null;
 let lastPortfolioId = null;
 
+function authHeaders() {
+  const token = localStorage.getItem("nexbuy_token");
+  const h = { "Content-Type": "application/json" };
+  if (token) h.Authorization = `Bearer ${token}`;
+  return h;
+}
+
+async function ensureAuth() {
+  try {
+    const s = await fetch(`${API}/auth/status`).then((r) => r.json());
+    if (!s.auth_required) return;
+    const token = localStorage.getItem("nexbuy_token");
+    if (!token) {
+      location.href = "/login";
+      return;
+    }
+    const check = await fetch(`${API}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    if (!check.ok) {
+      localStorage.removeItem("nexbuy_token");
+      location.href = "/login";
+    }
+  } catch {
+    /* offline / dev */
+  }
+}
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, {
+    ...opts,
+    headers: { ...authHeaders(), ...opts.headers },
+  });
+  if (r.status === 401) {
+    localStorage.removeItem("nexbuy_token");
+    location.href = "/login";
+    throw new Error("Sesión expirada");
+  }
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
 function toast(msg, ms = 3500) {
   const t = $("#toast");
   t.textContent = msg;
@@ -14,13 +61,28 @@ function toast(msg, ms = 3500) {
   setTimeout(() => t.classList.add("hidden"), ms);
 }
 
-async function api(path, opts = {}) {
-  const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
-  if (!r.ok) {
-    const err = await r.json().catch(() => ({}));
-    throw new Error(err.detail || r.statusText);
-  }
-  return r.json();
+function setupMobileNav() {
+  $$(".mob-nav-btn[data-scroll]").forEach((btn) => {
+    btn.onclick = () => {
+      const id = btn.dataset.scroll;
+      const el = id === "watchlist-matrix" ? document.querySelector(".matrix-table")?.closest(".panel") : document.getElementById(id);
+      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+      $$(".mob-nav-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+    };
+  });
+  $("#mob-analyze")?.addEventListener("click", () => {
+    $("#global-ticker")?.focus();
+    runAnalyze();
+  });
+  $$(".mob-nav-btn[data-tab]").forEach((btn) => {
+    btn.onclick = () => {
+      const tab = btn.dataset.tab;
+      const tabBtn = document.querySelector(`.tab[data-tab="${tab}"]`);
+      tabBtn?.click();
+      tabBtn?.closest(".panel")?.scrollIntoView({ behavior: "smooth" });
+    };
+  });
 }
 
 function ticker() { return ($("#global-ticker").value || "VRT").trim().toUpperCase(); }
@@ -594,5 +656,12 @@ $("#btn-create-portfolio").onclick = createPortfolio;
 $("#btn-scan").onclick = scanWatchlist;
 $("#btn-shock").onclick = simulateShock;
 
-loadDashboard();
-setInterval(loadDashboard, REFRESH_MS);
+(async () => {
+  await ensureAuth();
+  setupMobileNav();
+  const t = localStorage.getItem("nexbuy_token");
+  const exportBtn = $("#btn-export-briefing");
+  if (exportBtn && t) exportBtn.href = `${API}/reports/daily/latest/export?token=${encodeURIComponent(t)}`;
+  loadDashboard();
+  setInterval(loadDashboard, REFRESH_MS);
+})();
