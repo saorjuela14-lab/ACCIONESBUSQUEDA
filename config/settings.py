@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     app_env: Literal["development", "staging", "production"] = "development"
     log_level: str = "INFO"
     api_host: str = "0.0.0.0"
-    api_port: int = 8000
+    api_port: int = Field(default=8000, validation_alias=AliasChoices("API_PORT", "PORT"))
 
     database_url: str = "sqlite+aiosqlite:///./data/nexbuy.db"
     redis_url: str = "redis://localhost:6379/0"

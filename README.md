@@ -1,3 +1,13 @@
+---
+title: NexBuy CEO Dashboard
+emoji: 📊
+colorFrom: blue
+colorTo: gray
+sdk: docker
+app_port: 8000
+pinned: false
+---
+
 # NexBuy Investment Committee AI
 
 Professional multi-agent investment research, portfolio management, and thesis generation platform.
@@ -115,26 +125,40 @@ Evidence Agents → Alert Engine → Investment Director → Investment Memory
 
 Flujo recomendado: **GitHub como fuente única** — escribes los cambios en Cursor (Cloud Agent), el código vive en el repo; no necesitas clonar en tu PC.
 
-### 1. Desplegar en Render (una sola vez)
+### 1. Desplegar en Hugging Face Spaces (gratis, sin tarjeta)
 
-1. Entra en [render.com](https://render.com) e inicia sesión con GitHub.
-2. **New → Blueprint** (o Web Service) y conecta el repo `saorjuela14-lab/ACCIONESBUSQUEDA`.
-3. Render detectará `render.yaml` y creará el servicio `nexbuy-ceo`.
-4. En **Environment** del servicio, añade la variable (no va en el repo porque es público):
+[Hugging Face Spaces](https://huggingface.co/spaces) ofrece hosting Docker **sin pedir tarjeta de crédito** en el plan gratuito (CPU Basic).
 
-   | Variable | Valor |
-   |----------|--------|
+1. Crea cuenta en [huggingface.co/join](https://huggingface.co/join) (gratis, sin tarjeta).
+2. Ve a [huggingface.co/spaces/new](https://huggingface.co/spaces/new):
+   - **Space name:** `nexbuy-ceo` (o el que prefieras)
+   - **License:** MIT
+   - **SDK:** Docker
+   - **Visibility:** Public
+3. En el Space recién creado → **Settings** → **Repository** → **Link to GitHub** → selecciona `saorjuela14-lab/ACCIONESBUSQUEDA` y rama `main`.
+4. En **Settings → Variables and secrets** → **Secrets**, añade:
+
+   | Secret | Valor |
+   |--------|--------|
    | `DASHBOARD_ACCESS_TOKEN` | `Portafolio111` |
 
-5. Opcional: añade `FRED_API_KEY`, `POLYGON_API_KEY`, `ALPHA_VANTAGE_API_KEY` cuando las tengas.
-6. Tras el deploy, copia la URL pública (ej. `https://nexbuy-ceo.onrender.com`).
+5. Opcional (cuando tengas keys): `FRED_API_KEY`, `POLYGON_API_KEY`, `ALPHA_VANTAGE_API_KEY`.
+6. El Space construye el `Dockerfile` automáticamente. La URL será algo como:
+
+   `https://huggingface.co/spaces/TU_USUARIO/nexbuy-ceo`
+
+   La app responde en la URL pública del Space (botón **"Open app"**).
+
+> **Nota:** En el plan gratuito el Space puede dormir tras inactividad (~1 min al despertar). La base SQLite es efímera: se reinicia en cada rebuild del Space.
 
 ### 2. Acceder al panel
 
 | URL | Uso |
 |-----|-----|
-| `https://TU-APP.onrender.com/login` | Pantalla de acceso |
-| `https://TU-APP.onrender.com/dashboard` | Panel CEO (PWA, móvil y escritorio) |
+| `https://TU-USUARIO-nexbuy-ceo.hf.space/login` | Pantalla de acceso |
+| `https://TU-USUARIO-nexbuy-ceo.hf.space/dashboard` | Panel CEO (PWA, móvil y escritorio) |
+
+(La URL exacta aparece al pulsar **Open app** en tu Space.)
 
 - Token de acceso: **`Portafolio111`**
 - En el celular: abre `/login`, entra con el token y usa **Añadir a pantalla de inicio** (PWA).
@@ -142,12 +166,12 @@ Flujo recomendado: **GitHub como fuente única** — escribes los cambios en Cur
 ### 3. Cómo pedir cambios sin PC local
 
 1. Escribe aquí en Cursor lo que quieres (watchlist, UI, nuevas fases).
-2. El agente hace commit → push a una rama `cursor/...` → PR → merge a `main`.
-3. Si configuraste el deploy hook de Render, cada push a `main` actualiza el panel online en unos minutos.
+2. El agente hace commit → push a `main` en GitHub.
+3. Hugging Face reconstruye el Space automáticamente (si está vinculado al repo).
 
-### Auto-deploy (opcional)
+### Alternativa: Koyeb (también sin tarjeta en plan Starter)
 
-En Render: **Settings → Deploy Hook** → copia la URL. En GitHub: **Settings → Secrets → Actions** → `RENDER_DEPLOY_HOOK_URL`. El workflow `.github/workflows/deploy-render.yml` dispara el redeploy en cada push a `main`.
+Si prefieres otra opción: [koyeb.com](https://www.koyeb.com) — plan gratuito, conecta el mismo repo GitHub, tipo **Web Service** con `Dockerfile`, y añade `DASHBOARD_ACCESS_TOKEN=Portafolio111` en variables de entorno.
 
 ## Disclaimer
 

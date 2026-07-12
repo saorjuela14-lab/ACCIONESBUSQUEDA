@@ -1,0 +1,16 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.egg-info
+reports/output/thesis_*.json
+nexbuy_investment_committee.egg-info
+logs/*
+!logs/.gitkeep
+ANALISIS_PRUEBA_MERCADO_V2.ipynb
