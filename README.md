@@ -18,7 +18,7 @@ Professional multi-agent investment research, portfolio management, and thesis g
 - **14 specialized agents** delivering structured evidence (never buy/sell decisions)
 - **Investment Director** consolidates all reports into auditable investment theses
 - **FastAPI** REST API, **APScheduler** for automated market reports
-- **SQLite** en producción (Zeabur). Sin PostgreSQL ni Redis en el despliegue online.
+- **SQLite** en producción (Railway). Sin PostgreSQL ni Redis en el despliegue online.
 
 ## Fase 2 — Integraciones de datos
 
@@ -123,16 +123,15 @@ Evidence Agents → Alert Engine → Investment Director → Investment Memory
 
 Flujo recomendado: **GitHub como fuente única** — escribes los cambios en Cursor (Cloud Agent), el código vive en el repo; no necesitas clonar en tu PC.
 
-### Desplegar en Zeabur (recomendado — gratis, sin tarjeta)
+### Desplegar en Railway (recomendado — sin tarjeta)
 
-[Zeabur](https://zeabur.com) ofrece plan gratuito **sin pedir tarjeta de crédito**. Conecta GitHub y despliega FastAPI automáticamente.
+[Railway](https://railway.com) permite registrarse **sin tarjeta de crédito**, con $5 de crédito de prueba (30 días) y luego **$1/mes gratis** para una app pequeña.
 
-1. Crea cuenta en [zeabur.com](https://zeabur.com) → **Sign up with GitHub**
-2. En el primer proyecto puede pedir verificación (teléfono o créditos prepago) — **no exige tarjeta** en el plan Free
-3. **Create Project** → **Add Service** → **GitHub**
-4. Autoriza GitHub y selecciona el repo `saorjuela14-lab/ACCIONESBUSQUEDA`, rama **`main`**
-5. Zeabur detecta Python/FastAPI y usa `requirements.txt` + `zbpack.json`
-6. Pestaña **Variables** → añade:
+1. Entra en **[railway.com](https://railway.com)** → **Login** → **GitHub**
+2. **New Project** → **Deploy from GitHub repo**
+3. Selecciona `saorjuela14-lab/ACCIONESBUSQUEDA` (rama `main`)
+4. Railway detecta el `Dockerfile` y construye solo
+5. En el servicio → **Variables**, añade:
 
    | Variable | Valor |
    |----------|--------|
@@ -142,17 +141,17 @@ Flujo recomendado: **GitHub como fuente única** — escribes los cambios en Cur
    | `APP_ENV` | `production` |
    | `SCHEDULER_ENABLED` | `true` |
 
-7. Pestaña **Networking** → **Generate Domain** (URL tipo `https://nexbuy-ceo.zeabur.app`)
-8. Pulsa **Deploy** (o redeploy si ya estaba conectado)
+6. **Settings** → **Networking** → **Generate Domain** (URL tipo `https://nexbuy-ceo.up.railway.app`)
+7. Cada push a `main` redeploya automáticamente si activaste GitHub deploy
 
-> **Nota:** En plan Free el servicio puede dormir tras inactividad (~5–15 s al despertar). SQLite es local al contenedor; los datos se reinician en redeploys mayores.
+> **No añadas** PostgreSQL ni Redis en Railway — la app usa SQLite + memoria.
 
 ### Acceder al panel
 
 | URL | Uso |
 |-----|-----|
-| `https://TU-APP.zeabur.app/login` | Pantalla de acceso |
-| `https://TU-APP.zeabur.app/dashboard` | Panel CEO (PWA, móvil y escritorio) |
+| `https://TU-APP.up.railway.app/login` | Pantalla de acceso |
+| `https://TU-APP.up.railway.app/dashboard` | Panel CEO (PWA, móvil y escritorio) |
 
 - Token de acceso: **`Portafolio111`**
 - En el celular: abre `/login`, entra con el token y usa **Añadir a pantalla de inicio** (PWA).
@@ -161,14 +160,15 @@ Flujo recomendado: **GitHub como fuente única** — escribes los cambios en Cur
 
 1. Escribe aquí en Cursor lo que quieres (watchlist, UI, nuevas fases).
 2. El agente hace commit → push a `main` en GitHub.
-3. Zeabur reconstruye y publica solo (auto-deploy en cada push).
+3. Railway reconstruye y publica solo.
 
-### Otras plataformas (referencia)
+### Otras plataformas (por qué no usamos)
 
-| Plataforma | Motivo para no usarla aquí |
-|------------|----------------------------|
+| Plataforma | Motivo |
+|------------|--------|
+| **Zeabur** | Desde mar 2026 **obliga a comprar servidor** (AWS/Hetzner…) — ya no hay cluster gratis |
 | Render | Pide tarjeta de crédito |
-| Hugging Face Spaces Docker | Requiere plan PRO |
+| Hugging Face Docker | Requiere plan PRO |
 | SnapDeploy | Pide add-ons PostgreSQL/Redis de pago |
 
 ## Disclaimer
