@@ -92,6 +92,20 @@ class TechnicalChartPoint(BaseModel):
     macd_hist: float | None = None
 
 
+class PriceGap(BaseModel):
+    timeframe: str
+    date: str
+    gap_type: str  # gap_up | gap_down
+    gap_top: float
+    gap_bottom: float
+    gap_size_pct: float
+    gap_size_abs: float
+    fill_target: float
+    filled: bool = False
+    filled_date: str | None = None
+    note: str = ""
+
+
 class TechnicalSnapshot(BaseModel):
     price: float | None = None
     rsi: float | None = None
@@ -117,6 +131,9 @@ class TechnicalChartData(BaseModel):
     snapshot: TechnicalSnapshot | None = None
     trade_levels: dict = Field(default_factory=dict)
     summary: str = ""
+    gaps: list[PriceGap] = Field(default_factory=list)
+    gaps_by_timeframe: dict[str, list[PriceGap]] = Field(default_factory=dict)
+    unfilled_gaps: list[PriceGap] = Field(default_factory=list)
 
 
 class PortfolioHistoryPoint(BaseModel):

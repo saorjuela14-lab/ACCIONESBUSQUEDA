@@ -597,6 +597,88 @@ function renderTechnicalKpis(snap) {
     : "—";
 }
 
+function renderGapHighlights(candleSeries, gaps) {
+  if (!gaps?.length) return;
+  const markers = [];
+  gaps.forEach((g) => {
+    const time = (g.date || "").slice(0, 10);
+    if (!time) return;
+    const isOpen = !g.filled;
+    const color = isOpen
+      ? (g.gap_type === "gap_up" ? "#f59e0b" : "#a855f7")
+      : "rgba(100,116,139,0.6)";
+    if (isOpen) {
+      candleSeries.createPriceLine({
+        price: g.gap_top,
+        color: "rgba(251,191,36,0.85)",
+        lineWidth: 1,
+        lineStyle: 2,
+        axisLabelVisible: true,
+        title: `Gap ${g.gap_size_pct}%`,
+      });
+      candleSeries.createPriceLine({
+        price: g.gap_bottom,
+        color: "rgba(251,191,36,0.85)",
+        lineWidth: 1,
+        lineStyle: 2,
+        title: `Fill → $${g.fill_target}`,
+      });
+    }
+    markers.push({
+      time,
+      position: g.gap_type === "gap_up" ? "belowBar" : "aboveBar",
+      color,
+      shape: g.gap_type === "gap_up" ? "arrowUp" : "arrowDown",
+      text: isOpen ? `Gap ${g.gap_size_pct}%` : "✓",
+    });
+  });
+  if (markers.length) candleSeries.setMarkers(markers);
+}
+
+let lastGapData = null;
+let activeGapTf = "1D";
+
+function renderGapsPanel(data) {
+  lastGapData = data;
+  const gapsByTf = data?.gaps_by_timeframe || {};
+  const tfs = Object.keys(gapsByTf);
+  const tabsEl = $("#gap-tf-tabs");
+  const listEl = $("#gap-list");
+
+  if (!tfs.length) {
+    tabsEl.innerHTML = "";
+    listEl.innerHTML = `<p class="muted" style="font-size:11px;margin:0">Sin gaps detectados en los horarios analizados.</p>`;
+    return;
+  }
+
+  if (!tfs.includes(activeGapTf)) activeGapTf = tfs[0];
+
+  tabsEl.innerHTML = tfs.map((tf) => {
+    const open = (gapsByTf[tf] || []).filter((g) => !g.filled).length;
+    return `<button type="button" class="gap-tf-tab ${tf === activeGapTf ? "active" : ""}" data-tf="${tf}">${tf}${open ? ` (${open})` : ""}</button>`;
+  }).join("");
+
+  $$(".gap-tf-tab").forEach((btn) => {
+    btn.onclick = () => {
+      activeGapTf = btn.dataset.tf;
+      renderGapsPanel(lastGapData);
+    };
+  });
+
+  const gaps = gapsByTf[activeGapTf] || [];
+  if (!gaps.length) {
+    listEl.innerHTML = `<p class="muted" style="font-size:11px;margin:0">Sin gaps en ${activeGapTf}.</p>`;
+    return;
+  }
+
+  listEl.innerHTML = gaps.map((g) => `
+    <div class="gap-item ${g.filled ? "filled" : "unfilled"}">
+      <span class="gap-dir ${g.gap_type === "gap_up" ? "up" : "down"}">${g.gap_type === "gap_up" ? "↑ ALC" : "↓ BAJ"}</span>
+      <span class="gap-zone">${g.date?.slice(0, 10) || g.date} · $${g.gap_bottom} – $${g.gap_top} · fill → <b>$${g.fill_target}</b> (${g.gap_size_pct}%)</span>
+      <span class="gap-status ${g.filled ? "closed" : "open"}">${g.filled ? "Cubierto" : "Abierto"}</span>
+    </div>`).join("");
+}
+
 async function loadTechnicalChart(t, techAgentReport) {
   const period = $("#tech-period")?.value || "6mo";
   try {
@@ -653,6 +735,9 @@ async function loadTechnicalChart(t, techAgentReport) {
     if (data.snapshot?.resistance) {
       candleSeries.createPriceLine({ price: data.snapshot.resistance, color: "#ef4444", lineWidth: 1, lineStyle: 2, title: "Resistencia" });
     }
+
+    renderGapHighlights(candleSeries, data.gaps || []);
+    renderGapsPanel(data);
 
     const volData = pts.filter((p) => p.volume != null).map((p) => ({
       time: p.date, value: p.volume,

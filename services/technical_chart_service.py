@@ -2,16 +2,27 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import numpy as np
 import pandas as pd
 
+from agents.technical.gaps import GAP_TIMEFRAME_CONFIG, detect_gaps, resample_ohlc
 from agents.technical.indicators import build_trade_levels, detect_support_resistance, enrich_indicators
-from domain.dashboard import TechnicalChartData, TechnicalChartPoint, TechnicalSnapshot
+from domain.dashboard import PriceGap, TechnicalChartData, TechnicalChartPoint, TechnicalSnapshot
 from providers.interfaces import MarketDataProvider
 from utils.logging import get_logger
 from utils.narrative_es import bias_label
 
 logger = get_logger(__name__)
+
+_PERIOD_MAP = {
+    "1mo": ("3mo", "1d"),
+    "3mo": ("6mo", "1d"),
+    "6mo": ("1y", "1d"),
+    "1y": ("2y", "1d"),
+    "2y": ("5y", "1d"),
+}
 
 
 class TechnicalChartService:
@@ -20,7 +31,8 @@ class TechnicalChartService:
 
     async def build(self, ticker: str, period: str = "6mo") -> TechnicalChartData:
         ticker = ticker.upper()
-        df = await self._market.get_history(ticker, period=period, interval="1d")
+        hist_period, interval = _PERIOD_MAP.get(period, ("1y", "1d"))
+        df = await self._market.get_history(ticker, period=hist_period, interval=interval)
 
         if df.empty or len(df) < 30:
             return TechnicalChartData(
@@ -104,7 +116,11 @@ class TechnicalChartService:
             risk_reward=trade_levels.get("risk_reward_ratio"),
         )
 
-        summary = self._build_summary(ticker, snapshot, bias)
+        gaps_by_tf = await self._scan_gaps_all_timeframes(ticker)
+        daily_gaps = gaps_by_tf.get("1D", [])
+        unfilled = [g for gaps in gaps_by_tf.values() for g in gaps if not g.filled]
+
+        summary = self._build_summary(ticker, snapshot, bias, unfilled)
 
         return TechnicalChartData(
             ticker=ticker,
@@ -113,7 +129,30 @@ class TechnicalChartService:
             snapshot=snapshot,
             trade_levels=trade_levels,
             summary=summary,
+            gaps=daily_gaps,
+            gaps_by_timeframe=gaps_by_tf,
+            unfilled_gaps=unfilled,
         )
+
+    async def _scan_gaps_all_timeframes(self, ticker: str) -> dict[str, list[PriceGap]]:
+        async def _scan_one(label: str, hist_period: str, interval: str, min_pct: float, resample: str | None):
+            try:
+                df = await self._market.get_history(ticker, period=hist_period, interval=interval)
+                if df.empty or len(df) < 5:
+                    return label, []
+                if resample:
+                    df = resample_ohlc(df, resample)
+                if len(df) < 2:
+                    return label, []
+                return label, detect_gaps(df, timeframe=label, min_gap_pct=min_pct, interval=interval)
+            except Exception as exc:
+                logger.warning("gaps.scan_failed", ticker=ticker, tf=label, error=str(exc))
+                return label, []
+
+        results = await asyncio.gather(
+            *[_scan_one(*cfg) for cfg in GAP_TIMEFRAME_CONFIG]
+        )
+        return {label: gaps for label, gaps in results}
 
     def _f(self, val) -> float | None:
         if val is None or (isinstance(val, float) and np.isnan(val)):
@@ -123,7 +162,13 @@ class TechnicalChartService:
         except (TypeError, ValueError):
             return None
 
-    def _build_summary(self, ticker: str, snap: TechnicalSnapshot, bias: str) -> str:
+    def _build_summary(
+        self,
+        ticker: str,
+        snap: TechnicalSnapshot,
+        bias: str,
+        unfilled: list[PriceGap],
+    ) -> str:
         parts = [
             f"Análisis técnico diario de {ticker}: sesgo {bias_label(bias)}.",
             f"Precio ${snap.price}, RSI {snap.rsi or 'N/D'}, MACD {'alcista' if snap.macd and snap.macd_signal and snap.macd > snap.macd_signal else 'bajista' if snap.macd and snap.macd_signal else 'N/D'}.",
@@ -131,5 +176,24 @@ class TechnicalChartService:
             f"Soporte ${snap.support}, resistencia ${snap.resistance}.",
         ]
         if snap.stop_loss and snap.take_profit_1:
-            parts.append(f"Stop ${snap.stop_loss}, objetivo ${snap.take_profit_1}" + (f" (R/R {snap.risk_reward}x)" if snap.risk_reward else "") + ".")
+            parts.append(
+                f"Stop ${snap.stop_loss}, objetivo ${snap.take_profit_1}"
+                + (f" (R/R {snap.risk_reward}x)" if snap.risk_reward else "")
+                + "."
+            )
+        open_gaps = [g for g in unfilled if not g.filled]
+        if open_gaps:
+            gap_lines = []
+            for g in open_gaps[:5]:
+                tf = g.timeframe
+                dir_es = "↑" if g.gap_type == "gap_up" else "↓"
+                gap_lines.append(
+                    f"{tf} {dir_es} ${g.gap_bottom}–${g.gap_top} (fill → ${g.fill_target})"
+                )
+            parts.append(
+                f"Gaps sin cubrir ({len(open_gaps)}): el mercado suele buscar fill. "
+                + "; ".join(gap_lines)
+                + ("…" if len(open_gaps) > 5 else "")
+                + "."
+            )
         return " ".join(parts)
