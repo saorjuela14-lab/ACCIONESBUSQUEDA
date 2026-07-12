@@ -260,6 +260,28 @@ body.modal-open { overflow: hidden; }
   background: rgba(59,130,246,0.2); color: var(--accent); margin-left: 6px;
 }
 
+.trade-recs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+.trade-rec-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 0.65rem; font-size: 12px;
+}
+.trade-rec-card .tr-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.trade-rec-card .tr-ticker { font-size: 15px; font-weight: 700; }
+.trade-rec-card .tr-action {
+  font-size: 10px; padding: 2px 6px; border-radius: 4px;
+  background: rgba(34,197,94,0.2); color: var(--green);
+}
+.trade-rec-card .tr-action.watch { background: rgba(245,158,11,0.2); color: #f59e0b; }
+.trade-rec-card .tr-levels { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; font-size: 10px; color: var(--muted); margin: 6px 0; }
+.trade-rec-card .tr-levels b { color: var(--text); }
+.trade-rec-card .tr-catalysts { font-size: 10px; color: var(--muted); line-height: 1.35; }
+.trade-rec-card .tr-btns { display: flex; gap: 4px; margin-top: 6px; }
+.trade-rec-card .tr-btns .btn { font-size: 10px; padding: 2px 6px; }
+
 .table-wrap { overflow-x: auto; }
 .matrix-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .matrix-table th { text-align: left; color: var(--muted); font-size: 10px; text-transform: uppercase; padding: 6px 8px; border-bottom: 1px solid var(--border); }

@@ -285,6 +285,80 @@ async function loadDailyBriefing() {
   }
 }
 
+function renderTradeRecommendations(r) {
+  $("#trade-recs-date").textContent = r.generated_at
+    ? new Date(r.generated_at).toLocaleString(LOCALE)
+    : "";
+  $("#trade-recs-summary").textContent = r.summary || "";
+  $("#trade-recs-disclaimer").textContent = r.disclaimer || "";
+
+  const picks = r.picks || [];
+  const grid = $("#trade-recs-grid");
+  if (!picks.length) {
+    grid.innerHTML = `<p class="muted">Sin setups de corto plazo hoy. Pulsa "Generar ahora" para buscar tendencias.</p>`;
+    return;
+  }
+
+  grid.innerHTML = picks.map((p) => `
+    <div class="trade-rec-card">
+      <div class="tr-head">
+        <span class="tr-ticker">${p.ticker}</span>
+        <span class="tr-action ${p.action === "vigilar" ? "watch" : ""}">${p.action} · ${p.horizon}</span>
+      </div>
+      <div style="font-size:10px;color:var(--muted)">${(p.company_name || "").slice(0, 32)}</div>
+      <div class="tr-levels">
+        <span>Precio: <b>$${p.current_price ?? "—"}</b></span>
+        <span>Objetivo: <b class="up">$${p.target_price ?? "—"}</b></span>
+        <span>Stop: <b class="down">$${p.stop_loss ?? "—"}</b></span>
+        <span>Retorno: <b>${p.expected_return_pct != null ? "+" + p.expected_return_pct + "%" : "—"}</b></span>
+        <span>Δ1d: ${p.change_1d_pct != null ? p.change_1d_pct + "%" : "—"}</span>
+        <span>Score: ${p.score} · ${(p.confidence * 100).toFixed(0)}%</span>
+      </div>
+      <div class="tr-catalysts">${(p.catalysts || []).slice(0, 2).join(" · ") || p.rationale?.slice(0, 100) || ""}</div>
+      <div class="tr-btns">
+        <button class="btn tr-analyze-btn" data-t="${p.ticker}">Analizar</button>
+        <button class="btn tr-add-btn" data-t="${p.ticker}">+ WL</button>
+      </div>
+    </div>`).join("");
+
+  $$(".tr-analyze-btn").forEach((btn) => {
+    btn.onclick = () => {
+      $("#global-ticker").value = btn.dataset.t;
+      runAnalyze();
+    };
+  });
+  $$(".tr-add-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      try {
+        await api(`${API}/watchlist`, { method: "POST", body: JSON.stringify({ ticker: btn.dataset.t }) });
+        toast(`${btn.dataset.t} agregado a watchlist`);
+        await loadDashboard();
+      } catch (e) { toast("Watchlist: " + e.message); }
+    };
+  });
+}
+
+async function loadDailyTradeRecommendations() {
+  try {
+    const r = await api(`${API}/recommendations/daily/latest`);
+    renderTradeRecommendations(r);
+  } catch {
+    $("#trade-recs-grid").innerHTML = `<p class="muted">Recomendaciones no disponibles. Pulsa "Generar ahora".</p>`;
+  }
+}
+
+async function generateDailyTrades() {
+  toast("Generando recomendaciones de corto plazo…");
+  try {
+    const r = await api(`${API}/recommendations/daily/generate`, {
+      method: "POST",
+      body: JSON.stringify({ session: "pre_market", max_picks: 8 }),
+    });
+    renderTradeRecommendations(r);
+    toast(`${(r.picks || []).length} recomendaciones listas`);
+  } catch (e) { toast("Recomendaciones: " + e.message); }
+}
+
 async function loadWatchlistMatrix() {
   try {
     const rows = await api(`${API}/dashboard/watchlist-matrix`);
@@ -483,7 +557,7 @@ async function loadDashboard() {
   try {
     const d = await api(`${API}/dashboard`);
     renderDashboard(d);
-    await Promise.all([loadDailyBriefing(), loadWatchlistMatrix()]);
+    await Promise.all([loadDailyBriefing(), loadDailyTradeRecommendations(), loadWatchlistMatrix()]);
   } catch (e) { toast("Panel: " + e.message); }
 }
 
@@ -1129,6 +1203,7 @@ $("#portfolio-modal-close").onclick = closePortfolioModal;
 $("#portfolio-modal-backdrop").onclick = closePortfolioModal;
 $("#btn-simulate-proposal").onclick = simulateDemoProposal;
 $("#btn-scan").onclick = scanWatchlist;
+$("#btn-generate-trades").onclick = generateDailyTrades;
 $("#btn-disc-research").onclick = runDiscoveryResearch;
 $("#btn-disc-analyze").onclick = runDiscoveryAnalyze;
 $("#btn-shock").onclick = simulateShock;

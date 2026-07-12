@@ -10,6 +10,7 @@ from agents.market_monitor import MarketMonitor
 from config.settings import get_settings
 from database.engine import get_session, init_db
 from database.repositories.alert_repository import AlertRepository
+from database.repositories.daily_trade_repository import DailyTradeRepository
 from database.repositories.investment_memory_repository import InvestmentMemoryRepository
 from database.repositories.report_repository import ReportRepository
 from database.repositories.watchlist_repository import WatchlistRepository
@@ -21,7 +22,9 @@ from providers.news.factory import get_news_provider
 from reports.writer import ReportWriter
 from services.alert_service import AlertService
 from services.daily_report_service import DailyReportService
+from services.daily_trade_recommendation_service import DailyTradeRecommendationService
 from services.memory_evaluation_service import MemoryEvaluationService
+from services.company_discovery_service import CompanyDiscoveryService
 from services.watchlist_monitor_service import WatchlistMonitorService
 from utils.logging import get_logger
 from utils.market_hours import should_run_automation
@@ -104,6 +107,28 @@ class SchedulerService:
             logger.info("scheduler.watchlist_scan", **{k: v for k, v in result.items() if k != "changes"})
             break
 
+    async def _run_daily_trade_recommendations(self, session_label: str) -> None:
+        if not should_run_automation():
+            logger.info("scheduler.skipped", job="daily_trade", reason="outside_automation_hours")
+            return
+
+        async for session in get_session():
+            market = get_market_provider()
+            discovery = CompanyDiscoveryService(market_provider=market)
+            service = DailyTradeRecommendationService(
+                market_provider=market,
+                discovery_service=discovery,
+                trade_repo=DailyTradeRepository(session),
+            )
+            report = await service.generate(session=session_label, persist=True)
+            logger.info(
+                "scheduler.daily_trade",
+                session=session_label,
+                picks=len(report.picks),
+                regime=report.market_regime,
+            )
+            break
+
     async def _run_daily_report(self) -> None:
         async for session in get_session():
             service = await self._build_daily_report_service(session)
@@ -130,6 +155,22 @@ class SchedulerService:
                 replace_existing=True,
             )
 
+        # Daily short-term trade recommendations at pre-market and mid-session
+        trade_session_map = {
+            "08:30": "pre_market",
+            "11:30": "mid_session",
+        }
+        for time_str in self._settings.daily_trade_schedule:
+            session_label = trade_session_map.get(time_str, "pre_market")
+            hour, minute = time_str.split(":")
+            self._scheduler.add_job(
+                self._run_daily_trade_recommendations,
+                CronTrigger(hour=int(hour), minute=int(minute)),
+                args=[session_label],
+                id=f"daily_trade_{time_str}",
+                replace_existing=True,
+            )
+
         # Daily investment report + memory evaluation at post-market (17:30)
         self._scheduler.add_job(
             self._run_daily_report,
@@ -150,6 +191,7 @@ class SchedulerService:
         logger.info(
             "scheduler.started",
             report_times=self._settings.report_schedule,
+            trade_times=self._settings.daily_trade_schedule,
             watchlist_interval=self._settings.watchlist_scan_interval_minutes,
         )
 
