@@ -118,25 +118,50 @@ class MarketDashboardService:
             logger.warning("dashboard.calendar.failed", error=str(exc))
             return []
 
+    @staticmethod
+    def _parse_yf_news_entry(entry: dict) -> NewsHighlight | None:
+        c = entry.get("content") or entry
+        title = c.get("title", "")
+        if not title:
+            return None
+        provider = c.get("provider")
+        source = provider.get("displayName", "Yahoo") if isinstance(provider, dict) else "Yahoo"
+        canonical = c.get("canonicalUrl")
+        url = canonical.get("url") if isinstance(canonical, dict) else c.get("link")
+        summary = (c.get("summary") or c.get("description") or "").strip() or None
+        published_at = c.get("pubDate") or c.get("displayTime")
+        thumbnail_url = None
+        thumb = c.get("thumbnail")
+        if isinstance(thumb, dict):
+            thumbnail_url = thumb.get("originalUrl")
+            if not thumbnail_url:
+                resolutions = thumb.get("resolutions") or []
+                if resolutions and isinstance(resolutions[0], dict):
+                    thumbnail_url = resolutions[0].get("url")
+        return NewsHighlight(
+            title=title,
+            source=source,
+            url=url,
+            summary=summary,
+            published_at=published_at,
+            thumbnail_url=thumbnail_url,
+            sentiment="neutral",
+        )
+
     async def _market_news(self) -> list[NewsHighlight]:
         highlights: list[NewsHighlight] = []
-        for sym in ("SPY", "QQQ"):
+        seen_titles: set[str] = set()
+        for sym in ("SPY", "QQQ", "IWM"):
             try:
-                for entry in (yf.Ticker(sym).news or [])[:3]:
-                    c = entry.get("content") or entry
-                    title = c.get("title", "")
-                    if not title:
+                for entry in (yf.Ticker(sym).news or [])[:5]:
+                    item = self._parse_yf_news_entry(entry)
+                    if not item or item.title in seen_titles:
                         continue
-                    highlights.append(
-                        NewsHighlight(
-                            title=title,
-                            source=c.get("provider", {}).get("displayName", "Yahoo") if isinstance(c.get("provider"), dict) else "Yahoo",
-                            sentiment="neutral",
-                        )
-                    )
+                    seen_titles.add(item.title)
+                    highlights.append(item)
             except Exception:
                 pass
-        return highlights[:8]
+        return highlights[:12]
 
     async def build(
         self,

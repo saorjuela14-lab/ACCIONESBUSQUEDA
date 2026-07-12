@@ -30,6 +30,9 @@ class NewsHighlight(BaseModel):
     title: str
     source: str
     url: str | None = None
+    summary: str | None = None
+    published_at: str | None = None
+    thumbnail_url: str | None = None
     sentiment: str = "neutral"
     tickers: list[str] = Field(default_factory=list)
 

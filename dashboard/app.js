@@ -6,6 +6,24 @@ const $$ = (s) => document.querySelectorAll(s);
 const charts = {};
 let lastProposal = null;
 let lastPortfolioId = null;
+let lastNewsItems = [];
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function fmtNewsDate(iso) {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleString("es", { dateStyle: "medium", timeStyle: "short" });
+  } catch {
+    return iso;
+  }
+}
 
 function authHeaders() {
   const token = localStorage.getItem("nexbuy_token");
@@ -244,6 +262,81 @@ function renderOpportunities(opps, risks) {
   $$(".opp-item").forEach((el) => el.onclick = () => { $("#global-ticker").value = el.dataset.t; runAnalyze(); });
 }
 
+function renderMarketNews(items) {
+  lastNewsItems = items || [];
+  const el = $("#market-news");
+  if (!lastNewsItems.length) {
+    el.innerHTML = '<p class="muted">Sin noticias disponibles.</p>';
+    return;
+  }
+  el.innerHTML = lastNewsItems.map((n, i) => {
+    const excerpt = (n.summary || n.title || "").slice(0, 140);
+    const thumb = n.thumbnail_url
+      ? `<img class="news-card-thumb" src="${escapeHtml(n.thumbnail_url)}" alt="" loading="lazy" />`
+      : `<div class="news-card-thumb placeholder">📰</div>`;
+    return `
+      <article class="news-card" data-news-idx="${i}" tabindex="0" role="button">
+        ${thumb}
+        <div class="news-card-body">
+          <div class="news-card-meta">
+            <span class="news-source">${escapeHtml(n.source)}</span>
+            ${n.published_at ? `<span class="news-date">${escapeHtml(fmtNewsDate(n.published_at))}</span>` : ""}
+          </div>
+          <h4 class="news-card-title">${escapeHtml(n.title)}</h4>
+          <p class="news-card-excerpt">${escapeHtml(excerpt)}${(n.summary || "").length > 140 ? "…" : ""}</p>
+        </div>
+      </article>`;
+  }).join("");
+  $$(".news-card").forEach((card) => {
+    const open = () => openNewsModal(Number(card.dataset.newsIdx));
+    card.onclick = open;
+    card.onkeydown = (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        open();
+      }
+    };
+  });
+}
+
+function openNewsModal(idx) {
+  const n = lastNewsItems[idx];
+  if (!n) return;
+  const modal = $("#news-modal");
+  const thumbWrap = $("#news-modal-thumb-wrap");
+  const thumb = $("#news-modal-thumb");
+  if (n.thumbnail_url) {
+    thumb.src = n.thumbnail_url;
+    thumb.alt = n.title;
+    thumbWrap.classList.remove("hidden");
+  } else {
+    thumbWrap.classList.add("hidden");
+  }
+  $("#news-modal-meta").innerHTML = `
+    <span class="news-source">${escapeHtml(n.source)}</span>
+    ${n.published_at ? `<span class="news-date">${escapeHtml(fmtNewsDate(n.published_at))}</span>` : ""}`;
+  $("#news-modal-title").textContent = n.title;
+  $("#news-modal-summary").textContent = n.summary || n.title;
+  const link = $("#news-modal-link");
+  if (n.url) {
+    link.href = n.url;
+    link.classList.remove("hidden");
+  } else {
+    link.href = "#";
+    link.classList.add("hidden");
+  }
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+}
+
+function closeNewsModal() {
+  const modal = $("#news-modal");
+  modal.classList.add("hidden");
+  modal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("modal-open");
+}
+
 function renderDashboard(d) {
   const regime = $("#market-regime");
   regime.textContent = `MARKET ${d.market_regime.toUpperCase()} (${d.market_regime_score >= 0 ? "+" : ""}${d.market_regime_score})`;
@@ -252,7 +345,7 @@ function renderDashboard(d) {
   renderIndices(d.indices || []);
   renderHeatmap(d.sector_heatmap || []);
   $("#econ-calendar").innerHTML = (d.economic_calendar || []).map((e) => `<div><b>${e.date}</b> ${e.title}</div>`).join("") || "—";
-  $("#market-news").innerHTML = (d.news_highlights || []).map((n) => `<div>${n.title}</div>`).join("") || "—";
+  renderMarketNews(d.news_highlights || []);
   $("#m-msent").textContent = fmtScore(d.market_sentiment_score);
   $("#watchlist").innerHTML = (d.watchlist || []).map((t) => `<div class="wl-item" data-t="${t}">${t}</div>`).join("") || "—";
   $$(".wl-item").forEach((el) => el.onclick = () => { $("#global-ticker").value = el.dataset.t; runAnalyze(); });
@@ -655,6 +748,12 @@ $("#btn-apply-proposal").onclick = applyProposal;
 $("#btn-create-portfolio").onclick = createPortfolio;
 $("#btn-scan").onclick = scanWatchlist;
 $("#btn-shock").onclick = simulateShock;
+
+$("#news-modal-close").onclick = closeNewsModal;
+$("#news-modal-backdrop").onclick = closeNewsModal;
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("#news-modal").classList.contains("hidden")) closeNewsModal();
+});
 
 (async () => {
   await ensureAuth();

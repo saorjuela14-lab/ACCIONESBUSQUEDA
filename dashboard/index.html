@@ -67,6 +67,14 @@
       </div>
     </section>
 
+    <section class="panel news-panel">
+      <div class="panel-head">
+        <h3>Market News</h3>
+        <span class="muted">Clic en una noticia para ver el resumen completo</span>
+      </div>
+      <div id="market-news" class="news-grid"></div>
+    </section>
+
     <div class="term-grid">
       <aside class="col-left">
         <div class="panel">
@@ -76,10 +84,6 @@
         <div class="panel">
           <h3>Economic Calendar</h3>
           <div id="econ-calendar" class="scroll-list"></div>
-        </div>
-        <div class="panel">
-          <h3>Market News</h3>
-          <div id="market-news" class="scroll-list"></div>
         </div>
       </aside>
 
@@ -200,6 +204,23 @@
     </nav>
   </div>
   <div id="toast" class="toast hidden"></div>
+
+  <div id="news-modal" class="news-modal hidden" aria-hidden="true">
+    <div class="news-modal-backdrop" id="news-modal-backdrop"></div>
+    <div class="news-modal-dialog" role="dialog" aria-labelledby="news-modal-title">
+      <button type="button" class="news-modal-close" id="news-modal-close" aria-label="Cerrar">×</button>
+      <div id="news-modal-thumb-wrap" class="news-modal-thumb-wrap hidden">
+        <img id="news-modal-thumb" class="news-modal-thumb" alt="" />
+      </div>
+      <div class="news-modal-meta" id="news-modal-meta"></div>
+      <h2 id="news-modal-title" class="news-modal-title"></h2>
+      <div id="news-modal-summary" class="news-modal-summary"></div>
+      <div class="news-modal-actions">
+        <a id="news-modal-link" class="btn primary" href="#" target="_blank" rel="noopener noreferrer">Leer artículo completo</a>
+      </div>
+    </div>
+  </div>
+
   <script src="/dashboard/static/app.js"></script>
   <script>
     if ("serviceWorker" in navigator) {
