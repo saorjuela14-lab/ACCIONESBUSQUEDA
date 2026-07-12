@@ -1,8 +1,0 @@
-[build]
-builder = "dockerfile"
-dockerfilePath = "Dockerfile"
-
-[deploy]
-startCommand = "python main.py serve"
-healthcheckPath = "/health"
-restartPolicyType = "ON_FAILURE"

@@ -1,0 +1,15 @@
+# Excluir del paquete de deploy (FastAPI Cloud respeta .gitignore y este archivo)
+reports/output/
+*.db
+.env
+.env.*
+!.env.example
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+logs/
+ANALISIS_PRUEBA_MERCADO_V2.ipynb
+.github/
+.k8s/

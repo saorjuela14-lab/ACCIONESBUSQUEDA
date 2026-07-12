@@ -1,0 +1,26 @@
+# Deploy opcional vía token (si no usas la integración GitHub del dashboard).
+# Requiere secrets: FASTAPI_CLOUD_TOKEN, FASTAPI_CLOUD_APP_ID
+name: Deploy to FastAPI Cloud
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    if: ${{ secrets.FASTAPI_CLOUD_TOKEN != '' && secrets.FASTAPI_CLOUD_APP_ID != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Deploy to FastAPI Cloud
+        run: uv run fastapi deploy --no-wait
+        env:
+          FASTAPI_CLOUD_TOKEN: ${{ secrets.FASTAPI_CLOUD_TOKEN }}
+          FASTAPI_CLOUD_APP_ID: ${{ secrets.FASTAPI_CLOUD_APP_ID }}
+          FASTAPI_CLOUD_LARGE_FILE_THRESHOLD: "50"

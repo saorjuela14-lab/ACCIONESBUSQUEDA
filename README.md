@@ -18,7 +18,7 @@ Professional multi-agent investment research, portfolio management, and thesis g
 - **14 specialized agents** delivering structured evidence (never buy/sell decisions)
 - **Investment Director** consolidates all reports into auditable investment theses
 - **FastAPI** REST API, **APScheduler** for automated market reports
-- **SQLite** en producción (Railway). Sin PostgreSQL ni Redis en el despliegue online.
+- **SQLite** en producción (FastAPI Cloud). Sin PostgreSQL ni Redis en el despliegue online.
 
 ## Fase 2 — Integraciones de datos
 
@@ -123,35 +123,52 @@ Evidence Agents → Alert Engine → Investment Director → Investment Memory
 
 Flujo recomendado: **GitHub como fuente única** — escribes los cambios en Cursor (Cloud Agent), el código vive en el repo; no necesitas clonar en tu PC.
 
-### Desplegar en Railway (recomendado — sin tarjeta)
+### Desplegar en FastAPI Cloud (recomendado — gratis, sin tarjeta)
 
-[Railway](https://railway.com) permite registrarse **sin tarjeta de crédito**, con $5 de crédito de prueba (30 días) y luego **$1/mes gratis** para una app pequeña.
+[FastAPI Cloud](https://fastapicloud.com) es la plataforma oficial del equipo FastAPI. Plan **Hobby gratis**, sin tarjeta, hasta 3 apps. Integración directa con GitHub.
 
-1. Entra en **[railway.com](https://railway.com)** → **Login** → **GitHub**
-2. **New Project** → **Deploy from GitHub repo**
-3. Selecciona `saorjuela14-lab/ACCIONESBUSQUEDA` (rama `main`)
-4. Railway detecta el `Dockerfile` y construye solo
-5. En el servicio → **Variables**, añade:
+#### Paso 1 — Crear cuenta (1 min)
 
-   | Variable | Valor |
-   |----------|--------|
-   | `DASHBOARD_ACCESS_TOKEN` | `Portafolio111` |
-   | `DATABASE_URL` | `sqlite+aiosqlite:///./data/nexbuy.db` |
-   | `REDIS_ENABLED` | `false` |
-   | `APP_ENV` | `production` |
-   | `SCHEDULER_ENABLED` | `true` |
+1. Entra en **[fastapicloud.com](https://fastapicloud.com)** → **Start free** / **Sign up**
+2. Inicia sesión con GitHub (recomendado)
 
-6. **Settings** → **Networking** → **Generate Domain** (URL tipo `https://nexbuy-ceo.up.railway.app`)
-7. Cada push a `main` redeploya automáticamente si activaste GitHub deploy
+#### Paso 2 — Conectar el repo (2 min)
 
-> **No añadas** PostgreSQL ni Redis en Railway — la app usa SQLite + memoria.
+1. Abre el [Dashboard](https://fastapicloud.com/dashboard)
+2. En tu team → **Create App** → **From GitHub**
+3. Instala la app **FastAPI Cloud** en GitHub si te lo pide
+4. Selecciona el repo **`saorjuela14-lab/ACCIONESBUSQUEDA`**
+5. Rama: **`main`** (deploy automático en cada push)
+6. Pulsa **Create App** y espera el primer build (~5–10 min)
+
+#### Paso 3 — Variables de entorno (1 min)
+
+En el dashboard de tu app → **Environment Variables** → añade:
+
+| Variable | Valor |
+|----------|--------|
+| `DASHBOARD_ACCESS_TOKEN` | `Portafolio111` |
+| `DATABASE_URL` | `sqlite+aiosqlite:///./data/nexbuy.db` |
+| `REDIS_ENABLED` | `false` |
+| `APP_ENV` | `production` |
+| `SCHEDULER_ENABLED` | `true` |
+
+Marca `DASHBOARD_ACCESS_TOKEN` como **Secret** si la opción existe. Pulsa **Redeploy** tras guardar.
+
+> **No añadas** PostgreSQL ni Redis — la app usa SQLite + caché en memoria.
+
+#### Paso 4 — URL pública
+
+Tras el deploy verás una URL tipo:
+
+`https://nexbuy-ceo.fastapicloud.dev`
 
 ### Acceder al panel
 
 | URL | Uso |
 |-----|-----|
-| `https://TU-APP.up.railway.app/login` | Pantalla de acceso |
-| `https://TU-APP.up.railway.app/dashboard` | Panel CEO (PWA, móvil y escritorio) |
+| `https://TU-APP.fastapicloud.dev/login` | Pantalla de acceso |
+| `https://TU-APP.fastapicloud.dev/dashboard` | Panel CEO (PWA, móvil y escritorio) |
 
 - Token de acceso: **`Portafolio111`**
 - En el celular: abre `/login`, entra con el token y usa **Añadir a pantalla de inicio** (PWA).
@@ -160,16 +177,27 @@ Flujo recomendado: **GitHub como fuente única** — escribes los cambios en Cur
 
 1. Escribe aquí en Cursor lo que quieres (watchlist, UI, nuevas fases).
 2. El agente hace commit → push a `main` en GitHub.
-3. Railway reconstruye y publica solo.
+3. FastAPI Cloud detecta el push y redeploya solo (integración GitHub).
 
-### Otras plataformas (por qué no usamos)
+### Deploy alternativo con GitHub Actions (opcional)
+
+Si prefieres token en lugar de la app de GitHub:
+
+1. Dashboard → tu app → **Deploy Tokens** → **Create Token**
+2. Copia el token y el **App ID**
+3. En GitHub → repo → **Settings → Secrets**:
+   - `FASTAPI_CLOUD_TOKEN`
+   - `FASTAPI_CLOUD_APP_ID`
+4. El workflow `.github/workflows/fastapi-cloud-deploy.yml` desplegará en cada push a `main`
+
+### Otras plataformas (referencia)
 
 | Plataforma | Motivo |
 |------------|--------|
-| **Zeabur** | Desde mar 2026 **obliga a comprar servidor** (AWS/Hetzner…) — ya no hay cluster gratis |
-| Render | Pide tarjeta de crédito |
-| Hugging Face Docker | Requiere plan PRO |
-| SnapDeploy | Pide add-ons PostgreSQL/Redis de pago |
+| Railway | Crédito limitado tras trial |
+| Zeabur | Obliga a comprar servidor |
+| Render | Pide tarjeta |
+| SnapDeploy | Pide add-ons PostgreSQL/Redis |
 
 ## Disclaimer
 
