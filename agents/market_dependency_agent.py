@@ -43,7 +43,7 @@ class MarketDependencyAgent(BaseAgent):
             findings.append(
                 Finding(
                     category=EvidenceCategory.FACT,
-                    statement=f"Correlation with {pair.ticker}: {pair.correlation:+.2f} — {pair.interpretation}",
+                    statement=f"Correlación con {pair.ticker}: {pair.correlation:+.2f} — {pair.interpretation}",
                     confidence=0.8,
                     references=[],
                 )
@@ -63,7 +63,7 @@ class MarketDependencyAgent(BaseAgent):
         findings.append(
             Finding(
                 category=EvidenceCategory.FACT,
-                statement=f"Emerging markets exposure: {report.emerging_market_exposure}",
+                statement=f"Exposición a mercados emergentes: {report.emerging_market_exposure}",
                 confidence=0.6,
                 references=[],
             )

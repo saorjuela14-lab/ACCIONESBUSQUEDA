@@ -4,6 +4,7 @@ from agents.base import BaseAgent
 from domain.enums import EvidenceCategory, InvestmentRecommendation, StrategyType, TimeHorizon
 from domain.reports import AgentReport, Finding, InvestmentThesis, ScenarioCase, StrategyConclusion
 from services.strategy_lab import StrategyLab
+from utils.narrative_es import agent_display_name, bias_label, recommendation_label
 
 
 class InvestmentDirector(BaseAgent):
@@ -50,7 +51,7 @@ class InvestmentDirector(BaseAgent):
                 ),
                 Finding(
                     category=EvidenceCategory.INTERPRETATION,
-                    statement=f"Recommendation: {thesis.recommendation.value.replace('_', ' ').upper()}",
+                    statement=f"Recomendación: {recommendation_label(thesis.recommendation)}",
                     confidence=thesis.confidence,
                     references=[],
                 ),
@@ -83,25 +84,25 @@ class InvestmentDirector(BaseAgent):
         bull_prob, base_prob, bear_prob = self._scenario_probabilities(weighted_score)
 
         bull = ScenarioCase(
-            name="Bull Case",
+            name="Escenario Alcista",
             probability=bull_prob,
             price_target=price_target * 1.2 if price_target else None,
-            thesis=self._build_case_narrative("bullish", reports, weighted_score),
+            thesis=self._build_case_narrative("alcista", reports, weighted_score),
             catalysts=[c.statement for c in all_catalysts[:3]],
             risks=[r.statement for r in all_risks[:2]],
             confidence=avg_confidence * 0.85,
         )
         bear = ScenarioCase(
-            name="Bear Case",
+            name="Escenario Bajista",
             probability=bear_prob,
             price_target=price_target * 0.8 if price_target else None,
-            thesis=self._build_case_narrative("bearish", reports, weighted_score),
+            thesis=self._build_case_narrative("bajista", reports, weighted_score),
             catalysts=[],
             risks=[r.statement for r in all_risks[:4]],
             confidence=avg_confidence * 0.85,
         )
         base = ScenarioCase(
-            name="Base Case",
+            name="Escenario Base",
             probability=base_prob,
             price_target=price_target,
             thesis=self._build_case_narrative("base", reports, weighted_score),
@@ -115,10 +116,10 @@ class InvestmentDirector(BaseAgent):
         return InvestmentThesis(
             ticker=ticker.upper(),
             executive_summary=(
-                f"Investment committee synthesis for {ticker.upper()}: "
-                f"weighted score {weighted_score:.1f}/100, "
-                f"recommendation {recommendation.value.replace('_', ' ').upper()} "
-                f"with {avg_confidence * 100:.0f}% confidence based on {len(reports)} agent reports."
+                f"Síntesis del comité de inversión para {ticker.upper()}: "
+                f"puntuación ponderada {weighted_score:.1f}/100, "
+                f"recomendación {recommendation_label(recommendation)} "
+                f"con {avg_confidence * 100:.0f}% de confianza basada en {len(reports)} informes de agentes."
             ),
             investment_thesis=self._build_thesis_narrative(reports, weighted_score, recommendation),
             bull_case=bull,
@@ -183,8 +184,10 @@ class InvestmentDirector(BaseAgent):
 
     def _build_case_narrative(self, case: str, reports: list[AgentReport], score: float) -> str:
         top_agents = sorted(reports, key=lambda r: abs(r.score), reverse=True)[:3]
-        evidence = "; ".join(f"{r.agent_name}: {r.summary[:80]}" for r in top_agents)
-        return f"{case.title()} scenario (score {score:.1f}) supported by: {evidence}"
+        evidence = "; ".join(
+            f"{agent_display_name(r.agent_name)}: {r.summary[:80]}" for r in top_agents
+        )
+        return f"Escenario {case} (puntuación {score:.1f}) respaldado por: {evidence}"
 
     def _build_thesis_narrative(
         self, reports: list[AgentReport], score: float, recommendation: InvestmentRecommendation
@@ -199,10 +202,10 @@ class InvestmentDirector(BaseAgent):
                     interpretations.append(finding.statement)
 
         return (
-            f"Committee recommends {recommendation.value.replace('_', ' ').upper()} "
-            f"with composite score {score:.1f}. "
-            f"Verified facts: {' | '.join(facts[:4]) or 'limited'}. "
-            f"Interpretations: {' | '.join(interpretations[:3]) or 'none'}."
+            f"El comité recomienda {recommendation_label(recommendation)} "
+            f"con puntuación compuesta {score:.1f}. "
+            f"Hechos verificados: {' | '.join(facts[:4]) or 'limitados'}. "
+            f"Interpretaciones: {' | '.join(interpretations[:3]) or 'ninguna'}."
         )
 
     def _collect_references(self, reports: list[AgentReport]) -> list:

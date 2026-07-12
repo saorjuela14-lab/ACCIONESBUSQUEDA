@@ -102,5 +102,5 @@ class CompanyRiskAgent(BaseAgent):
             opportunities=[],
             references=references,
             raw_data={"risk_keywords_detected": list(detected)},
-            summary=f"Company risk scan complete. {len(risks)} risk items, {len(detected)} keyword categories.",
+            summary=f"Escaneo de riesgo empresa completado. {len(risks)} ítems de riesgo, {len(detected)} categorías clave.",
         )

@@ -43,7 +43,7 @@ class MacroAgent(BaseAgent):
             findings.append(
                 Finding(
                     category=EvidenceCategory.FACT,
-                    statement=f"US CPI inflation (YoY): {value:.2f}% as of {cpi_yoy.get('date', 'N/A')}",
+                    statement=f"Inflación CPI EE.UU. (interanual): {value:.2f}% al {cpi_yoy.get('date', 'N/D')}",
                     confidence=0.95,
                     references=[ref],
                 )
@@ -52,7 +52,7 @@ class MacroAgent(BaseAgent):
                 risks.append(
                     Finding(
                         category=EvidenceCategory.RISK,
-                        statement="Elevated inflation may delay Fed rate cuts",
+                        statement="Inflación elevada puede retrasar recortes de tipos de la Fed",
                         confidence=0.8,
                         references=[ref],
                         impact=ImpactLevel.HIGH,
@@ -64,7 +64,7 @@ class MacroAgent(BaseAgent):
                 opportunities.append(
                     Finding(
                         category=EvidenceCategory.INTERPRETATION,
-                        statement="Inflation approaching Fed target supports dovish policy pivot",
+                        statement="Inflación acercándose al objetivo de la Fed apoya giro dovish",
                         confidence=0.7,
                         references=[ref],
                     )
@@ -90,7 +90,7 @@ class MacroAgent(BaseAgent):
             findings.append(
                 Finding(
                     category=EvidenceCategory.FACT,
-                    statement=f"Yield curve spread (10Y-2Y): {spread:.2f}%",
+                    statement=f"Spread curva de rendimiento (10A-2A): {spread:.2f}%",
                     confidence=0.95,
                     references=[ref],
                 )
@@ -99,7 +99,7 @@ class MacroAgent(BaseAgent):
                 risks.append(
                     Finding(
                         category=EvidenceCategory.RISK,
-                        statement="Inverted yield curve signals recession risk",
+                        statement="Curva de rendimiento invertida señala riesgo de recesión",
                         confidence=0.75,
                         references=[ref],
                         impact=ImpactLevel.HIGH,
@@ -117,7 +117,7 @@ class MacroAgent(BaseAgent):
             findings.append(
                 Finding(
                     category=EvidenceCategory.FACT,
-                    statement=f"M2 money supply: ${m2['value']:,.0f}B ({m2.get('change_pct', 0) or 0:+.2f}% vs prior)",
+                    statement=f"Oferta monetaria M2: ${m2['value']:,.0f}B ({m2.get('change_pct', 0) or 0:+.2f}% vs anterior)",
                     confidence=0.9,
                     references=[ref],
                 )
@@ -132,7 +132,7 @@ class MacroAgent(BaseAgent):
             findings.append(
                 Finding(
                     category=EvidenceCategory.FACT,
-                    statement=f"VIX at {value:.2f} ({vix.get('change_pct', 0):+.2f}% daily)",
+                    statement=f"VIX en {value:.2f} ({vix.get('change_pct', 0):+.2f}% diario)",
                     confidence=0.95,
                     references=[ref],
                 )
@@ -141,7 +141,7 @@ class MacroAgent(BaseAgent):
                 risks.append(
                     Finding(
                         category=EvidenceCategory.RISK,
-                        statement="Elevated VIX signals heightened market fear",
+                        statement="VIX elevado señala miedo elevado en el mercado",
                         confidence=0.8,
                         references=[ref],
                         impact=ImpactLevel.HIGH,
@@ -158,7 +158,7 @@ class MacroAgent(BaseAgent):
             findings.append(
                 Finding(
                     category=EvidenceCategory.FACT,
-                    statement=f"VIX (FRED) at {value:.2f}",
+                    statement=f"VIX (FRED) en {value:.2f}",
                     confidence=0.95,
                     references=[ref],
                 )
@@ -178,7 +178,7 @@ class MacroAgent(BaseAgent):
             findings.append(
                 Finding(
                     category=EvidenceCategory.FACT,
-                    statement=f"US 10Y yield at {val:.2f}%",
+                    statement=f"Rendimiento bonos EE.UU. 10A en {val:.2f}%",
                     confidence=0.95,
                     references=[ref],
                 )
@@ -189,7 +189,7 @@ class MacroAgent(BaseAgent):
                     risks.append(
                         Finding(
                             category=EvidenceCategory.INTERPRETATION,
-                            statement=f"Rising rates may pressure {sector} sector",
+                            statement=f"Subida de tipos puede presionar sector {sector}",
                             confidence=0.7,
                             references=[ref],
                             impact=ImpactLevel.MEDIUM,
@@ -217,7 +217,7 @@ class MacroAgent(BaseAgent):
             findings.append(
                 Finding(
                     category=EvidenceCategory.FACT if event.get("date") else EvidenceCategory.UNCERTAINTY,
-                    statement=f"Upcoming: {event.get('event')} on {event.get('date', 'TBD')} (impact: {event.get('impact')})",
+                    statement=f"Próximo: {event.get('event')} el {event.get('date', 'por definir')} (impacto: {event.get('impact')})",
                     confidence=0.85 if event.get("date") else 0.5,
                     references=[
                         Reference(
@@ -234,11 +234,11 @@ class MacroAgent(BaseAgent):
         fed_funds = fred_raw.get("FED_FUNDS")
         if fed_funds:
             rate = fed_funds["value"]
-            policy_stance = "restrictive" if rate > 3.0 else "accommodative" if rate < 2.0 else "neutral"
+            policy_stance = "restrictiva" if rate > 3.0 else "acomodaticia" if rate < 2.0 else "neutral"
             findings.append(
                 Finding(
                     category=EvidenceCategory.INTERPRETATION,
-                    statement=f"Monetary policy stance: {policy_stance} (Fed Funds at {rate:.2f}%)",
+                    statement=f"Postura de política monetaria: {policy_stance} (Fed Funds en {rate:.2f}%)",
                     confidence=0.8,
                     references=[Reference(source="fred", data_point="FEDFUNDS", value=rate)],
                 )
@@ -247,7 +247,7 @@ class MacroAgent(BaseAgent):
             findings.append(
                 Finding(
                     category=EvidenceCategory.UNCERTAINTY,
-                    statement="Fed Funds rate unavailable; configure FRED_API_KEY for verified policy data",
+                    statement="Tipo Fed Funds no disponible; configure FRED_API_KEY para datos verificados",
                     confidence=0.3,
                     references=[],
                 )
@@ -265,8 +265,8 @@ class MacroAgent(BaseAgent):
             references=references,
             raw_data={"indicators": indicators, "fred": fred_raw, "sector": sector},
             summary=(
-                f"Macro assessment for {ticker} ({sector}) using "
-                f"{'FRED + market data' if has_fred else 'market proxies only'}. Score: {score:.1f}."
+                f"Evaluación macro de {ticker} ({sector}) usando "
+                f"{'FRED + datos de mercado' if has_fred else 'solo proxies de mercado'}. Puntuación: {score:.1f}."
             ),
         )
 
@@ -295,12 +295,12 @@ class MacroAgent(BaseAgent):
 
         change_str = ""
         if data.get("change_pct") is not None:
-            change_str = f" ({data['change_pct']:+.2f}% vs prior)"
+            change_str = f" ({data['change_pct']:+.2f}% vs anterior)"
 
         findings.append(
             Finding(
                 category=EvidenceCategory.FACT,
-                statement=f"{data['label']}: {value:.2f} {data.get('unit', '')}{change_str} [as of {data.get('date')}]",
+                statement=f"{data['label']}: {value:.2f} {data.get('unit', '')}{change_str} [al {data.get('date')}]",
                 confidence=0.95,
                 references=[ref],
             )
@@ -310,7 +310,7 @@ class MacroAgent(BaseAgent):
             risks.append(
                 Finding(
                     category=EvidenceCategory.RISK,
-                    statement="Restrictive Fed Funds rate pressures growth assets",
+                    statement="Tipo Fed Funds restrictivo presiona activos de crecimiento",
                     confidence=0.75,
                     references=[ref],
                     impact=ImpactLevel.MEDIUM,
@@ -321,7 +321,7 @@ class MacroAgent(BaseAgent):
             risks.append(
                 Finding(
                     category=EvidenceCategory.RISK,
-                    statement=f"Rising unemployment ({value:.1f}%) signals economic softening",
+                    statement=f"Desempleo en alza ({value:.1f}%) señala enfriamiento económico",
                     confidence=0.8,
                     references=[ref],
                     impact=ImpactLevel.HIGH,

@@ -17,6 +17,7 @@ from agents.technical.indicators import (
 from domain.enums import EvidenceCategory, ImpactLevel, TimeHorizon
 from domain.reports import AgentReport, Finding, Reference
 from providers.interfaces import MarketDataProvider
+from utils.narrative_es import bias_label
 
 TIMEFRAMES = [
     ("5m", "5d", "5m"),
@@ -169,10 +170,10 @@ class TechnicalAgent(BaseAgent):
                 "prior_summaries": prior_ctx.summaries if prior_ctx else {},
             },
             summary=(
-                f"Multi-timeframe technical analysis across {valid_frames} horizons "
-                f"({'with' if prior_reports else 'without'} prior committee context). "
-                f"Daily bias: {daily.get('bias', 'neutral')}. "
-                f"Support ${support:.2f}, Resistance ${resistance:.2f}."
+                f"Análisis técnico multi-timeframe en {valid_frames} horizontes "
+                f"({'con' if prior_reports else 'sin'} contexto previo del comité). "
+                f"Sesgo diario: {bias_label(daily.get('bias', 'neutral'))}. "
+                f"Soporte ${support:.2f}, Resistencia ${resistance:.2f}."
                 f"{context_summary}"
             ),
         )

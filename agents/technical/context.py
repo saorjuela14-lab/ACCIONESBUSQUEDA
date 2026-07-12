@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 from domain.enums import EvidenceCategory, ImpactLevel
 from domain.reports import AgentReport, Finding
+from utils.narrative_es import bias_label
 
 
 @dataclass
@@ -102,12 +103,14 @@ def correlate_technical_with_context(
     narr_dir = _direction(ctx.narrative_score)
     macro_dir = _direction(ctx.macro_score)
 
-    # Fundamental / valuation alignment
     if tech_dir == fund_dir and tech_dir != "neutral":
         bonus = 8.0 if tech_dir == "bullish" else -4.0
         score_adj += bonus if tech_dir == "bullish" else bonus
         conf_adj += 0.08
-        msg = f"Technical {tech_dir} aligns with fundamental/valuation ({ctx.fundamental_score:+.1f})"
+        msg = (
+            f"Técnico {bias_label(tech_dir)} alineado con fundamental/valoración "
+            f"({ctx.fundamental_score:+.1f})"
+        )
         notes.append(msg)
         findings.append(
             Finding(
@@ -119,8 +122,8 @@ def correlate_technical_with_context(
         )
     elif tech_dir != "neutral" and fund_dir != "neutral" and tech_dir != fund_dir:
         msg = (
-            f"Divergence: chart {tech_dir} (score {technical_score:+.1f}) vs "
-            f"fundamentals {fund_dir} ({ctx.fundamental_score:+.1f})"
+            f"Divergencia: gráfico {bias_label(tech_dir)} (puntuación {technical_score:+.1f}) vs "
+            f"fundamentales {bias_label(fund_dir)} ({ctx.fundamental_score:+.1f})"
         )
         notes.append(msg)
         conf_adj -= 0.06
@@ -134,12 +137,11 @@ def correlate_technical_with_context(
             )
         )
 
-    # News / sentiment narrative
     if tech_dir != "neutral" and narr_dir != "neutral":
         if tech_dir == narr_dir:
             score_adj += 5.0 if tech_dir == "bullish" else -3.0
             conf_adj += 0.05
-            msg = f"Price action confirms news/sentiment narrative ({ctx.narrative_score:+.1f})"
+            msg = f"El precio confirma la narrativa de noticias/sentimiento ({ctx.narrative_score:+.1f})"
             notes.append(msg)
             findings.append(
                 Finding(
@@ -151,8 +153,8 @@ def correlate_technical_with_context(
             )
         elif tech_dir != narr_dir:
             msg = (
-                f"Narrative vs price divergence: technical {tech_dir}, "
-                f"news/sentiment {narr_dir} ({ctx.narrative_score:+.1f})"
+                f"Divergencia narrativa vs precio: técnico {bias_label(tech_dir)}, "
+                f"noticias/sentimiento {bias_label(narr_dir)} ({ctx.narrative_score:+.1f})"
             )
             notes.append(msg)
             conf_adj -= 0.05
@@ -160,7 +162,7 @@ def correlate_technical_with_context(
                 risks.append(
                     Finding(
                         category=EvidenceCategory.RISK,
-                        statement=msg + " — rally may lack narrative support",
+                        statement=msg + " — el rally puede carecer de soporte narrativo",
                         confidence=0.68,
                         references=[],
                         impact=ImpactLevel.MEDIUM,
@@ -170,15 +172,14 @@ def correlate_technical_with_context(
                 opportunities.append(
                     Finding(
                         category=EvidenceCategory.INTERPRETATION,
-                        statement=msg + " — potential contrarian setup if fundamentals hold",
+                        statement=msg + " — posible setup contrarian si los fundamentales se mantienen",
                         confidence=0.62,
                         references=[],
                     )
                 )
 
-    # Macro backdrop
     if macro_dir == "bearish" and tech_dir == "bullish":
-        msg = f"Macro headwinds ({ctx.macro_score:+.1f}) vs bullish technicals — beta rally risk"
+        msg = f"Vientos macro en contra ({ctx.macro_score:+.1f}) vs técnico alcista — riesgo de rally beta"
         notes.append(msg)
         conf_adj -= 0.04
         risks.append(
@@ -192,13 +193,12 @@ def correlate_technical_with_context(
     elif macro_dir == "bullish" and tech_dir == "bullish":
         score_adj += 4.0
         conf_adj += 0.04
-        msg = f"Macro tailwinds ({ctx.macro_score:+.1f}) reinforce bullish structure"
+        msg = f"Vientos macro a favor ({ctx.macro_score:+.1f}) refuerzan estructura alcista"
         notes.append(msg)
         findings.append(
             Finding(category=EvidenceCategory.INTERPRETATION, statement=msg, confidence=0.7, references=[])
         )
 
-    # Benchmark correlations — technical moves explained by market beta
     for pair in ctx.benchmark_correlations[:4]:
         ticker = pair.get("ticker", "")
         corr = pair.get("correlation")
@@ -206,8 +206,8 @@ def correlate_technical_with_context(
             continue
         if ticker in ("SPY", "QQQ", "IWM"):
             msg = (
-                f"High {ticker} correlation ({corr:+.2f}): {daily_bias} move likely "
-                f"{'tracks' if corr > 0 else 'inversely tracks'} broad market"
+                f"Alta correlación con {ticker} ({corr:+.2f}): movimiento {bias_label(daily_bias)} "
+                f"probablemente {'sigue' if corr > 0 else 'sigue inversamente'} al mercado amplio"
             )
             notes.append(msg)
             findings.append(
@@ -223,17 +223,16 @@ def correlate_technical_with_context(
                 risks.append(
                     Finding(
                         category=EvidenceCategory.RISK,
-                        statement=f"Bullish tape with {ticker} β={corr:+.2f} into bearish macro — fragile",
+                        statement=f"Tape alcista con β {ticker}={corr:+.2f} en macro bajista — frágil",
                         confidence=0.66,
                         references=[],
                     )
                 )
 
-    # Macro sensitivity shocks
     for macro in ctx.macro_sensitivities:
         if macro.get("sensitivity") == "high" and tech_dir == "bullish":
             factor = macro.get("factor", "macro")
-            msg = f"High {factor} sensitivity: technical strength vulnerable to {macro.get('scenario', 'shock')}"
+            msg = f"Alta sensibilidad a {factor}: fortaleza técnica vulnerable a {macro.get('scenario', 'shock')}"
             notes.append(msg)
             risks.append(
                 Finding(
@@ -244,13 +243,12 @@ def correlate_technical_with_context(
                 )
             )
 
-    # Company dependency chain
     for dep in ctx.company_dependencies[:3]:
         rel = dep.get("relationship", "")
         corr = dep.get("correlation")
         peer = dep.get("ticker", "")
         if peer and corr is not None and abs(corr) >= 0.4:
-            msg = f"Technical read correlated via {peer} ({rel}, ρ={corr:+.2f})"
+            msg = f"Lectura técnica correlacionada vía {peer} ({rel}, ρ={corr:+.2f})"
             notes.append(msg)
             findings.append(
                 Finding(
@@ -261,12 +259,11 @@ def correlate_technical_with_context(
                 )
             )
 
-    # RSI confluence with fundamentals
     if daily_rsi is not None:
         if daily_rsi < 35 and ctx.fundamental_score > 10:
             score_adj += 6.0
             conf_adj += 0.06
-            msg = f"Oversold RSI {daily_rsi:.1f} + positive fundamentals — mean-reversion confluence"
+            msg = f"RSI sobrevendido {daily_rsi:.1f} + fundamentales positivos — confluencia de reversión a la media"
             notes.append(msg)
             opportunities.append(
                 Finding(
@@ -279,7 +276,7 @@ def correlate_technical_with_context(
             )
         elif daily_rsi > 65 and ctx.fundamental_score < -10:
             score_adj -= 5.0
-            msg = f"Overbought RSI {daily_rsi:.1f} + weak fundamentals — exhaustion risk"
+            msg = f"RSI sobrecomprado {daily_rsi:.1f} + fundamentales débiles — riesgo de agotamiento"
             notes.append(msg)
             risks.append(
                 Finding(
@@ -290,10 +287,9 @@ def correlate_technical_with_context(
                 )
             )
 
-    # Elevated company/country risk dampens bullish technicals
     if ctx.risk_score < -15 and tech_dir == "bullish":
         conf_adj -= 0.07
-        msg = f"Bullish chart vs elevated risk agents ({ctx.risk_score:+.1f}) — size positions carefully"
+        msg = f"Gráfico alcista vs agentes de riesgo elevado ({ctx.risk_score:+.1f}) — dimensionar posiciones con cuidado"
         notes.append(msg)
         risks.append(
             Finding(category=EvidenceCategory.RISK, statement=msg, confidence=0.7, references=[])

@@ -144,19 +144,19 @@ class SentimentEngineService:
             agg = 0.0
 
         if agg >= 15:
-            label = "bullish"
+            label = "alcista"
         elif agg <= -15:
-            label = "bearish"
+            label = "bajista"
         else:
             label = "neutral"
 
         conf = sum(weights) / len(weights) if weights else 0.3
 
         summary = (
-            f"Sentiment for {ticker}: {label.upper()} (score {agg:+.1f}). "
-            f"Retail/Social {retail.score:+.1f}, News {news_ch.score:+.1f}, "
-            f"Analyst {analyst.score:+.1f}, Institutional {institutional.score:+.1f}. "
-            f"Sources: {', '.join(sources_used) or 'none'}."
+            f"Sentimiento de {ticker}: {label.upper()} (puntuación {agg:+.1f}). "
+            f"Minorista/Social {retail.score:+.1f}, Noticias {news_ch.score:+.1f}, "
+            f"Analistas {analyst.score:+.1f}, Institucional {institutional.score:+.1f}. "
+            f"Fuentes: {', '.join(sources_used) or 'ninguna'}."
         )
 
         return SentimentEngineReport(

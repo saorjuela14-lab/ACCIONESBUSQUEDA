@@ -19,24 +19,24 @@ class WatchlistAgent(BaseAgent):
             findings.append(
                 Finding(
                     category=EvidenceCategory.FACT,
-                    statement=f"{ticker} is on active watchlist since {item.added_at.date()}",
+                    statement=f"{ticker} está en la watchlist activa desde {item.added_at.date()}",
                     confidence=1.0,
                     references=[Reference(source="watchlist", data_point="added_at", value=str(item.added_at))],
                 )
             )
-            summary = f"{ticker} under active watchlist monitoring."
+            summary = f"{ticker} bajo monitoreo activo en watchlist."
             score = 0.0
             confidence = 0.9
         else:
             findings.append(
                 Finding(
                     category=EvidenceCategory.FACT,
-                    statement=f"{ticker} is not on the active watchlist",
+                    statement=f"{ticker} no está en la watchlist activa",
                     confidence=1.0,
                     references=[],
                 )
             )
-            summary = f"{ticker} not in watchlist."
+            summary = f"{ticker} no está en la watchlist."
             score = 0.0
             confidence = 0.95
 

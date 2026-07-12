@@ -55,7 +55,7 @@ def test_bullish_alignment_boosts_score():
         ctx=ctx,
     )
     assert result.score_adjustment > 0
-    assert any("aligns" in n.lower() for n in result.correlation_notes)
+    assert any("alineado" in n.lower() for n in result.correlation_notes)
 
 
 def test_narrative_divergence_flags_risk():
@@ -71,7 +71,7 @@ def test_narrative_divergence_flags_risk():
         daily_rsi=55,
         ctx=ctx,
     )
-    assert any("divergence" in n.lower() for n in result.correlation_notes)
+    assert any("divergencia" in n.lower() for n in result.correlation_notes)
     assert len(result.risks) >= 1
 
 
@@ -85,7 +85,7 @@ def test_oversold_fundamental_confluence():
         ctx=ctx,
     )
     assert result.score_adjustment > 0
-    assert any("oversold" in o.statement.lower() for o in result.opportunities)
+    assert any("sobrevendido" in o.statement.lower() for o in result.opportunities)
 
 
 def test_spy_correlation_note():

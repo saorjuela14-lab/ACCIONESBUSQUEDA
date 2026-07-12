@@ -108,5 +108,5 @@ class AlertAgent(BaseAgent):
                 "alerts_generated": len(alerts),
                 "alert_types": [a.alert_type.value for a in alerts],
             },
-            summary=f"Generated {len(alerts)} relevant alerts (no spam policy applied).",
+            summary=f"Generadas {len(alerts)} alertas relevantes (política anti-spam aplicada).",
         )

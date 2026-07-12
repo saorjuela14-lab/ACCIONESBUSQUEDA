@@ -25,63 +25,63 @@ class StrategyLab:
             valuation,
             fundamental,
             TimeHorizon.LONG_TERM,
-            "Strong for value" if self._score(valuation) > 10 and self._score(fundamental) > 0 else "Neutral for value",
+            "Fuerte para value" if self._score(valuation) > 10 and self._score(fundamental) > 0 else "Neutral para value",
         ))
         conclusions.append(self._conclude(
             StrategyType.GROWTH,
             fundamental,
             sentiment,
             TimeHorizon.LONG_TERM,
-            "Strong for growth" if self._score(fundamental) > 15 else "Weak for growth",
+            "Fuerte para growth" if self._score(fundamental) > 15 else "Débil para growth",
         ))
         conclusions.append(self._conclude(
             StrategyType.DIVIDEND,
             corporate,
             fundamental,
             TimeHorizon.LONG_TERM,
-            "Strong for dividends" if self._score(corporate) > 5 else "Weak for dividends",
+            "Fuerte para dividendos" if self._score(corporate) > 5 else "Débil para dividendos",
         ))
         conclusions.append(self._conclude(
             StrategyType.MOMENTUM,
             technical,
             sentiment,
             TimeHorizon.WEEKLY,
-            "Strong for momentum" if self._score(technical) > 15 and self._score(sentiment) > 0 else "Weak for momentum",
+            "Fuerte para momentum" if self._score(technical) > 15 and self._score(sentiment) > 0 else "Débil para momentum",
         ))
         conclusions.append(self._conclude(
             StrategyType.SWING,
             technical,
             None,
             TimeHorizon.WEEKLY,
-            "Suitable for swing" if self._score(technical) > 5 else "Poor for swing",
+            "Adecuado para swing" if self._score(technical) > 5 else "Pobre para swing",
         ))
         conclusions.append(self._conclude(
             StrategyType.BREAKOUT,
             technical,
             None,
             TimeHorizon.INTRADAY,
-            "Breakout setup" if self._score(technical) > 20 else "No breakout setup",
+            "Setup de breakout" if self._score(technical) > 20 else "Sin setup de breakout",
         ))
         conclusions.append(self._conclude(
             StrategyType.MEAN_REVERSION,
             technical,
             valuation,
             TimeHorizon.WEEKLY,
-            "Mean reversion candidate" if self._score(technical) < -10 and self._score(valuation) > 0 else "Not ideal",
+            "Candidato a reversión a la media" if self._score(technical) < -10 and self._score(valuation) > 0 else "No ideal",
         ))
         conclusions.append(self._conclude(
             StrategyType.SECTOR_ROTATION,
             by_agent.get("macro_agent"),
             fundamental,
             TimeHorizon.MONTHLY,
-            "Sector rotation favorable" if self._score(by_agent.get("macro_agent")) > 0 else "Neutral",
+            "Rotación sectorial favorable" if self._score(by_agent.get("macro_agent")) > 0 else "Neutral",
         ))
         conclusions.append(self._conclude(
             StrategyType.SMART_MONEY,
             technical,
             corporate,
             TimeHorizon.MONTHLY,
-            "Institutional alignment possible" if self._score(corporate) > 5 else "No smart money signal",
+            "Posible alineación institucional" if self._score(corporate) > 5 else "Sin señal smart money",
         ))
 
         return conclusions

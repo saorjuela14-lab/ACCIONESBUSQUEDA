@@ -32,7 +32,7 @@ class PortfolioAgent(BaseAgent):
                         references=[],
                     )
                 ],
-                summary="Portfolio context unavailable.",
+                summary="Contexto de portafolio no disponible.",
             )
 
         total_value = portfolio.total_value or portfolio.initial_capital
@@ -124,5 +124,5 @@ class PortfolioAgent(BaseAgent):
                 "total_value": total_value,
                 "cash_pct": (portfolio.cash / total_value * 100) if total_value else 0,
             },
-            summary=f"Portfolio fit analysis for {ticker} in '{portfolio.name}'.",
+            summary=f"Análisis de encaje en portafolio para {ticker} en '{portfolio.name}'.",
         )

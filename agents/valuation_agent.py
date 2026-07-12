@@ -40,7 +40,7 @@ class ValuationAgent(BaseAgent):
             findings.append(
                 Finding(
                     category=EvidenceCategory.INTERPRETATION,
-                    statement=f"DCF proxy intrinsic value: ${intrinsic_value:.2f} (15x FCF/share)",
+                    statement=f"Valor intrínseco proxy DCF: ${intrinsic_value:.2f} (15x FCF/acción)",
                     confidence=0.5,
                     references=[ref],
                 )
@@ -55,7 +55,7 @@ class ValuationAgent(BaseAgent):
             findings.append(
                 Finding(
                     category=EvidenceCategory.PROBABILITY,
-                    statement=f"Margin of safety: {margin_of_safety:+.1f}% vs fair value ${fair_value:.2f}",
+                    statement=f"Margen de seguridad: {margin_of_safety:+.1f}% vs valor justo ${fair_value:.2f}",
                     confidence=0.55,
                     references=[ref],
                 )
@@ -65,7 +65,7 @@ class ValuationAgent(BaseAgent):
                 opportunities.append(
                     Finding(
                         category=EvidenceCategory.INTERPRETATION,
-                        statement="Significant undervaluation vs fair value estimate",
+                        statement="Infravaloración significativa vs estimación de valor justo",
                         confidence=0.6,
                         references=[ref],
                         impact=ImpactLevel.HIGH,
@@ -76,7 +76,7 @@ class ValuationAgent(BaseAgent):
                 risks.append(
                     Finding(
                         category=EvidenceCategory.RISK,
-                        statement="Potential overvaluation vs fair value estimate",
+                        statement="Posible sobrevaloración vs estimación de valor justo",
                         confidence=0.6,
                         references=[ref],
                         impact=ImpactLevel.HIGH,
@@ -85,7 +85,7 @@ class ValuationAgent(BaseAgent):
 
         for metric, value, cheap, expensive in [
             ("P/E", pe, 12, 30),
-            ("Forward P/E", fpe, 10, 25),
+            ("P/E forward", fpe, 10, 25),
             ("P/B", pb, 1.5, 4),
         ]:
             if value is None:
@@ -110,7 +110,7 @@ class ValuationAgent(BaseAgent):
             findings.append(
                 Finding(
                     category=EvidenceCategory.FACT,
-                    statement=f"Peer set for comparison: {', '.join(peers[:5])}",
+                    statement=f"Grupo de pares para comparación: {', '.join(peers[:5])}",
                     confidence=0.7,
                     references=[Reference(source="yfinance", data_point="peers", value=",".join(peers[:5]))],
                 )
@@ -131,5 +131,5 @@ class ValuationAgent(BaseAgent):
                 "fair_value": fair_value,
                 "margin_of_safety_pct": margin_of_safety,
             },
-            summary=f"Valuation assessment. MOS: {margin_of_safety:.1f}%." if margin_of_safety is not None else "Valuation assessment with limited fair value data.",
+            summary=f"Evaluación de valoración. MOS: {margin_of_safety:.1f}%." if margin_of_safety is not None else "Evaluación de valoración con datos limitados de valor justo.",
         )

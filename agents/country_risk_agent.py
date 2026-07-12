@@ -98,5 +98,5 @@ class CountryRiskAgent(BaseAgent):
             opportunities=[],
             references=references,
             raw_data={"country": country, "sector": sector},
-            summary=f"Country risk review for {country}. Identified {len(risks)} risk factors.",
+            summary=f"Revisión de riesgo país para {country}. {len(risks)} factores de riesgo identificados.",
         )

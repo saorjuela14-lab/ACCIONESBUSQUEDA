@@ -19,16 +19,16 @@ from utils.logging import get_logger
 logger = get_logger(__name__)
 
 BENCHMARKS: dict[str, str] = {
-    "SPY": "US broad market (S&P 500)",
-    "QQQ": "US technology / growth",
-    "USO": "Crude oil prices",
-    "GLD": "Gold / safe haven",
-    "UUP": "US dollar strength",
-    "TLT": "Long-term US interest rates",
-    "EEM": "Emerging markets",
-    "SOXX": "Semiconductors sector",
-    "XLE": "Energy sector",
-    "XLF": "Financials sector",
+    "SPY": "Mercado amplio EE.UU. (S&P 500)",
+    "QQQ": "Tecnología / crecimiento EE.UU.",
+    "USO": "Precio del crudo",
+    "GLD": "Oro / refugio seguro",
+    "UUP": "Fortaleza del dólar",
+    "TLT": "Tipos de interés largos EE.UU.",
+    "EEM": "Mercados emergentes",
+    "SOXX": "Sector semiconductores",
+    "XLE": "Sector energía",
+    "XLF": "Sector financiero",
 }
 
 # Sector -> default benchmark ETF
@@ -47,76 +47,76 @@ SECTOR_BENCHMARKS: dict[str, str] = {
 
 # Known cross-company / supply-chain dependencies
 KNOWN_DEPENDENCIES: dict[str, list[tuple[str, str, str]]] = {
-    "TSM": [("NVDA", "customer", "NVIDIA depends on TSMC fabrication for GPUs"),
-            ("AMD", "customer", "AMD chips manufactured at TSMC"),
-            ("AAPL", "customer", "Apple A-series/M-series chips from TSMC")],
-    "NVDA": [("TSM", "supplier", "GPU production relies on TSMC advanced nodes"),
-             ("AMD", "competitor", "Competing AI/datacenter GPU market")],
-    "AMD": [("TSM", "supplier", "Chip fabrication partner"),
-            ("NVDA", "competitor", "AI accelerator competition")],
-    "AAPL": [("TSM", "supplier", "Primary chip manufacturing partner"),
-             ("QCOM", "supplier", "Modem components")],
-    "ABBV": [("LLY", "competitor", "Competing immunology / obesity adjacent"),
-             ("PFE", "competitor", "Big pharma peer group")],
+    "TSM": [("NVDA", "cliente", "NVIDIA depende de la fabricación de TSMC para GPUs"),
+            ("AMD", "cliente", "Chips AMD fabricados en TSMC"),
+            ("AAPL", "cliente", "Chips serie A/M de Apple desde TSMC")],
+    "NVDA": [("TSM", "proveedor", "Producción GPU depende de nodos avanzados TSMC"),
+             ("AMD", "competidor", "Competencia en GPUs AI/datacenter")],
+    "AMD": [("TSM", "proveedor", "Socio de fabricación de chips"),
+            ("NVDA", "competidor", "Competencia en aceleradores AI")],
+    "AAPL": [("TSM", "proveedor", "Principal socio de fabricación de chips"),
+             ("QCOM", "proveedor", "Componentes de módem")],
+    "ABBV": [("LLY", "competidor", "Competencia en inmunología / obesidad adyacente"),
+             ("PFE", "competidor", "Grupo big pharma pares")],
 }
 
 # Macro factor rules by sector/industry keywords
 MACRO_RULES: list[dict] = [
     {
         "match_sectors": ["Energy"],
-        "factor": "Oil price",
+        "factor": "Precio del petróleo",
         "proxy": "USO",
         "sensitivity": "high",
-        "scenario": "Strait of Hormuz closure or OPEC supply cut",
-        "impact": "Energy revenues and margins typically rise with crude; stock highly oil-sensitive.",
+        "scenario": "Cierre del Estrecho de Ormuz o recorte OPEP",
+        "impact": "Ingresos y márgenes energéticos suelen subir con el crudo; acción muy sensible al petróleo.",
     },
     {
         "match_sectors": ["Industrials", "Consumer Cyclical", "Airlines"],
-        "factor": "Oil price",
+        "factor": "Precio del petróleo",
         "proxy": "USO",
         "sensitivity": "medium",
-        "scenario": "Oil spike from Middle East disruption",
-        "impact": "Input costs and transport margins pressured; airlines especially vulnerable.",
+        "scenario": "Subida del petróleo por disrupción en Medio Oriente",
+        "impact": "Costes de insumos y márgenes de transporte presionados; aerolíneas especialmente vulnerables.",
     },
     {
         "match_sectors": ["Technology"],
-        "factor": "Semiconductor cycle",
+        "factor": "Ciclo de semiconductores",
         "proxy": "SOXX",
         "sensitivity": "high",
-        "scenario": "TSMC capacity / Taiwan geopolitical risk",
-        "impact": "Chip supply and pricing affect entire tech chain (NVDA, AMD, AAPL).",
+        "scenario": "Capacidad TSMC / riesgo geopolítico en Taiwán",
+        "impact": "Oferta y precios de chips afectan toda la cadena tech (NVDA, AMD, AAPL).",
     },
     {
         "match_keywords": ["semiconductor", "chip", "foundry"],
-        "factor": "Semiconductor cycle",
+        "factor": "Ciclo de semiconductores",
         "proxy": "SOXX",
         "sensitivity": "high",
-        "scenario": "TSM production disruption",
-        "impact": "Direct revenue and lead-time impact across fabless customers.",
+        "scenario": "Disrupción de producción TSM",
+        "impact": "Impacto directo en ingresos y plazos de entrega de clientes fabless.",
     },
     {
         "match_sectors": ["Financial Services"],
-        "factor": "Interest rates",
+        "factor": "Tipos de interés",
         "proxy": "TLT",
         "sensitivity": "high",
-        "scenario": "Fed rate hikes or cuts",
-        "impact": "Net interest margins and loan demand shift with rate cycle.",
+        "scenario": "Subidas o bajadas de tipos de la Fed",
+        "impact": "Márgenes de interés neto y demanda de crédito cambian con el ciclo de tipos.",
     },
     {
         "match_sectors": ["Healthcare", "Drug Manufacturers"],
-        "factor": "USD strength",
+        "factor": "Fortaleza del USD",
         "proxy": "UUP",
         "sensitivity": "medium",
-        "scenario": "Strong dollar hurts international revenue translation",
-        "impact": "Multinational pharma revenues can compress when USD rallies.",
+        "scenario": "Dólar fuerte perjudica conversión de ingresos internacionales",
+        "impact": "Ingresos de pharma multinacional pueden comprimirse cuando el USD sube.",
     },
     {
         "match_all": True,
-        "factor": "Emerging markets",
+        "factor": "Mercados emergentes",
         "proxy": "EEM",
         "sensitivity": "medium",
-        "scenario": "EM slowdown or capital flight",
-        "impact": "Global multinationals with EM sales exposure face demand headwinds.",
+        "scenario": "Desaceleración EM o fuga de capitales",
+        "impact": "Multinacionales con ventas EM enfrentan vientos en contra de demanda.",
     },
 ]
 
@@ -141,9 +141,9 @@ class CorrelationService:
         return float(joined.iloc[:, 0].corr(joined.iloc[:, 1]))
 
     def _interpret_corr(self, benchmark: str, corr: float, label: str) -> str:
-        strength = "strong" if abs(corr) >= 0.6 else "moderate" if abs(corr) >= 0.35 else "weak"
-        direction = "positive" if corr >= 0 else "inverse"
-        return f"{strength} {direction} linkage with {benchmark} ({label})"
+        strength = "fuerte" if abs(corr) >= 0.6 else "moderada" if abs(corr) >= 0.35 else "débil"
+        direction = "positiva" if corr >= 0 else "inversa"
+        return f"vinculación {strength} {direction} con {benchmark} ({label})"
 
     def _macro_rules_for(self, sector: str | None, industry: str | None) -> list[dict]:
         sector = sector or ""
@@ -187,7 +187,7 @@ class CorrelationService:
         for bench, corr in zip(corr_tasks.keys(), results):
             if corr is None:
                 continue
-            label = BENCHMARKS.get(bench, f"{sector} sector proxy" if bench in SECTOR_BENCHMARKS.values() else bench)
+            label = BENCHMARKS.get(bench, f"proxy sectorial {sector}" if bench in SECTOR_BENCHMARKS.values() else bench)
             corr_pairs.append(
                 CorrelationPair(
                     ticker=bench,
@@ -238,7 +238,7 @@ class CorrelationService:
                         ticker=peer,
                         relationship="sector_peer",
                         correlation=round(peer_corr, 3) if peer_corr is not None else None,
-                        why_it_matters=f"Sector peer — moves often correlate with {ticker}",
+                        why_it_matters=f"Par del sector — suele moverse en correlación con {ticker}",
                     )
                 )
         except Exception as exc:
@@ -246,18 +246,18 @@ class CorrelationService:
 
         eem_corr = next((p.correlation for p in corr_pairs if p.ticker == "EEM"), None)
         if eem_corr is not None and abs(eem_corr) >= 0.4:
-            em_exposure = f"Moderate-to-high EM sensitivity (EEM corr {eem_corr:+.2f})"
+            em_exposure = f"Sensibilidad moderada-alta a mercados emergentes (corr EEM {eem_corr:+.2f})"
         elif eem_corr is not None:
-            em_exposure = f"Limited EM sensitivity (EEM corr {eem_corr:+.2f})"
+            em_exposure = f"Sensibilidad limitada a mercados emergentes (corr EEM {eem_corr:+.2f})"
         else:
-            em_exposure = "EM exposure could not be quantified from available data"
+            em_exposure = "Exposición a mercados emergentes no cuantificable con datos disponibles"
 
         top = corr_pairs[:3]
-        top_text = "; ".join(f"{p.ticker} ({p.correlation:+.2f})" for p in top) if top else "insufficient data"
+        top_text = "; ".join(f"{p.ticker} ({p.correlation:+.2f})" for p in top) if top else "datos insuficientes"
         macro_text = "; ".join(f"{m.factor} ({m.sensitivity})" for m in macro_list[:3])
         summary = (
-            f"{ticker} ({sector or 'Unknown sector'}) — strongest benchmark links: {top_text}. "
-            f"Key macro sensitivities: {macro_text or 'none mapped'}. "
+            f"{ticker} ({sector or 'sector desconocido'}) — vínculos benchmark más fuertes: {top_text}. "
+            f"Sensibilidades macro clave: {macro_text or 'ninguna mapeada'}. "
             f"{em_exposure}."
         )
 

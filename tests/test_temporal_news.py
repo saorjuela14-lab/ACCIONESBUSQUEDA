@@ -36,7 +36,7 @@ def test_detect_ongoing_litigation():
     ]
     themes, narrative = detect_ongoing_issues(recent, historical)
     assert themes
-    assert "still active" in narrative.lower() or "legacy" in narrative.lower()
+    assert "sigue activo" in narrative.lower() or "heredados" in narrative.lower() or "temas" in narrative.lower()
 
 
 def test_temporal_report_includes_investment_impact():
@@ -64,7 +64,7 @@ def test_temporal_report_includes_investment_impact():
         ],
     )
     report = build_temporal_report("ABBV", "AbbVie", timeline)
-    assert "2-YEAR BACKDROP" in report.two_year_summary
-    assert "LAST 3 MONTHS" in report.three_month_summary
-    assert "INVESTMENT IMPACT" in report.investment_impact
-    assert "MARKET NARRATIVE" in report.market_narrative
+    assert "CONTEXTO 2 AÑOS" in report.two_year_summary
+    assert "ÚLTIMOS 3 MESES" in report.three_month_summary
+    assert "IMPACTO EN INVERSIÓN" in report.investment_impact
+    assert "NARRATIVA DE MERCADO" in report.market_narrative

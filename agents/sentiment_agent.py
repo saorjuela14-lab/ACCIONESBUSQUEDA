@@ -25,7 +25,7 @@ class SentimentAgent(BaseAgent):
             ),
             Finding(
                 category=EvidenceCategory.FACT,
-                statement=f"Institutional {report.institutional.score:+.1f} | Retail {report.retail.score:+.1f} | Social {report.social.score:+.1f} | News {report.news.score:+.1f} | Analyst {report.analyst.score:+.1f}",
+                statement=f"Institucional {report.institutional.score:+.1f} | Minorista {report.retail.score:+.1f} | Social {report.social.score:+.1f} | Noticias {report.news.score:+.1f} | Analistas {report.analyst.score:+.1f}",
                 confidence=report.confidence,
                 references=[],
             ),
@@ -44,9 +44,9 @@ class SentimentAgent(BaseAgent):
 
         risks, opportunities = [], []
         if report.aggregated_score < -10:
-            risks.append(Finding(category=EvidenceCategory.RISK, statement="Aggregate sentiment bearish", confidence=0.6, references=[]))
+            risks.append(Finding(category=EvidenceCategory.RISK, statement="Sentimiento agregado bajista", confidence=0.6, references=[]))
         elif report.aggregated_score > 10:
-            opportunities.append(Finding(category=EvidenceCategory.INTERPRETATION, statement="Aggregate sentiment bullish", confidence=0.6, references=[]))
+            opportunities.append(Finding(category=EvidenceCategory.INTERPRETATION, statement="Sentimiento agregado alcista", confidence=0.6, references=[]))
 
         return AgentReport(
             agent_name=self.name,

@@ -62,7 +62,7 @@ class InvestmentMemoryAgent(BaseAgent):
             opportunities=[],
             references=[],
             raw_data={"pending_evaluations": len(pending), "agent_weights": weights},
-            summary="Investment memory updated and historical tracking active.",
+            summary="Memoria de inversión actualizada y seguimiento histórico activo.",
         )
 
     async def calibrate_weights(self) -> dict[str, float]:

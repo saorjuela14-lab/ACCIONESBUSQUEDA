@@ -1,4 +1,4 @@
-"""Temporal news analysis: 2-year backdrop, 3-month recent, ongoing issues, investment impact."""
+"""Análisis temporal de noticias: contexto 2 años, reciente 3 meses, temas activos e impacto."""
 
 from __future__ import annotations
 
@@ -78,10 +78,10 @@ def _avg_sentiment(items: list[NewsItem]) -> float:
 
 def _sentiment_label(avg: float) -> str:
     if avg >= 0.12:
-        return "predominantly positive"
+        return "predominantemente positivo"
     if avg <= -0.12:
-        return "predominantly negative"
-    return "mixed / neutral"
+        return "predominantemente negativo"
+    return "mixto / neutral"
 
 
 def _top_events_by_topic(items: list[NewsItem], max_per_topic: int = 2) -> dict[NewsTopicCategory, list[NewsItem]]:
@@ -103,7 +103,7 @@ def _top_events_by_topic(items: list[NewsItem], max_per_topic: int = 2) -> dict[
 
 
 def _format_event(item: NewsItem) -> str:
-    date = item.published_at.strftime("%Y-%m-%d") if item.published_at else "undated"
+    date = item.published_at.strftime("%Y-%m-%d") if item.published_at else "sin fecha"
     body = item.snippet[:180].strip() if item.snippet else item.title
     return f"[{date}] {body}"
 
@@ -116,7 +116,7 @@ def _extract_themes(text: str) -> set[str]:
 def detect_ongoing_issues(
     recent: list[NewsItem], historical: list[NewsItem]
 ) -> tuple[list[str], str]:
-    """Find problems/themes from 2y ago that still appear in last 3 months."""
+    """Detecta temas de hace 2 años que siguen apareciendo en los últimos 3 meses."""
     historical_themes: dict[str, list[NewsItem]] = {}
     for item in historical:
         text = f"{item.title} {item.snippet or ''}"
@@ -139,17 +139,17 @@ def detect_ongoing_issues(
         )
         if recent_match:
             ongoing.append(
-                f"{theme.upper()}: issue first surfaced in coverage ('{old_headline}') "
-                f"and remains active today ('{recent_match.title[:100]}')."
+                f"{theme.upper()}: el tema apareció por primera vez en la cobertura ('{old_headline}') "
+                f"y sigue activo hoy ('{recent_match.title[:100]}')."
             )
 
     if not ongoing:
         narrative = (
-            "No clear evidence that major problems from the 2-year lookback are still dominating "
-            "headlines in the last 3 months."
+            "No hay evidencia clara de que problemas importantes del periodo de 2 años "
+            "sigan dominando los titulares en los últimos 3 meses."
         )
     else:
-        narrative = "Legacy issues still in the news: " + " ".join(ongoing[:4])
+        narrative = "Temas heredados que siguen en las noticias: " + " ".join(ongoing[:4])
 
     return ongoing, narrative
 
@@ -157,12 +157,12 @@ def detect_ongoing_issues(
 def build_two_year_summary(ticker: str, company_name: str, historical: list[NewsItem]) -> str:
     if not historical:
         return (
-            f"2-YEAR BACKDROP ({company_name}/{ticker}): Limited historical news in data feed. "
-            "Supplement with filings and earnings transcripts for full context."
+            f"CONTEXTO 2 AÑOS ({company_name}/{ticker}): Noticias históricas limitadas en la fuente de datos. "
+            "Complementar con filings y transcripts de resultados para contexto completo."
         )
 
     events = _top_events_by_topic(historical, max_per_topic=3)
-    parts = [f"2-YEAR BACKDROP — main developments for {company_name} ({ticker}):"]
+    parts = [f"CONTEXTO 2 AÑOS — principales desarrollos de {company_name} ({ticker}):"]
     for category, items in events.items():
         label = _TOPIC_LABELS[category]
         highlights = "; ".join(_format_event(i) for i in items)
@@ -173,10 +173,10 @@ def build_two_year_summary(ticker: str, company_name: str, historical: list[News
 
 def build_three_month_summary(ticker: str, company_name: str, recent: list[NewsItem]) -> str:
     if not recent:
-        return f"LAST 3 MONTHS ({company_name}/{ticker}): No material recent news captured."
+        return f"ÚLTIMOS 3 MESES ({company_name}/{ticker}): No se capturaron noticias recientes relevantes."
 
     events = _top_events_by_topic(recent, max_per_topic=3)
-    parts = [f"LAST 3 MONTHS — what is happening now with {company_name} ({ticker}):"]
+    parts = [f"ÚLTIMOS 3 MESES — qué está pasando ahora con {company_name} ({ticker}):"]
     for category, items in events.items():
         label = _TOPIC_LABELS[category]
         highlights = "; ".join(_format_event(i) for i in items)
@@ -184,14 +184,17 @@ def build_three_month_summary(ticker: str, company_name: str, recent: list[NewsI
 
     bullish = sum(1 for i in recent if i.sentiment == NewsSentiment.BULLISH)
     bearish = sum(1 for i in recent if i.sentiment == NewsSentiment.BEARISH)
-    parts.append(f"Sentiment mix (3m): {bullish} bullish, {bearish} bearish, {len(recent) - bullish - bearish} neutral articles.")
+    parts.append(
+        f"Mezcla de sentimiento (3m): {bullish} alcistas, {bearish} bajistas, "
+        f"{len(recent) - bullish - bearish} neutrales."
+    )
 
     return " ".join(parts)
 
 
 def build_market_narrative(recent: list[NewsItem], sentiment_avg: float) -> str:
     if not recent:
-        return "MARKET NARRATIVE: Insufficient recent coverage to gauge consensus opinion."
+        return "NARRATIVA DE MERCADO: Cobertura reciente insuficiente para medir consenso."
 
     label = _sentiment_label(sentiment_avg)
     themes: list[str] = []
@@ -202,9 +205,13 @@ def build_market_narrative(recent: list[NewsItem], sentiment_avg: float) -> str:
 
     circulating = "; ".join(themes[:4]) if themes else "; ".join(i.title for i in recent[:4])
     return (
-        f"MARKET NARRATIVE: Coverage is {label} (avg sentiment {sentiment_avg:+.2f}). "
-        f"What is circulating: {circulating}"
+        f"NARRATIVA DE MERCADO: La cobertura es {label} (sentimiento medio {sentiment_avg:+.2f}). "
+        f"Lo que circula: {circulating}"
     )
+
+
+def _topic_label_es(cat: NewsTopicCategory) -> str:
+    return _TOPIC_LABELS.get(cat, cat.value.replace("_", " "))
 
 
 def build_investment_impact(
@@ -214,10 +221,9 @@ def build_investment_impact(
     sentiment_avg: float,
     grouped_recent: dict[NewsTopicCategory, list[NewsItem]],
 ) -> tuple[str, float]:
-    """Link news flow to buy/sell implications and compute directional score."""
+    """Vincula el flujo de noticias con implicaciones de compra/venta."""
     base_score = score_from_developments(grouped_recent)
 
-    # Weight historical context
     hist_grouped = group_by_category(historical)
     historical_score = score_from_developments(hist_grouped) * 0.35
     recent_score = base_score * 0.65
@@ -228,32 +234,32 @@ def build_investment_impact(
 
     for cat in (NewsTopicCategory.REGULATORY, NewsTopicCategory.PRODUCT_PIPELINE, NewsTopicCategory.MERGERS_ACQUISITIONS):
         if grouped_recent.get(cat):
-            tailwinds.append(f"recent {cat.value.replace('_', ' ')}")
+            tailwinds.append(f"actividad reciente en {_topic_label_es(cat).lower()}")
 
     if grouped_recent.get(NewsTopicCategory.LITIGATION):
-        headwinds.append("active litigation coverage")
-    if "still active today" in ongoing_narrative.lower() or "legacy issues" in ongoing_narrative.lower():
-        headwinds.append("unresolved legacy issues still in headlines")
+        headwinds.append("cobertura activa de litigios")
+    if "sigue activo hoy" in ongoing_narrative.lower() or "temas heredados" in ongoing_narrative.lower():
+        headwinds.append("temas heredados sin resolver aún en titulares")
 
     bearish_recent = sum(1 for i in recent if i.sentiment == NewsSentiment.BEARISH)
     bullish_recent = sum(1 for i in recent if i.sentiment == NewsSentiment.BULLISH)
     if bearish_recent > bullish_recent + 2:
-        headwinds.append("negative sentiment dominating recent flow")
+        headwinds.append("sentimiento negativo dominante en el flujo reciente")
     elif bullish_recent > bearish_recent + 2:
-        tailwinds.append("positive sentiment dominating recent flow")
+        tailwinds.append("sentimiento positivo dominante en el flujo reciente")
 
     if combined >= 15:
-        stance = "news flow SUPPORTS a constructive/buy bias"
+        stance = "el flujo de noticias APOYA un sesgo constructivo/compra"
     elif combined <= -15:
-        stance = "news flow CAUTIONS against buying — elevated headline risk"
+        stance = "el flujo de noticias ADVIERTE contra comprar — riesgo elevado en titulares"
     else:
-        stance = "news flow is NEUTRAL for the buy decision — not a primary driver"
+        stance = "el flujo de noticias es NEUTRO para la decisión de compra — no es un driver principal"
 
     impact = (
-        f"INVESTMENT IMPACT: {stance} (news score {combined:+.1f}/100). "
-        f"Tailwinds: {', '.join(tailwinds) or 'none identified'}. "
-        f"Headwinds: {', '.join(headwinds) or 'none identified'}. "
-        f"Use alongside fundamentals, valuation, and technicals — news alone does not justify a full position."
+        f"IMPACTO EN INVERSIÓN: {stance} (puntuación noticias {combined:+.1f}/100). "
+        f"Vientos a favor: {', '.join(tailwinds) or 'ninguno identificado'}. "
+        f"Vientos en contra: {', '.join(headwinds) or 'ninguno identificado'}. "
+        f"Usar junto con fundamentales, valoración y técnico — las noticias solas no justifican una posición completa."
     )
     return impact, combined
 
@@ -263,7 +269,6 @@ def build_temporal_report(
     company_name: str,
     timeline: NewsTimeline,
 ) -> TemporalNewsReport:
-    # Partition all items if windows are empty
     all_items = timeline.all_items
     recent = list(timeline.recent_3m)
     historical = list(timeline.historical_2y)

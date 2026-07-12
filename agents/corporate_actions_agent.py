@@ -126,5 +126,5 @@ class CorporateActionsAgent(BaseAgent):
             opportunities=opportunities,
             references=references,
             raw_data={"dividend_yield": div_yield, "payout_ratio": payout},
-            summary=f"Corporate actions scan. Score {score:.1f}.",
+            summary=f"Escaneo de acciones corporativas. Puntuación {score:.1f}.",
         )
