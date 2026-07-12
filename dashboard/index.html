@@ -26,13 +26,18 @@
         <button id="btn-analyze" class="btn primary">Analizar</button>
         <button id="btn-scan" class="btn">Escanear WL</button>
         <button id="btn-refresh" class="btn">Actualizar</button>
-        <button id="btn-voice" class="btn voice-btn" title="Asistente de voz" type="button">🎙 Voz</button>
       </div>
     </header>
 
     <div id="voice-bar" class="voice-bar">
-      <span id="voice-status" class="voice-status">Toca el micrófono para hablar</span>
-      <span class="muted voice-hint">Ej: «¿Cómo está el mercado?», «Analiza VRT», «Escanea watchlist»</span>
+      <button id="btn-voice" class="btn voice-btn-mic" title="Asistente de voz" type="button">🎙</button>
+      <div class="voice-bar-main">
+        <span id="voice-status" class="voice-status">Toca el micrófono para hablar</span>
+        <div class="voice-text-row">
+          <input id="voice-text-input" type="text" placeholder="O escribe: cómo está el mercado, analiza VRT…" autocomplete="off" />
+          <button id="btn-voice-send" class="btn primary" type="button">Enviar</button>
+        </div>
+      </div>
     </div>
 
     <section class="ceo-bar" id="ceo-bar">

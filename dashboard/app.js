@@ -1473,10 +1473,12 @@ function speakAnalyzeResult(ticker) {
     if (!window.speechSynthesis) { resolve(); return; }
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = "es-ES";
+    u.lang = "es-MX";
     const voices = window.speechSynthesis.getVoices();
-    const es = voices.find((v) => v.lang.startsWith("es"));
+    const es = voices.find((v) => v.lang.startsWith("es-MX"))
+      || voices.find((v) => v.lang.startsWith("es"));
     if (es) u.voice = es;
+    window.speechSynthesis.resume();
     u.onend = resolve;
     u.onerror = resolve;
     window.speechSynthesis.speak(u);
