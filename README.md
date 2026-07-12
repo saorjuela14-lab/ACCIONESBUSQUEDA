@@ -111,6 +111,44 @@ Evidence Agents → Alert Engine → Investment Director → Investment Memory
  country_risk, company_risk, corporate_actions, portfolio, watchlist)
 ```
 
+## Panel CEO online (celular + PC)
+
+Flujo recomendado: **GitHub como fuente única** — escribes los cambios en Cursor (Cloud Agent), el código vive en el repo; no necesitas clonar en tu PC.
+
+### 1. Desplegar en Render (una sola vez)
+
+1. Entra en [render.com](https://render.com) e inicia sesión con GitHub.
+2. **New → Blueprint** (o Web Service) y conecta el repo `saorjuela14-lab/ACCIONESBUSQUEDA`.
+3. Render detectará `render.yaml` y creará el servicio `nexbuy-ceo`.
+4. En **Environment** del servicio, añade la variable (no va en el repo porque es público):
+
+   | Variable | Valor |
+   |----------|--------|
+   | `DASHBOARD_ACCESS_TOKEN` | `Portafolio111` |
+
+5. Opcional: añade `FRED_API_KEY`, `POLYGON_API_KEY`, `ALPHA_VANTAGE_API_KEY` cuando las tengas.
+6. Tras el deploy, copia la URL pública (ej. `https://nexbuy-ceo.onrender.com`).
+
+### 2. Acceder al panel
+
+| URL | Uso |
+|-----|-----|
+| `https://TU-APP.onrender.com/login` | Pantalla de acceso |
+| `https://TU-APP.onrender.com/dashboard` | Panel CEO (PWA, móvil y escritorio) |
+
+- Token de acceso: **`Portafolio111`**
+- En el celular: abre `/login`, entra con el token y usa **Añadir a pantalla de inicio** (PWA).
+
+### 3. Cómo pedir cambios sin PC local
+
+1. Escribe aquí en Cursor lo que quieres (watchlist, UI, nuevas fases).
+2. El agente hace commit → push a una rama `cursor/...` → PR → merge a `main`.
+3. Si configuraste el deploy hook de Render, cada push a `main` actualiza el panel online en unos minutos.
+
+### Auto-deploy (opcional)
+
+En Render: **Settings → Deploy Hook** → copia la URL. En GitHub: **Settings → Secrets → Actions** → `RENDER_DEPLOY_HOOK_URL`. El workflow `.github/workflows/deploy-render.yml` dispara el redeploy en cada push a `main`.
+
 ## Disclaimer
 
 For research and informational purposes only. Not financial advice.
