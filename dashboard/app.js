@@ -168,6 +168,40 @@ function toast(msg, ms = 3500) {
   setTimeout(() => t.classList.add("hidden"), ms);
 }
 
+let loadingCount = 0;
+
+function showLoading(msg = "Procesando…") {
+  loadingCount += 1;
+  const el = $("#loading-overlay");
+  if ($("#loading-msg")) $("#loading-msg").textContent = msg;
+  el?.classList.remove("hidden");
+}
+
+function hideLoading() {
+  loadingCount = Math.max(0, loadingCount - 1);
+  if (loadingCount === 0) $("#loading-overlay")?.classList.add("hidden");
+}
+
+async function withLoading(msg, fn) {
+  showLoading(msg);
+  try {
+    return await fn();
+  } finally {
+    hideLoading();
+  }
+}
+
+function syncBudgetFields(fromId, toId) {
+  const from = $(fromId);
+  const to = $(toId);
+  if (from?.value && to) to.value = from.value;
+}
+
+function setupBudgetSync() {
+  $("#disc-budget")?.addEventListener("change", () => syncBudgetFields("#disc-budget", "#prop-budget"));
+  $("#prop-budget")?.addEventListener("change", () => syncBudgetFields("#prop-budget", "#disc-budget"));
+}
+
 function setupMobileNav() {
   $$(".mob-nav-btn[data-scroll]").forEach((btn) => {
     btn.onclick = () => {
@@ -349,15 +383,16 @@ async function loadDailyTradeRecommendations() {
 }
 
 async function generateDailyTrades() {
-  toast("Generando recomendaciones de corto plazo…");
-  try {
-    const r = await api(`${API}/recommendations/daily/generate`, {
-      method: "POST",
-      body: JSON.stringify({ session: "pre_market", max_picks: 8 }),
-    });
-    renderTradeRecommendations(r);
-    toast(`${(r.picks || []).length} recomendaciones listas`);
-  } catch (e) { toast("Recomendaciones: " + e.message); }
+  await withLoading("Generando recomendaciones de corto plazo…", async () => {
+    try {
+      const r = await api(`${API}/recommendations/daily/generate`, {
+        method: "POST",
+        body: JSON.stringify({ session: "pre_market", max_picks: 8 }),
+      });
+      renderTradeRecommendations(r);
+      toast(`${(r.picks || []).length} recomendaciones listas`);
+    } catch (e) { toast("Recomendaciones: " + e.message); }
+  });
 }
 
 async function loadWatchlistMatrix() {
@@ -554,11 +589,46 @@ function renderDashboard(d) {
   renderProviderHealth(d.provider_health);
 }
 
+async function loadPushStatus() {
+  try {
+    const s = await api(`${API}/alerts/push-status`);
+    const badge = $("#push-status-badge");
+    if (!badge) return;
+    if (s.enabled) {
+      const parts = [];
+      if (s.telegram) parts.push("TG");
+      if (s.webhook) parts.push("WH");
+      badge.textContent = `push ${parts.join("+")}`;
+      badge.className = "push-badge on";
+      badge.title = "Notificaciones push activas";
+    } else {
+      badge.textContent = "push off";
+      badge.className = "push-badge off";
+      badge.title = "Configura TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID en el servidor";
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+async function testPushNotification() {
+  toast("Enviando alerta de prueba…");
+  try {
+    const r = await api(`${API}/alerts/test-push`, { method: "POST" });
+    toast(r.ok ? "Push de prueba enviado" : "Push no entregado — revisa configuración");
+  } catch (e) { toast("Push: " + e.message); }
+}
+
 async function loadDashboard() {
   try {
     const d = await api(`${API}/dashboard`);
     renderDashboard(d);
-    await Promise.all([loadDailyBriefing(), loadDailyTradeRecommendations(), loadWatchlistMatrix()]);
+    await Promise.all([
+      loadDailyBriefing(),
+      loadDailyTradeRecommendations(),
+      loadWatchlistMatrix(),
+      loadPushStatus(),
+    ]);
   } catch (e) { toast("Panel: " + e.message); }
 }
 
@@ -917,9 +987,9 @@ function renderCorrelations(corr) {
 
 async function runAnalyze() {
   const t = ticker();
-  toast(`Analizando ${t}…`);
-  try {
-    const [thesis, sent, graph, corr] = await Promise.all([
+  await withLoading(`Analizando ${t}…`, async () => {
+    try {
+      const [thesis, sent, graph, corr] = await Promise.all([
       api(`${API}/analyze`, { method: "POST", body: JSON.stringify({ ticker: t }) }),
       api(`${API}/sentiment/${t}/engine`),
       api(`${API}/graph/${t}`),
@@ -957,7 +1027,8 @@ async function runAnalyze() {
     renderCorrelations(corr);
     await loadWatchlistMatrix();
     toast(`${t} listo`);
-  } catch (e) { toast("Análisis: " + e.message); }
+    } catch (e) { toast("Análisis: " + e.message); }
+  });
 }
 
 function renderSentiment(s) {
@@ -1040,16 +1111,17 @@ function renderProposalVisual(p) {
 async function buildAllocationAdvise() {
   const capital = parseFloat($("#alloc-capital").value) || 1000;
   const style = $("#alloc-style").value;
-  toast("Analizando mercado y watchlist…");
-  try {
-    const plan = await api(`${API}/allocation/advise`, {
-      method: "POST",
-      body: JSON.stringify({ capital, strategy_style: style }),
-    });
-    lastAllocationPlan = plan;
-    renderAllocationPlan(plan);
-    toast("Asignación generada");
-  } catch (e) { toast("Asignación: " + e.message); }
+  await withLoading("Analizando mercado y watchlist…", async () => {
+    try {
+      const plan = await api(`${API}/allocation/advise`, {
+        method: "POST",
+        body: JSON.stringify({ capital, strategy_style: style }),
+      });
+      lastAllocationPlan = plan;
+      renderAllocationPlan(plan);
+      toast("Asignación generada");
+    } catch (e) { toast("Asignación: " + e.message); }
+  });
 }
 
 function renderAllocationPlan(plan) {
@@ -1103,27 +1175,28 @@ async function buildProposal() {
     risk_profile: $("#prop-risk").value,
     instrument_mode: "auto",
   };
-  toast("Creando propuesta…");
-  try {
-    const p = await api(`${API}/proposal`, { method: "POST", body: JSON.stringify(body) });
-    lastProposal = p;
-    renderProposalVisual(p);
-    let out = p.summary + "\n\n" + (p.executive_report?.narrative || "") + "\n\n";
-    if (p.executive_report) {
-      out += "POR QUÉ SE SELECCIONARON:\n" + p.executive_report.why_selected.join("\n") + "\n\n";
-      out += "POR QUÉ NO:\n" + (p.executive_report.why_excluded || []).join("\n") + "\n\n";
-      out += "RIESGOS:\n" + p.executive_report.key_risks.join("\n") + "\n\n";
-      out += "A MONITOREAR:\n" + p.executive_report.events_to_monitor.join("\n") + "\n\n";
-      if (p.executive_report.correlation_notes?.length) {
-        out += "CORRELACIONES:\n" + p.executive_report.correlation_notes.join("\n") + "\n\n";
+  await withLoading("Creando propuesta…", async () => {
+    try {
+      const p = await api(`${API}/proposal`, { method: "POST", body: JSON.stringify(body) });
+      lastProposal = p;
+      renderProposalVisual(p);
+      let out = p.summary + "\n\n" + (p.executive_report?.narrative || "") + "\n\n";
+      if (p.executive_report) {
+        out += "POR QUÉ SE SELECCIONARON:\n" + p.executive_report.why_selected.join("\n") + "\n\n";
+        out += "POR QUÉ NO:\n" + (p.executive_report.why_excluded || []).join("\n") + "\n\n";
+        out += "RIESGOS:\n" + p.executive_report.key_risks.join("\n") + "\n\n";
+        out += "A MONITOREAR:\n" + p.executive_report.events_to_monitor.join("\n") + "\n\n";
+        if (p.executive_report.correlation_notes?.length) {
+          out += "CORRELACIONES:\n" + p.executive_report.correlation_notes.join("\n") + "\n\n";
+        }
       }
-    }
-    out += (p.allocations || []).map((a) =>
-      `#${a.purchase_order} ${a.ticker} [${a.instrument}] $${a.allocation_usd} — ${a.rationale}`
-    ).join("\n");
-    $("#proposal-out").textContent = out;
-    toast("Propuesta lista");
-  } catch (e) { toast("Propuesta: " + e.message); }
+      out += (p.allocations || []).map((a) =>
+        `#${a.purchase_order} ${a.ticker} [${a.instrument}] $${a.allocation_usd} — ${a.rationale}`
+      ).join("\n");
+      $("#proposal-out").textContent = out;
+      toast("Propuesta lista");
+    } catch (e) { toast("Propuesta: " + e.message); }
+  });
 }
 
 async function applyProposal() {
@@ -1341,41 +1414,43 @@ function renderDiscoveryAnalyses(result) {
     </div>`).join("");
   $$(".disc-analyze-btn").forEach((btn) => {
     btn.onclick = () => {
-      $("#ticker-input").value = btn.dataset.t;
+      $("#global-ticker").value = btn.dataset.t;
       runAnalyze();
     };
   });
 }
 
 async function runDiscoveryResearch() {
-  toast("Investigando redes sociales y noticias…");
   $("#disc-analyses").innerHTML = "";
-  try {
-    const r = await api(`${API}/discover/research`, {
-      method: "POST",
-      body: JSON.stringify({ themes: parseDiscoveryThemes(), max_candidates: 15 }),
-    });
-    renderDiscoveryReport(r);
-    toast(`${(r.candidates || []).length} candidatos encontrados`);
-  } catch (e) { toast("Descubrimiento: " + e.message); }
+  await withLoading("Investigando redes sociales y noticias…", async () => {
+    try {
+      const r = await api(`${API}/discover/research`, {
+        method: "POST",
+        body: JSON.stringify({ themes: parseDiscoveryThemes(), max_candidates: 15 }),
+      });
+      renderDiscoveryReport(r);
+      toast(`${(r.candidates || []).length} candidatos encontrados`);
+    } catch (e) { toast("Descubrimiento: " + e.message); }
+  });
 }
 
 async function runDiscoveryAnalyze() {
   const analyzeTop = parseInt($("#disc-analyze-top").value, 10) || 3;
-  toast(`Investigando y analizando top ${analyzeTop}… (puede tardar)`);
-  try {
-    const r = await api(`${API}/discover/analyze`, {
-      method: "POST",
-      body: JSON.stringify({
-        themes: parseDiscoveryThemes(),
-        max_candidates: 15,
-        analyze_top: analyzeTop,
-        portfolio_id: lastPortfolioId,
-      }),
-    });
-    renderDiscoveryAnalyses(r);
-    toast("Descubrimiento y análisis completados");
-  } catch (e) { toast("Descubrimiento: " + e.message); }
+  await withLoading(`Investigando y analizando top ${analyzeTop}…`, async () => {
+    try {
+      const r = await api(`${API}/discover/analyze`, {
+        method: "POST",
+        body: JSON.stringify({
+          themes: parseDiscoveryThemes(),
+          max_candidates: 15,
+          analyze_top: analyzeTop,
+          portfolio_id: lastPortfolioId,
+        }),
+      });
+      renderDiscoveryAnalyses(r);
+      toast("Descubrimiento y análisis completados");
+    } catch (e) { toast("Descubrimiento: " + e.message); }
+  });
 }
 
 function switchToTab(tabName) {
@@ -1405,33 +1480,34 @@ function renderProposalFromResult(p, extraSummary) {
 async function runDiscoveryProposal() {
   const budget = parseFloat($("#disc-budget")?.value) || 1000;
   const proposalTop = Math.min(parseInt($("#disc-analyze-top").value, 10) || 3, 6);
-  toast("Descubriendo, analizando y generando propuesta… (puede tardar)");
   $("#disc-analyses").innerHTML = "";
-  try {
-    const r = await api(`${API}/discover/proposal`, {
-      method: "POST",
-      body: JSON.stringify({
-        budget,
-        themes: parseDiscoveryThemes(),
-        max_candidates: 15,
-        proposal_top: proposalTop,
-        portfolio_id: lastPortfolioId,
-        risk_profile: "balanced",
-        instrument_mode: "auto",
-        add_to_watchlist: true,
-        use_llm_narrative: true,
-      }),
-    });
-    renderDiscoveryReport(r.discovery);
-    if (r.watchlist_added?.length) {
-      toast(`Watchlist: ${r.watchlist_added.join(", ")}`);
-      await loadDashboard();
-    }
-    $("#prop-budget").value = budget;
-    renderProposalFromResult(r.proposal, r.summary);
-    switchToTab("proposal");
-    toast(`Propuesta lista con ${(r.tickers_selected || []).join(", ")}`);
-  } catch (e) { toast("Descubrir → Propuesta: " + e.message); }
+  await withLoading("Descubriendo y generando propuesta…", async () => {
+    try {
+      const r = await api(`${API}/discover/proposal`, {
+        method: "POST",
+        body: JSON.stringify({
+          budget,
+          themes: parseDiscoveryThemes(),
+          max_candidates: 15,
+          proposal_top: proposalTop,
+          portfolio_id: lastPortfolioId,
+          risk_profile: "balanced",
+          instrument_mode: "auto",
+          add_to_watchlist: true,
+          use_llm_narrative: true,
+        }),
+      });
+      renderDiscoveryReport(r.discovery);
+      if (r.watchlist_added?.length) {
+        toast(`Watchlist: ${r.watchlist_added.join(", ")}`);
+        await loadDashboard();
+      }
+      $("#prop-budget").value = budget;
+      renderProposalFromResult(r.proposal, r.summary);
+      switchToTab("proposal");
+      toast(`Propuesta lista con ${(r.tickers_selected || []).join(", ")}`);
+    } catch (e) { toast("Descubrir → Propuesta: " + e.message); }
+  });
 }
 
 $$(".tab").forEach((btn) => btn.onclick = () => {
@@ -1464,6 +1540,7 @@ $("#tech-chart-tf").onchange = () => {
 $("#btn-disc-research").onclick = runDiscoveryResearch;
 $("#btn-disc-analyze").onclick = runDiscoveryAnalyze;
 $("#btn-disc-proposal").onclick = runDiscoveryProposal;
+$("#btn-test-push").onclick = testPushNotification;
 $("#btn-shock").onclick = simulateShock;
 
 $("#news-modal-close").onclick = closeNewsModal;
@@ -1478,6 +1555,8 @@ document.addEventListener("keydown", (e) => {
 (async () => {
   await ensureAuth();
   setupMobileNav();
+  setupBudgetSync();
+  syncBudgetFields("#disc-budget", "#prop-budget");
   const t = localStorage.getItem("nexbuy_token");
   const exportBtn = $("#btn-export-briefing");
   if (exportBtn && t) exportBtn.href = `${API}/reports/daily/latest/export?token=${encodeURIComponent(t)}`;

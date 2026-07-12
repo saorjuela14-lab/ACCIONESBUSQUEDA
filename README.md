@@ -38,6 +38,7 @@ Cuando Reddit apruebe tu app OAuth, se conecta sin rehacer el agente.
 ### Fase 3 — Automatización (implementado)
 - **Watchlist Engine**: monitoreo automático cada 30 min (horario de mercado)
 - **Alert Engine**: deduplicación 24h, sin spam
+- **Push Alerts** (opcional): Telegram + webhook genérico al emitir alertas
 - **Market Monitor**: reportes 08:30 / 11:30 / 15:00 / 17:30 ET
 - **Daily Investment Report**: generado a las 17:30 ET
 - **Investment Memory**: evaluación automática a los 90 días + recalibración de pesos
@@ -47,8 +48,23 @@ python main.py serve      # API + scheduler integrado
 python main.py scheduler  # Solo scheduler (standalone)
 POST /api/v1/watchlist/scan  # Scan manual
 GET  /api/v1/alerts
+POST /api/v1/alerts/test-push
 GET  /api/v1/reports/daily/latest
 ```
+
+#### Alertas push (Telegram)
+
+1. Crea un bot con [@BotFather](https://t.me/BotFather) → copia el token
+2. Envía un mensaje al bot y obtén tu `chat_id` (p. ej. con `@userinfobot`)
+3. En FastAPI Cloud → Environment Variables:
+
+| Variable | Valor |
+|----------|--------|
+| `TELEGRAM_BOT_TOKEN` | Token del bot (Secret) |
+| `TELEGRAM_CHAT_ID` | Tu chat ID numérico |
+| `ALERT_WEBHOOK_URL` | *(opcional)* URL POST JSON |
+
+Redeploy. En el panel → Alertas → **Probar push**.
 
 ### Fase 2.2 — Market Data (implementado)
 Cadena de fallback automática: **Polygon → Alpha Vantage → YFinance**
@@ -153,6 +169,8 @@ En el dashboard de tu app → **Environment Variables** → añade:
 | `REDIS_ENABLED` | `false` |
 | `APP_ENV` | `production` |
 | `SCHEDULER_ENABLED` | `true` |
+| `TELEGRAM_BOT_TOKEN` | *(opcional)* Token del bot Telegram |
+| `TELEGRAM_CHAT_ID` | *(opcional)* Chat ID para alertas push |
 
 Marca `DASHBOARD_ACCESS_TOKEN` como **Secret** si la opción existe. Pulsa **Redeploy** tras guardar.
 
