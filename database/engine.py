@@ -5,6 +5,8 @@ from pathlib import Path
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from config.settings import get_settings
 from database.models import Base
 
 _engine = None
