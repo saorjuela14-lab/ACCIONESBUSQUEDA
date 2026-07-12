@@ -13,6 +13,7 @@
   <title>NexBuy — Terminal CEO</title>
   <link rel="stylesheet" href="/dashboard/static/styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
 </head>
 <body>
@@ -119,9 +120,27 @@
               <div class="metric-card"><label>Precio Objetivo</label><div id="m-target">—</div></div>
               <div class="metric-card"><label>Sent. Mercado</label><div id="m-msent">—</div></div>
             </div>
+            <div class="tech-toolbar">
+              <h4 class="subhead" style="margin:0">Vista del Analista Técnico</h4>
+              <select id="tech-period">
+                <option value="3mo">3 meses</option>
+                <option value="6mo" selected>6 meses</option>
+                <option value="1y">1 año</option>
+              </select>
+            </div>
+            <div class="tech-kpi-row" id="tech-kpi-row">
+              <div class="tech-kpi"><label>RSI</label><div id="tk-rsi">—</div></div>
+              <div class="tech-kpi"><label>MACD</label><div id="tk-macd">—</div></div>
+              <div class="tech-kpi"><label>Sesgo</label><div id="tk-bias">—</div></div>
+              <div class="tech-kpi"><label>Soporte</label><div id="tk-support">—</div></div>
+              <div class="tech-kpi"><label>Resistencia</label><div id="tk-resistance">—</div></div>
+              <div class="tech-kpi"><label>Stop / Objetivo</label><div id="tk-levels">—</div></div>
+            </div>
+            <p id="tech-summary" class="prose tech-summary">Selecciona un ticker y pulsa Analizar para ver velas e indicadores.</p>
+            <div class="chart-box tech-chart-box"><div id="candle-chart" class="lw-chart"></div></div>
+            <div class="chart-box small tech-chart-box"><div id="rsi-chart" class="lw-chart"></div></div>
+            <div class="chart-box small tech-chart-box"><div id="macd-chart" class="lw-chart"></div></div>
             <div class="scenarios-row" id="scenarios-row"></div>
-            <p id="exec-summary" class="prose">Selecciona un ticker y pulsa Analizar.</p>
-            <div class="chart-box"><canvas id="price-chart"></canvas></div>
             <h4 class="subhead">Correlaciones Técnicas (contexto comité)</h4>
             <ul id="tech-correlations" class="corr-list"></ul>
             <div id="agents-grid" class="agent-grid"></div>

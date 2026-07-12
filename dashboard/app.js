@@ -39,6 +39,7 @@ const AGENT_ES = {
 };
 
 const charts = {};
+let lwCharts = { candle: null, rsi: null, macd: null };
 let lastProposal = null;
 let lastPortfolioId = null;
 let lastNewsItems = [];
@@ -562,58 +563,136 @@ async function loadDashboard() {
 }
 
 async function loadPriceChart(t) {
+  await loadTechnicalChart(t);
+}
+
+function destroyLwChart(key) {
+  if (lwCharts[key]) {
+    lwCharts[key].remove();
+    lwCharts[key] = null;
+  }
+}
+
+function destroyAllLwCharts() {
+  Object.keys(lwCharts).forEach(destroyLwChart);
+}
+
+const BIAS_ES = { bullish: "Alcista", bearish: "Bajista", neutral: "Neutral" };
+
+function renderTechnicalKpis(snap) {
+  if (!snap) return;
+  const rsiEl = $("#tk-rsi");
+  rsiEl.textContent = snap.rsi != null ? snap.rsi.toFixed(1) : "—";
+  rsiEl.className = snap.rsi > 70 ? "bearish" : snap.rsi < 30 ? "bullish" : "";
+  $("#tk-macd").textContent = snap.macd != null && snap.macd_signal != null
+    ? (snap.macd > snap.macd_signal ? "Alcista" : "Bajista")
+    : "—";
+  const biasEl = $("#tk-bias");
+  biasEl.textContent = BIAS_ES[snap.bias] || snap.bias || "—";
+  biasEl.className = snap.bias === "bullish" ? "bullish" : snap.bias === "bearish" ? "bearish" : "";
+  $("#tk-support").textContent = snap.support != null ? `$${snap.support}` : "—";
+  $("#tk-resistance").textContent = snap.resistance != null ? `$${snap.resistance}` : "—";
+  $("#tk-levels").textContent = snap.stop_loss && snap.take_profit_1
+    ? `$${snap.stop_loss} / $${snap.take_profit_1}`
+    : "—";
+}
+
+async function loadTechnicalChart(t, techAgentReport) {
+  const period = $("#tech-period")?.value || "6mo";
   try {
-    const data = await api(`${API}/market/${t}/chart?period=6mo`);
-    const labels = data.points.map((p) => p.date);
-    const closes = data.points.map((p) => p.close);
-    const highs = data.points.map((p) => p.high ?? p.close);
-    const lows = data.points.map((p) => p.low ?? p.close);
-    makeChart("price-chart", {
-      type: "line",
-      data: {
-        labels,
-        datasets: [
-          {
-            label: "Máximo",
-            data: highs,
-            borderColor: "rgba(34,197,94,0.35)",
-            backgroundColor: "transparent",
-            borderWidth: 1,
-            pointRadius: 0,
-            tension: 0.1,
-          },
-          {
-            label: "Cierre",
-            data: closes,
-            borderColor: "#3b82f6",
-            backgroundColor: "rgba(59,130,246,0.12)",
-            fill: true,
-            tension: 0.2,
-            pointRadius: 0,
-            borderWidth: 2,
-          },
-          {
-            label: "Mínimo",
-            data: lows,
-            borderColor: "rgba(239,68,68,0.35)",
-            backgroundColor: "transparent",
-            borderWidth: 1,
-            pointRadius: 0,
-            tension: 0.1,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { ticks: { color: "#7d8fa3", maxTicksLimit: 8 }, grid: { color: "#1e2a38" } },
-          y: { ticks: { color: "#7d8fa3" }, grid: { color: "#1e2a38" } },
-        },
-      },
+    const data = await api(`${API}/market/${t}/technical?period=${period}`);
+    const pts = data.points || [];
+    if (!pts.length) {
+      destroyAllLwCharts();
+      $("#tech-summary").textContent = data.summary || "Sin datos técnicos.";
+      return;
+    }
+
+    renderTechnicalKpis(data.snapshot);
+
+    let summary = data.summary || "";
+    if (techAgentReport?.summary) {
+      summary = techAgentReport.summary + (summary ? `\n\n${summary}` : "");
+    }
+    $("#tech-summary").textContent = summary;
+
+    const chartOpts = {
+      layout: { background: { color: "transparent" }, textColor: "#7d8fa3" },
+      grid: { vertLines: { color: "#1e2a38" }, horzLines: { color: "#1e2a38" } },
+      rightPriceScale: { borderColor: "#1e2a38" },
+      timeScale: { borderColor: "#1e2a38", timeVisible: false },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    };
+
+    destroyLwChart("candle");
+    const candleEl = $("#candle-chart");
+    lwCharts.candle = LightweightCharts.createChart(candleEl, { ...chartOpts, height: candleEl.clientHeight || 260 });
+    const candleSeries = lwCharts.candle.addCandlestickSeries({
+      upColor: "#22c55e", downColor: "#ef4444",
+      borderUpColor: "#22c55e", borderDownColor: "#ef4444",
+      wickUpColor: "#22c55e", wickDownColor: "#ef4444",
     });
-  } catch { destroyChart("price-chart"); }
+    candleSeries.setData(pts.map((p) => ({
+      time: p.date, open: p.open, high: p.high, low: p.low, close: p.close,
+    })));
+
+    const sma20Data = pts.filter((p) => p.sma20 != null).map((p) => ({ time: p.date, value: p.sma20 }));
+    const sma50Data = pts.filter((p) => p.sma50 != null).map((p) => ({ time: p.date, value: p.sma50 }));
+    if (sma20Data.length) {
+      const s20 = lwCharts.candle.addLineSeries({ color: "#f59e0b", lineWidth: 1, title: "SMA20" });
+      s20.setData(sma20Data);
+    }
+    if (sma50Data.length) {
+      const s50 = lwCharts.candle.addLineSeries({ color: "#8b5cf6", lineWidth: 1, title: "SMA50" });
+      s50.setData(sma50Data);
+    }
+
+    if (data.snapshot?.support) {
+      candleSeries.createPriceLine({ price: data.snapshot.support, color: "#22c55e", lineWidth: 1, lineStyle: 2, title: "Soporte" });
+    }
+    if (data.snapshot?.resistance) {
+      candleSeries.createPriceLine({ price: data.snapshot.resistance, color: "#ef4444", lineWidth: 1, lineStyle: 2, title: "Resistencia" });
+    }
+
+    const volData = pts.filter((p) => p.volume != null).map((p) => ({
+      time: p.date, value: p.volume,
+      color: p.close >= p.open ? "rgba(34,197,94,0.5)" : "rgba(239,68,68,0.5)",
+    }));
+    if (volData.length) {
+      const volSeries = lwCharts.candle.addHistogramSeries({
+        priceFormat: { type: "volume" }, priceScaleId: "vol",
+      });
+      lwCharts.candle.priceScale("vol").applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+      volSeries.setData(volData);
+    }
+    lwCharts.candle.timeScale().fitContent();
+
+    destroyLwChart("rsi");
+    const rsiEl = $("#rsi-chart");
+    lwCharts.rsi = LightweightCharts.createChart(rsiEl, { ...chartOpts, height: rsiEl.clientHeight || 120 });
+    const rsiSeries = lwCharts.rsi.addLineSeries({ color: "#3b82f6", lineWidth: 2, title: "RSI" });
+    rsiSeries.setData(pts.filter((p) => p.rsi != null).map((p) => ({ time: p.date, value: p.rsi })));
+    rsiSeries.createPriceLine({ price: 70, color: "rgba(239,68,68,0.6)", lineWidth: 1, lineStyle: 2 });
+    rsiSeries.createPriceLine({ price: 30, color: "rgba(34,197,94,0.6)", lineWidth: 1, lineStyle: 2 });
+    lwCharts.rsi.timeScale().fitContent();
+
+    destroyLwChart("macd");
+    const macdEl = $("#macd-chart");
+    lwCharts.macd = LightweightCharts.createChart(macdEl, { ...chartOpts, height: macdEl.clientHeight || 120 });
+    const macdLine = lwCharts.macd.addLineSeries({ color: "#06b6d4", lineWidth: 1, title: "MACD" });
+    macdLine.setData(pts.filter((p) => p.macd != null).map((p) => ({ time: p.date, value: p.macd })));
+    const sigLine = lwCharts.macd.addLineSeries({ color: "#f59e0b", lineWidth: 1, title: "Señal" });
+    sigLine.setData(pts.filter((p) => p.macd_signal != null).map((p) => ({ time: p.date, value: p.macd_signal })));
+    const histSeries = lwCharts.macd.addHistogramSeries({ title: "Hist" });
+    histSeries.setData(pts.filter((p) => p.macd_hist != null).map((p) => ({
+      time: p.date, value: p.macd_hist,
+      color: p.macd_hist >= 0 ? "rgba(34,197,94,0.6)" : "rgba(239,68,68,0.6)",
+    })));
+    lwCharts.macd.timeScale().fitContent();
+  } catch (e) {
+    destroyAllLwCharts();
+    $("#tech-summary").textContent = "Error cargando gráfico técnico: " + e.message;
+  }
 }
 
 async function loadSentimentTrend(t) {
@@ -735,10 +814,10 @@ async function runAnalyze() {
     $("#m-rec").className = recClass(thesis.recommendation);
     $("#m-conf").textContent = thesis.confidence ? `${(thesis.confidence * 100).toFixed(0)}%` : "—";
     $("#m-target").textContent = thesis.price_target ? `$${thesis.price_target.toFixed(2)}` : "—";
-    $("#exec-summary").textContent = thesis.executive_summary || "";
+    const techReport = (thesis.agent_reports || []).find((r) => r.agent_name === "technical_agent");
     renderScenarios(thesis);
     renderTechCorrelations(thesis);
-    await loadPriceChart(t);
+    await loadTechnicalChart(t, techReport);
 
     const news = (thesis.agent_reports || []).find((r) => r.agent_name === "news_agent");
     $("#agents-grid").innerHTML = (thesis.agent_reports || []).map((r) => {
@@ -1204,6 +1283,7 @@ $("#portfolio-modal-backdrop").onclick = closePortfolioModal;
 $("#btn-simulate-proposal").onclick = simulateDemoProposal;
 $("#btn-scan").onclick = scanWatchlist;
 $("#btn-generate-trades").onclick = generateDailyTrades;
+$("#tech-period").onchange = () => { const t = ticker(); if (t) loadTechnicalChart(t); };
 $("#btn-disc-research").onclick = runDiscoveryResearch;
 $("#btn-disc-analyze").onclick = runDiscoveryAnalyze;
 $("#btn-shock").onclick = simulateShock;
