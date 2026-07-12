@@ -1,5 +1,4 @@
-# Publica imagen Docker en GitHub Container Registry (gratis, sin tarjeta).
-# SnapDeploy u otra plataforma puede desplegar desde esta imagen o desde el repo.
+# Publica imagen Docker en GitHub Container Registry (opcional).
 name: Publish Docker image
 
 on:

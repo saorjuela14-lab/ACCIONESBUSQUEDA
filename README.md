@@ -18,7 +18,7 @@ Professional multi-agent investment research, portfolio management, and thesis g
 - **14 specialized agents** delivering structured evidence (never buy/sell decisions)
 - **Investment Director** consolidates all reports into auditable investment theses
 - **FastAPI** REST API, **APScheduler** for automated market reports
-- **SQLite** en producción (SnapDeploy). Sin PostgreSQL ni Redis en el despliegue online.
+- **SQLite** en producción (Zeabur). Sin PostgreSQL ni Redis en el despliegue online.
 
 ## Fase 2 — Integraciones de datos
 
@@ -123,20 +123,16 @@ Evidence Agents → Alert Engine → Investment Director → Investment Memory
 
 Flujo recomendado: **GitHub como fuente única** — escribes los cambios en Cursor (Cloud Agent), el código vive en el repo; no necesitas clonar en tu PC.
 
-### SnapDeploy (gratis, sin tarjeta)
+### Desplegar en Zeabur (recomendado — gratis, sin tarjeta)
 
-En SnapDeploy solo verás **GitHub**, **AI Templates** o **Upload Artifact**. Usa **GitHub**.
+[Zeabur](https://zeabur.com) ofrece plan gratuito **sin pedir tarjeta de crédito**. Conecta GitHub y despliega FastAPI automáticamente.
 
-1. [snapdeploy.dev](https://snapdeploy.dev) → **Sign up with GitHub**
-2. **Deploy Your Application** → pestaña **GitHub**
-3. Repo: `saorjuela14-lab/ACCIONESBUSQUEDA`, rama **`main`**
-4. **Espera 1–2 min** a que GitHub tenga el último push (commit con `requirements.txt` sin PostgreSQL)
-5. Si ya habías conectado el repo antes: **desconéctalo y vuelve a conectar** para refrescar el escaneo
-6. Configura:
-   - **Port:** `8000`
-   - **Start command** (si lo pide): `uvicorn main:app --host 0.0.0.0 --port 8000`
-   - **Health check:** `/health`
-7. Variables de entorno — **no crees add-ons de PostgreSQL ni Redis**:
+1. Crea cuenta en [zeabur.com](https://zeabur.com) → **Sign up with GitHub**
+2. En el primer proyecto puede pedir verificación (teléfono o créditos prepago) — **no exige tarjeta** en el plan Free
+3. **Create Project** → **Add Service** → **GitHub**
+4. Autoriza GitHub y selecciona el repo `saorjuela14-lab/ACCIONESBUSQUEDA`, rama **`main`**
+5. Zeabur detecta Python/FastAPI y usa `requirements.txt` + `zbpack.json`
+6. Pestaña **Variables** → añade:
 
    | Variable | Valor |
    |----------|--------|
@@ -146,32 +142,17 @@ En SnapDeploy solo verás **GitHub**, **AI Templates** o **Upload Artifact**. Us
    | `APP_ENV` | `production` |
    | `SCHEDULER_ENABLED` | `true` |
 
-8. Pulsa **Deploy**
+7. Pestaña **Networking** → **Generate Domain** (URL tipo `https://nexbuy-ceo.zeabur.app`)
+8. Pulsa **Deploy** (o redeploy si ya estaba conectado)
 
-> **Si aún pide PostgreSQL/Redis:** el escaneo está cacheado. Prueba **Upload Artifact** → descarga el ZIP desde [github.com/saorjuela14-lab/ACCIONESBUSQUEDA/archive/refs/heads/main.zip](https://github.com/saorjuela14-lab/ACCIONESBUSQUEDA/archive/refs/heads/main.zip) y súbelo.
-
-La app usa **SQLite + caché en memoria**. No necesitas bases de datos externas ni add-ons de pago.
-
-### Hugging Face (solo si tienes plan PRO)
-
-Tu cuenta `sergio14orjuela` está activa, pero **los Spaces Docker/Gradio en plan gratuito ahora requieren suscripción PRO** en Hugging Face (error 402). Sin PRO no se puede crear el Space desde la API.
-
-Si más adelante contratas PRO:
-
-1. Vincular GitHub: [huggingface.co/settings/connected-applications](https://huggingface.co/settings/connected-applications) → **Connect GitHub**.
-2. Crear Space → SDK **Docker** → enlazar repo `ACCIONESBUSQUEDA`.
-3. Secret: `DASHBOARD_ACCESS_TOKEN` = `Portafolio111`.
-
-El `README.md` ya incluye el bloque YAML (`sdk: docker`, `app_port: 8000`) que Hugging Face necesita.
-
-> **Seguridad:** No compartas tu token `hf_...` en chats. Si lo hiciste, revócalo en [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) y crea uno nuevo.
+> **Nota:** En plan Free el servicio puede dormir tras inactividad (~5–15 s al despertar). SQLite es local al contenedor; los datos se reinician en redeploys mayores.
 
 ### Acceder al panel
 
 | URL | Uso |
 |-----|-----|
-| `https://TU-APP.snapdeploy.dev/login` | Pantalla de acceso |
-| `https://TU-APP.snapdeploy.dev/dashboard` | Panel CEO (PWA, móvil y escritorio) |
+| `https://TU-APP.zeabur.app/login` | Pantalla de acceso |
+| `https://TU-APP.zeabur.app/dashboard` | Panel CEO (PWA, móvil y escritorio) |
 
 - Token de acceso: **`Portafolio111`**
 - En el celular: abre `/login`, entra con el token y usa **Añadir a pantalla de inicio** (PWA).
@@ -180,7 +161,15 @@ El `README.md` ya incluye el bloque YAML (`sdk: docker`, `app_port: 8000`) que H
 
 1. Escribe aquí en Cursor lo que quieres (watchlist, UI, nuevas fases).
 2. El agente hace commit → push a `main` en GitHub.
-3. SnapDeploy (o GHCR + redeploy) actualiza el panel en unos minutos.
+3. Zeabur reconstruye y publica solo (auto-deploy en cada push).
+
+### Otras plataformas (referencia)
+
+| Plataforma | Motivo para no usarla aquí |
+|------------|----------------------------|
+| Render | Pide tarjeta de crédito |
+| Hugging Face Spaces Docker | Requiere plan PRO |
+| SnapDeploy | Pide add-ons PostgreSQL/Redis de pago |
 
 ## Disclaimer
 
