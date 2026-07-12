@@ -406,6 +406,15 @@ body.modal-open { overflow: hidden; }
 .push-badge { font-size: 9px; font-weight: normal; margin-left: 4px; }
 .push-badge.on { color: #22c55e; }
 .push-badge.off { color: var(--muted); }
+.voice-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 0 0.5rem 0.5rem; padding: 6px 10px;
+  background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.2);
+  border-radius: 6px; font-size: 11px;
+}
+.voice-status { color: var(--text); font-weight: 500; }
+.voice-hint { font-size: 10px; }
+.voice-btn.voice-active { background: rgba(239,68,68,0.25); border-color: #ef4444; color: #fca5a5; }
 
 /* Login */
 .login-page { display: grid; place-items: center; min-height: 100vh; padding: 1rem; }

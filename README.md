@@ -39,6 +39,7 @@ Cuando Reddit apruebe tu app OAuth, se conecta sin rehacer el agente.
 - **Watchlist Engine**: monitoreo automático cada 30 min (horario de mercado)
 - **Alert Engine**: deduplicación 24h, sin spam
 - **Push Alerts** (opcional): Telegram + webhook genérico al emitir alertas
+- **Asistente de voz** (opcional): habla, escucha y ejecuta comandos en español vía Web Speech API
 - **Market Monitor**: reportes 08:30 / 11:30 / 15:00 / 17:30 ET
 - **Daily Investment Report**: generado a las 17:30 ET
 - **Investment Memory**: evaluación automática a los 90 días + recalibración de pesos
@@ -65,6 +66,16 @@ GET  /api/v1/reports/daily/latest
 | `ALERT_WEBHOOK_URL` | *(opcional)* URL POST JSON |
 
 Redeploy. En el panel → Alertas → **Probar push**.
+
+#### Asistente de voz (Chrome / Edge)
+
+Botón **🎙 Voz** en el header del panel. Ejemplos:
+
+- «¿Cómo está el mercado?» · «Analiza VRT» · «Escanea la watchlist»
+- «Recomendaciones del día» · «Agrega RKLB a watchlist» · «Descubre biotech»
+- «Mi portafolio» · «Mis alertas» · «Ayuda»
+
+API: `POST /api/v1/voice/command` con `{ "text": "..." }`.
 
 ### Fase 2.2 — Market Data (implementado)
 Cadena de fallback automática: **Polygon → Alpha Vantage → YFinance**
