@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from domain.enums import AlertSeverity, AlertType, StrategyType
+from domain.enums import AlertSeverity, AlertType, PortfolioMode, StrategyType
 
 
 def utc_now() -> datetime:
@@ -42,6 +42,7 @@ class Portfolio(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     name: str
     strategy: StrategyType
+    mode: PortfolioMode = PortfolioMode.REAL
     initial_capital: float
     cash: float
     positions: list[PortfolioPosition] = Field(default_factory=list)

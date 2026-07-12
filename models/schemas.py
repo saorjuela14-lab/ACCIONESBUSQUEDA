@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, Field
 
-from domain.enums import StrategyType
+from domain.enums import PortfolioMode, StrategyType
 from domain.proposal import InvestmentProposal
 from domain.reports import InvestmentThesis
 
@@ -20,8 +20,15 @@ class WatchlistAddRequest(BaseModel):
 class PortfolioCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     strategy: StrategyType = StrategyType.GROWTH
-    initial_capital: float = Field(gt=0)
+    mode: PortfolioMode = PortfolioMode.REAL
+    initial_capital: float = Field(gt=0, description="Capital inicial a gestionar")
     cash: float | None = None
+
+
+class DemoSimulateRequest(BaseModel):
+    proposal_budget: float | None = Field(default=None, gt=0)
+    expected_return_pct: float = Field(default=12.0, ge=-50, le=100)
+    horizon_months: int = Field(default=6, ge=1, le=36)
 
 
 class PositionAddRequest(BaseModel):

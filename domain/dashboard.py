@@ -84,6 +84,9 @@ class PortfolioHistoryPoint(BaseModel):
 class PortfolioDashboardSlice(BaseModel):
     portfolio_id: str | None = None
     name: str | None = None
+    mode: str = "real"
+    initial_capital: float = 0.0
+    cash: float = 0.0
     total_value: float = 0.0
     return_pct: float = 0.0
     sharpe: float | None = None

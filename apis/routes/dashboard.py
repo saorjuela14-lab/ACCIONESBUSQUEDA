@@ -65,7 +65,7 @@ async def get_terminal_dashboard(
     portfolio_slice = None
     portfolios = await PortfolioRepository(session).list_all()
     if portfolios:
-        p = portfolios[0]
+        p = sorted(portfolios, key=lambda x: x.updated_at, reverse=True)[0]
         from providers.market.factory import get_market_provider
         from services.portfolio_service import PortfolioService
 
@@ -102,6 +102,9 @@ async def get_terminal_dashboard(
             portfolio_slice = PortfolioDashboardSlice(
                 portfolio_id=p.id,
                 name=p.name,
+                mode=p.mode.value,
+                initial_capital=p.initial_capital,
+                cash=p.cash,
                 total_value=total,
                 return_pct=p.return_pct,
                 sharpe=metrics.get("sharpe"),

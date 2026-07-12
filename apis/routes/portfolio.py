@@ -8,9 +8,11 @@ from database.repositories.portfolio_repository import PortfolioRepository
 from database.repositories.portfolio_snapshot_repository import PortfolioSnapshotRepository
 from domain.dashboard import PortfolioHistoryPoint
 from domain.entities import Portfolio
-from domain.enums import StrategyType
-from models.schemas import PortfolioCreateRequest, PositionAddRequest
+from domain.enums import PortfolioMode, StrategyType
+from domain.portfolio_demo import PortfolioProjectionReport
+from models.schemas import DemoSimulateRequest, PortfolioCreateRequest, PositionAddRequest
 from providers.market.factory import get_market_provider
+from services.demo_projection_service import DemoProjectionService
 from services.portfolio_service import PortfolioService
 
 router = APIRouter()
@@ -35,23 +37,74 @@ async def create_portfolio(
         strategy=request.strategy,
         initial_capital=request.initial_capital,
         cash=request.cash,
+        mode=request.mode,
     )
 
 
 @router.post("/portfolios/default", response_model=Portfolio)
 async def create_default_portfolio(
+    request: PortfolioCreateRequest | None = None,
     session: AsyncSession = Depends(get_session),
 ) -> Portfolio:
-    """Create a default CEO portfolio if none exists."""
+    """Create a portfolio with optional mode and capital (defaults: real, $1000)."""
     service = _build_service(session)
+    if request:
+        return await service.create(
+            name=request.name,
+            strategy=request.strategy,
+            initial_capital=request.initial_capital,
+            cash=request.cash,
+            mode=request.mode,
+        )
     existing = await service.list_all()
     if existing:
         return existing[0]
     return await service.create(
-        name="CEO Portfolio",
+        name="Portafolio CEO",
         strategy=StrategyType.GROWTH,
         initial_capital=1000.0,
         cash=1000.0,
+        mode=PortfolioMode.REAL,
+    )
+
+
+@router.get("/portfolios/{portfolio_id}/projections", response_model=PortfolioProjectionReport)
+async def portfolio_projections(
+    portfolio_id: str,
+    horizon_months: int = 12,
+    session: AsyncSession = Depends(get_session),
+) -> PortfolioProjectionReport:
+    service = _build_service(session)
+    portfolio = await service.get_by_id(portfolio_id)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Portafolio no encontrado")
+    if portfolio.mode != PortfolioMode.DEMO:
+        raise HTTPException(status_code=400, detail="Proyecciones disponibles solo en portafolios demo")
+    portfolio = await service.refresh_prices(portfolio_id)
+    proj = DemoProjectionService(get_market_provider())
+    return await proj.project(portfolio, horizon_months=horizon_months)
+
+
+@router.post("/portfolios/{portfolio_id}/simulate", response_model=PortfolioProjectionReport)
+async def portfolio_simulate(
+    portfolio_id: str,
+    request: DemoSimulateRequest,
+    session: AsyncSession = Depends(get_session),
+) -> PortfolioProjectionReport:
+    service = _build_service(session)
+    portfolio = await service.get_by_id(portfolio_id)
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Portafolio no encontrado")
+    if portfolio.mode != PortfolioMode.DEMO:
+        raise HTTPException(status_code=400, detail="Simulaciones disponibles solo en portafolios demo")
+    portfolio = await service.refresh_prices(portfolio_id)
+    proj = DemoProjectionService(get_market_provider())
+    budget = request.proposal_budget or portfolio.cash
+    return await proj.simulate_proposal_impact(
+        portfolio,
+        proposal_budget=budget,
+        expected_return_pct=request.expected_return_pct,
+        horizon_months=request.horizon_months,
     )
 
 
@@ -75,10 +128,9 @@ async def portfolio_metrics(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     service = _build_service(session)
-    portfolios = await service.list_all()
-    portfolio = next((p for p in portfolios if p.id == portfolio_id), None)
+    portfolio = await service.get_by_id(portfolio_id)
     if not portfolio:
-        raise HTTPException(status_code=404, detail="Portfolio not found")
+        raise HTTPException(status_code=404, detail="Portafolio no encontrado")
     portfolio = await service.refresh_prices(portfolio_id)
     return await service.compute_metrics(portfolio)
 

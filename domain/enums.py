@@ -100,3 +100,8 @@ class StrategyType(StrEnum):
     MEAN_REVERSION = "mean_reversion"
     SECTOR_ROTATION = "sector_rotation"
     SMART_MONEY = "smart_money"
+
+
+class PortfolioMode(StrEnum):
+    REAL = "real"
+    DEMO = "demo"

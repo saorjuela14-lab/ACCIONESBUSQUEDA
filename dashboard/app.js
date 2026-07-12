@@ -435,9 +435,16 @@ function renderDashboard(d) {
   $$("#recent-panel .wl-item").forEach((el) => el.onclick = () => { $("#global-ticker").value = el.dataset.t; runAnalyze(); });
 
   const p = d.portfolio;
+  const modeBadge = p?.mode === "demo"
+    ? '<span class="demo-badge demo">Demo</span>'
+    : p?.mode === "real"
+      ? '<span class="demo-badge real">Real</span>'
+      : "";
   $("#portfolio-panel").innerHTML = p ? `
-    <div><b>${p.name || "Portafolio"}</b></div>
+    <div><b>${p.name || "Portafolio"}</b>${modeBadge}</div>
+    <div>Capital inicial: $${p.initial_capital?.toFixed(2)}</div>
     <div>Valor: $${p.total_value?.toFixed(2)}</div>
+    <div>Efectivo: $${(p.cash ?? 0).toFixed(2)}</div>
     <div>Rendimiento: ${fmtPct(p.return_pct)}</div>
     <div>Sharpe: ${p.sharpe?.toFixed(2) ?? "—"}</div>
     <div>Drawdown: ${p.max_drawdown?.toFixed(2) ?? "—"}%</div>
@@ -446,8 +453,19 @@ function renderDashboard(d) {
   ` : "Sin portafolio — créalo con el botón de arriba";
   renderPortfolioPies(p);
   lastPortfolioId = p?.portfolio_id || null;
-  if (p?.portfolio_id) loadPortfolioHistory(p.portfolio_id);
-  else destroyChart("portfolio-history-chart");
+  if (p?.portfolio_id) {
+    loadPortfolioHistory(p.portfolio_id);
+    if (p.mode === "demo") {
+      $("#demo-projections-wrap").classList.remove("hidden");
+      loadDemoProjections(p.portfolio_id);
+    } else {
+      $("#demo-projections-wrap").classList.add("hidden");
+      destroyChart("demo-projection-chart");
+    }
+  } else {
+    destroyChart("portfolio-history-chart");
+    $("#demo-projections-wrap").classList.add("hidden");
+  }
   renderOpportunities(d.top_opportunities || [], d.top_risks || []);
   renderProviderHealth(d.provider_health);
 }
@@ -779,9 +797,9 @@ async function applyProposal() {
   let pid = lastPortfolioId;
   if (!pid) {
     try {
-      const p = await api(`${API}/portfolios/default`, { method: "POST" });
-      pid = p.id;
-      lastPortfolioId = pid;
+      toast("Crea un portafolio primero (Real o Demo)");
+      openPortfolioModal();
+      return;
     } catch (e) { toast("Portafolio: " + e.message); return; }
   }
   toast("Aplicando propuesta…");
@@ -796,12 +814,123 @@ async function applyProposal() {
   } catch (e) { toast("Aplicar: " + e.message); }
 }
 
-async function createPortfolio() {
-  toast("Creando portafolio CEO…");
+async function loadDemoProjections(portfolioId) {
   try {
-    const p = await api(`${API}/portfolios/default`, { method: "POST" });
+    const r = await api(`${API}/portfolios/${portfolioId}/projections?horizon_months=12`);
+    $("#demo-projection-summary").textContent = r.summary || "";
+    const labels = r.points.map((pt) => pt.label);
+    makeChart("demo-projection-chart", {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Optimista (p90)",
+            data: r.points.map((pt) => pt.optimistic),
+            borderColor: "#22c55e",
+            backgroundColor: "transparent",
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.25,
+          },
+          {
+            label: "Base (p50)",
+            data: r.points.map((pt) => pt.base),
+            borderColor: "#3b82f6",
+            backgroundColor: "rgba(59,130,246,0.1)",
+            fill: true,
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.25,
+          },
+          {
+            label: "Pesimista (p10)",
+            data: r.points.map((pt) => pt.pessimistic),
+            borderColor: "#ef4444",
+            backgroundColor: "transparent",
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.25,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: "#7d8fa3", font: { size: 10 } } } },
+        scales: {
+          x: { ticks: { color: "#7d8fa3", maxTicksLimit: 7 }, grid: { color: "#1e2a38" } },
+          y: { ticks: { color: "#7d8fa3" }, grid: { color: "#1e2a38" } },
+        },
+      },
+    });
+    $("#demo-scenarios").innerHTML = (r.scenarios || []).map((s) => `
+      <div class="demo-scenario">
+        <b>${s.name}</b>
+        <div class="val">$${s.projected_value?.toLocaleString()}</div>
+        <div>${s.return_pct >= 0 ? "+" : ""}${s.return_pct}%</div>
+      </div>`).join("");
+  } catch (e) {
+    $("#demo-projection-summary").textContent = "Proyecciones no disponibles: " + e.message;
+    destroyChart("demo-projection-chart");
+  }
+}
+
+async function simulateDemoProposal() {
+  if (!lastPortfolioId) { toast("Crea un portafolio demo primero"); return; }
+  const budget = parseFloat($("#prop-budget")?.value) || 50;
+  toast("Simulando propuesta en demo…");
+  try {
+    const r = await api(`${API}/portfolios/${lastPortfolioId}/simulate`, {
+      method: "POST",
+      body: JSON.stringify({
+        proposal_budget: budget,
+        expected_return_pct: 12,
+        horizon_months: 6,
+      }),
+    });
+    $("#demo-projection-summary").textContent = r.summary || "Simulación completada";
+    toast("Simulación demo lista");
+    await loadDemoProjections(lastPortfolioId);
+  } catch (e) { toast("Simulación: " + e.message); }
+}
+
+function openPortfolioModal() {
+  $("#portfolio-modal").classList.remove("hidden");
+  $("#portfolio-modal").setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
+}
+
+function closePortfolioModal() {
+  $("#portfolio-modal").classList.add("hidden");
+  $("#portfolio-modal").setAttribute("aria-hidden", "true");
+  document.body.classList.remove("modal-open");
+}
+
+async function createPortfolio() {
+  openPortfolioModal();
+}
+
+async function submitPortfolioForm() {
+  const name = ($("#pf-name").value || "Portafolio CEO").trim();
+  const capital = parseFloat($("#pf-capital").value);
+  const mode = document.querySelector('input[name="pf-mode"]:checked')?.value || "real";
+  if (!capital || capital <= 0) { toast("Ingresa un capital válido"); return; }
+  toast("Creando portafolio…");
+  try {
+    const p = await api(`${API}/portfolios`, {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        mode,
+        initial_capital: capital,
+        cash: capital,
+        strategy: "growth_investing",
+      }),
+    });
     lastPortfolioId = p.id;
-    toast(`Portafolio ${p.name} creado ($${p.initial_capital})`);
+    closePortfolioModal();
+    toast(`${p.name} (${mode === "demo" ? "Demo" : "Real"}) creado — $${p.initial_capital}`);
     await loadDashboard();
   } catch (e) { toast("Portafolio: " + e.message); }
 }
@@ -827,13 +956,20 @@ $("#btn-refresh").onclick = loadDashboard;
 $("#btn-proposal").onclick = buildProposal;
 $("#btn-apply-proposal").onclick = applyProposal;
 $("#btn-create-portfolio").onclick = createPortfolio;
+$("#btn-pf-submit").onclick = submitPortfolioForm;
+$("#portfolio-modal-close").onclick = closePortfolioModal;
+$("#portfolio-modal-backdrop").onclick = closePortfolioModal;
+$("#btn-simulate-proposal").onclick = simulateDemoProposal;
 $("#btn-scan").onclick = scanWatchlist;
 $("#btn-shock").onclick = simulateShock;
 
 $("#news-modal-close").onclick = closeNewsModal;
 $("#news-modal-backdrop").onclick = closeNewsModal;
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !$("#news-modal").classList.contains("hidden")) closeNewsModal();
+  if (e.key === "Escape") {
+    if (!$("#news-modal").classList.contains("hidden")) closeNewsModal();
+    if (!$("#portfolio-modal").classList.contains("hidden")) closePortfolioModal();
+  }
 });
 
 (async () => {

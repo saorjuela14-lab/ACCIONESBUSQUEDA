@@ -3,9 +3,8 @@
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
-from config.settings import get_settings
 from database.models import Base
 
 _engine = None
@@ -18,6 +17,14 @@ def _ensure_data_dir(url: str) -> None:
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
 
 
+async def _migrate_schema(conn) -> None:
+    """Lightweight migrations for SQLite (add columns if missing)."""
+    result = await conn.execute(text("PRAGMA table_info(portfolios)"))
+    cols = {row[1] for row in result.fetchall()}
+    if "mode" not in cols:
+        await conn.execute(text("ALTER TABLE portfolios ADD COLUMN mode VARCHAR(16) DEFAULT 'real'"))
+
+
 async def init_db() -> None:
     global _engine, _session_factory
     settings = get_settings()
@@ -26,6 +33,7 @@ async def init_db() -> None:
     _session_factory = async_sessionmaker(_engine, expire_on_commit=False)
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await _migrate_schema(conn)
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

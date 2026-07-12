@@ -33,6 +33,7 @@ class PortfolioORM(Base):
     strategy: Mapped[str] = mapped_column(String(64))
     initial_capital: Mapped[float] = mapped_column(Float)
     cash: Mapped[float] = mapped_column(Float)
+    mode: Mapped[str] = mapped_column(String(16), default="real")
     positions_json: Mapped[str] = mapped_column(Text, default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

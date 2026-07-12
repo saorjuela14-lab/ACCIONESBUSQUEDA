@@ -176,9 +176,16 @@
         </div>
         <div class="panel">
           <h3>Portafolio</h3>
-          <button id="btn-create-portfolio" class="btn" style="margin-bottom:6px;width:100%">Crear Portafolio CEO</button>
+          <button id="btn-create-portfolio" class="btn" style="margin-bottom:6px;width:100%">Crear Portafolio</button>
           <div id="portfolio-panel"></div>
           <div class="chart-box small"><canvas id="portfolio-history-chart"></canvas></div>
+          <div id="demo-projections-wrap" class="hidden">
+            <h4 class="subhead">Proyecciones Demo (12 meses)</h4>
+            <p id="demo-projection-summary" class="muted" style="font-size:11px;margin-bottom:6px"></p>
+            <div class="chart-box small"><canvas id="demo-projection-chart"></canvas></div>
+            <div id="demo-scenarios" class="demo-scenarios"></div>
+            <button id="btn-simulate-proposal" class="btn" style="margin-top:6px;width:100%">Simular propuesta en demo</button>
+          </div>
           <div class="chart-box small"><canvas id="sector-chart"></canvas></div>
           <div class="chart-box small"><canvas id="cap-chart"></canvas></div>
         </div>
@@ -217,6 +224,27 @@
       <div id="news-modal-summary" class="news-modal-summary"></div>
       <div class="news-modal-actions">
         <a id="news-modal-link" class="btn primary" href="#" target="_blank" rel="noopener noreferrer">Leer artículo completo</a>
+      </div>
+    </div>
+  </div>
+
+  <div id="portfolio-modal" class="news-modal hidden" aria-hidden="true">
+    <div class="news-modal-backdrop" id="portfolio-modal-backdrop"></div>
+    <div class="news-modal-dialog portfolio-dialog" role="dialog" aria-labelledby="portfolio-modal-title">
+      <button type="button" class="news-modal-close" id="portfolio-modal-close" aria-label="Cerrar">×</button>
+      <h2 id="portfolio-modal-title" class="news-modal-title">Nuevo Portafolio</h2>
+      <div class="portfolio-form">
+        <label for="pf-name">Nombre</label>
+        <input id="pf-name" type="text" value="Portafolio CEO" maxlength="128" />
+        <label>Tipo</label>
+        <div class="mode-toggle">
+          <label class="mode-option"><input type="radio" name="pf-mode" value="real" checked /> Real</label>
+          <label class="mode-option"><input type="radio" name="pf-mode" value="demo" /> Demo</label>
+        </div>
+        <p class="muted pf-mode-hint">Real: seguimiento con precios de mercado. Demo: incluye simulaciones y proyecciones.</p>
+        <label for="pf-capital">Capital a gestionar (USD)</label>
+        <input id="pf-capital" type="number" value="1000" min="1" step="1" />
+        <button id="btn-pf-submit" class="btn primary" style="width:100%;margin-top:0.75rem">Crear portafolio</button>
       </div>
     </div>
   </div>

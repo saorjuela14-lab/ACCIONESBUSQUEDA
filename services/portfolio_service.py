@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from database.repositories.portfolio_repository import PortfolioRepository
 from domain.entities import Portfolio, PortfolioPosition
-from domain.enums import StrategyType
+from domain.enums import PortfolioMode, StrategyType
 from providers.interfaces import MarketDataProvider
 
 
@@ -14,15 +14,24 @@ class PortfolioService:
         self._market = market_provider
 
     async def create(
-        self, name: str, strategy: StrategyType, initial_capital: float, cash: float | None = None
+        self,
+        name: str,
+        strategy: StrategyType,
+        initial_capital: float,
+        cash: float | None = None,
+        mode: PortfolioMode = PortfolioMode.REAL,
     ) -> Portfolio:
         portfolio = Portfolio(
             name=name,
             strategy=strategy,
+            mode=mode,
             initial_capital=initial_capital,
             cash=cash if cash is not None else initial_capital,
         )
         return await self._repo.create(portfolio)
+
+    async def get_by_id(self, portfolio_id: str) -> Portfolio | None:
+        return await self._repo.get_by_id(portfolio_id)
 
     async def list_all(self) -> list[Portfolio]:
         return await self._repo.list_all()
@@ -30,8 +39,7 @@ class PortfolioService:
     async def add_position(
         self, portfolio_id: str, ticker: str, shares: float, average_cost: float
     ) -> Portfolio:
-        portfolios = await self._repo.list_all()
-        portfolio = next((p for p in portfolios if p.id == portfolio_id), None)
+        portfolio = await self._repo.get_by_id(portfolio_id)
         if not portfolio:
             raise ValueError(f"Portfolio {portfolio_id} not found")
 
@@ -52,8 +60,7 @@ class PortfolioService:
         return await self._repo.update(portfolio)
 
     async def refresh_prices(self, portfolio_id: str) -> Portfolio:
-        portfolios = await self._repo.list_all()
-        portfolio = next((p for p in portfolios if p.id == portfolio_id), None)
+        portfolio = await self._repo.get_by_id(portfolio_id)
         if not portfolio:
             raise ValueError(f"Portfolio {portfolio_id} not found")
 
