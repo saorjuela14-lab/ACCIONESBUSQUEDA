@@ -62,3 +62,20 @@ class InvestmentProposalRequest(BaseModel):
 class ProposalApplyRequest(BaseModel):
     portfolio_id: str
     proposal: InvestmentProposal
+
+
+class DiscoveryResearchRequest(BaseModel):
+    themes: list[str] | None = Field(
+        default=None,
+        description="Temas a investigar (ej. biotech, semiconductores IA)",
+    )
+    max_candidates: int = Field(default=15, ge=1, le=30)
+    exclude_tickers: list[str] | None = Field(
+        default=None,
+        description="Tickers a excluir (ej. watchlist actual)",
+    )
+
+
+class DiscoveryAnalyzeRequest(DiscoveryResearchRequest):
+    analyze_top: int = Field(default=3, ge=1, le=5)
+    portfolio_id: str | None = None

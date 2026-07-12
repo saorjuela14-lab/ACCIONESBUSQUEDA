@@ -95,6 +95,7 @@
             <button class="tab" data-tab="correlations">Correlaciones</button>
             <button class="tab" data-tab="graph">Grafo de Dependencias</button>
             <button class="tab" data-tab="sentiment">Sentimiento</button>
+            <button class="tab" data-tab="discovery">Descubrimiento</button>
             <button class="tab" data-tab="proposal">Propuesta</button>
           </div>
 
@@ -140,6 +141,36 @@
             <div id="sentiment-out"></div>
             <h4 class="subhead">Tendencia de Sentimiento (histórico)</h4>
             <div class="chart-box small"><canvas id="sentiment-trend-chart"></canvas></div>
+          </div>
+
+          <div id="tab-discovery" class="tab-pane">
+            <div class="panel allocation-advisor-panel">
+              <div class="panel-head">
+                <h3>Descubrimiento de Empresas</h3>
+                <span class="muted">Investiga X, Reddit, StockTwits y noticias para encontrar oportunidades</span>
+              </div>
+              <div class="form-inline">
+                <input id="disc-themes" placeholder="Temas: biotech, IA, semiconductores" style="flex:1;min-width:180px" />
+                <select id="disc-analyze-top">
+                  <option value="1">Analizar top 1</option>
+                  <option value="2">Analizar top 2</option>
+                  <option value="3" selected>Analizar top 3</option>
+                  <option value="5">Analizar top 5</option>
+                </select>
+                <button id="btn-disc-research" class="btn">Investigar</button>
+                <button id="btn-disc-analyze" class="btn primary">Investigar y Analizar</button>
+              </div>
+              <p id="disc-summary" class="prose" style="font-size:12px;margin-top:0.5rem"></p>
+              <div class="table-wrap" id="disc-table-wrap" style="display:none;margin-top:0.5rem">
+                <table class="matrix-table compact" id="disc-table">
+                  <thead>
+                    <tr><th>Ticker</th><th>Empresa</th><th>Score</th><th>Menciones</th><th>Fuentes</th><th>Motivo</th><th></th></tr>
+                  </thead>
+                  <tbody id="disc-body"></tbody>
+                </table>
+              </div>
+              <div id="disc-analyses" class="disc-analyses" style="margin-top:0.75rem"></div>
+            </div>
           </div>
 
           <div id="tab-proposal" class="tab-pane">
@@ -233,6 +264,7 @@
       <button type="button" data-scroll="ceo-bar" class="mob-nav-btn active">Inicio</button>
       <button type="button" data-scroll="watchlist-matrix" class="mob-nav-btn">Matriz</button>
       <button type="button" id="mob-analyze" class="mob-nav-btn primary">Analizar</button>
+      <button type="button" data-tab="discovery" class="mob-nav-btn">Descubrir</button>
       <button type="button" data-tab="proposal" class="mob-nav-btn">Propuesta</button>
       <button type="button" data-scroll="portfolio-panel" class="mob-nav-btn">Portafolio</button>
     </nav>
