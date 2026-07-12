@@ -16,7 +16,8 @@ services:
       - key: SCHEDULER_ENABLED
         value: "true"
       - key: DASHBOARD_ACCESS_TOKEN
-        generateValue: true
+        sync: false
+        # En Render Dashboard → Environment: Portafolio111
       - key: POLYGON_API_KEY
         sync: false
       - key: FRED_API_KEY
