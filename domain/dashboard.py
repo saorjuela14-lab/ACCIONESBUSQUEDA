@@ -74,6 +74,51 @@ class PriceChartData(BaseModel):
     points: list[PriceChartPoint] = Field(default_factory=list)
 
 
+class TechnicalChartPoint(BaseModel):
+    date: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float | None = None
+    sma20: float | None = None
+    sma50: float | None = None
+    ema20: float | None = None
+    bb_upper: float | None = None
+    bb_lower: float | None = None
+    rsi: float | None = None
+    macd: float | None = None
+    macd_signal: float | None = None
+    macd_hist: float | None = None
+
+
+class TechnicalSnapshot(BaseModel):
+    price: float | None = None
+    rsi: float | None = None
+    macd: float | None = None
+    macd_signal: float | None = None
+    macd_hist: float | None = None
+    sma20: float | None = None
+    sma50: float | None = None
+    ema20: float | None = None
+    atr: float | None = None
+    bias: str = "neutral"
+    support: float | None = None
+    resistance: float | None = None
+    stop_loss: float | None = None
+    take_profit_1: float | None = None
+    risk_reward: float | None = None
+
+
+class TechnicalChartData(BaseModel):
+    ticker: str
+    period: str
+    points: list[TechnicalChartPoint] = Field(default_factory=list)
+    snapshot: TechnicalSnapshot | None = None
+    trade_levels: dict = Field(default_factory=dict)
+    summary: str = ""
+
+
 class PortfolioHistoryPoint(BaseModel):
     timestamp: datetime
     total_value: float

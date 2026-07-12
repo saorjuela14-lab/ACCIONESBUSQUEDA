@@ -2,8 +2,9 @@
 
 from fastapi import APIRouter, Query
 
-from domain.dashboard import PriceChartData, PriceChartPoint
+from domain.dashboard import PriceChartData, PriceChartPoint, TechnicalChartData
 from providers.market.factory import get_market_provider
+from services.technical_chart_service import TechnicalChartService
 
 router = APIRouter()
 
@@ -30,3 +31,12 @@ async def get_price_chart(
                 )
             )
     return PriceChartData(ticker=ticker.upper(), period=period, points=points)
+
+
+@router.get("/market/{ticker}/technical", response_model=TechnicalChartData)
+async def get_technical_chart(
+    ticker: str,
+    period: str = Query(default="6mo", pattern=r"^(1mo|3mo|6mo|1y|2y|5y)$"),
+) -> TechnicalChartData:
+    """OHLC velas + indicadores técnicos (RSI, MACD, SMA, Bollinger)."""
+    return await TechnicalChartService(get_market_provider()).build(ticker.upper(), period=period)
