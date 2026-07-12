@@ -28,21 +28,21 @@ INDICES = [
     ("DIA", "Dow Jones"),
     ("IWM", "Russell 2000"),
     ("^VIX", "VIX"),
-    ("UUP", "US Dollar Index"),
+    ("UUP", "Índice del Dólar"),
 ]
 
 SECTOR_ETFS = [
-    ("XLK", "Technology"),
-    ("XLV", "Healthcare"),
-    ("XLF", "Financials"),
-    ("XLE", "Energy"),
-    ("XLI", "Industrials"),
-    ("XLY", "Consumer Disc."),
-    ("XLP", "Consumer Staples"),
-    ("XLU", "Utilities"),
-    ("XLB", "Materials"),
-    ("XLRE", "Real Estate"),
-    ("XLC", "Communication"),
+    ("XLK", "Tecnología"),
+    ("XLV", "Salud"),
+    ("XLF", "Financiero"),
+    ("XLE", "Energía"),
+    ("XLI", "Industrial"),
+    ("XLY", "Consumo Discrecional"),
+    ("XLP", "Consumo Básico"),
+    ("XLU", "Servicios Públicos"),
+    ("XLB", "Materiales"),
+    ("XLRE", "Inmobiliario"),
+    ("XLC", "Comunicaciones"),
 ]
 
 
