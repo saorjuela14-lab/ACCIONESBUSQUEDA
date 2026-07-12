@@ -206,12 +206,25 @@ class MarketAllocationAdvisorService:
         scored = [s for s in scored_list if s is not None]
         excluded = [item.ticker for item, s in zip(watchlist, scored_list) if s is None]
 
+        # Each ticker belongs to exactly one bucket — no cross-bucket duplication.
         by_cat: dict[str, list[_ScoredTicker]] = {"emerging": [], "core": [], "momentum": []}
+        assigned_tickers: set[str] = set()
+
+        eligible = []
         for s in scored:
             if s.recommendation in ("sell", "strong_sell") and s.score < -5:
                 excluded.append(s.ticker)
                 continue
-            by_cat.setdefault(s.category, []).append(s)
+            eligible.append(s)
+
+        # Sort by conviction so best names claim their bucket first.
+        eligible.sort(key=lambda x: x.score * x.confidence, reverse=True)
+        for s in eligible:
+            if s.ticker in assigned_tickers:
+                continue
+            cat = self._assign_category(s)
+            by_cat[cat].append(s)
+            assigned_tickers.add(s.ticker)
 
         for cat in by_cat:
             by_cat[cat].sort(key=lambda x: x.score * x.confidence, reverse=True)
@@ -249,14 +262,7 @@ class MarketAllocationAdvisorService:
                 continue
 
             candidates = by_cat.get(key, [])
-            if not candidates and key == "momentum":
-                candidates = [s for s in scored if s.recommendation in _BUY][:3]
-            if not candidates and key == "emerging":
-                candidates = [s for s in scored if s.is_emerging][:4]
-            if not candidates:
-                candidates = scored[:3]
-
-            tickers_in = [c.ticker for c in candidates[:5]]
+            tickers_in = list(dict.fromkeys(c.ticker for c in candidates[:5]))
             desc_parts = []
             if key == "emerging":
                 desc_parts.append("Biotech, quantum, espacio y mediana cap con perfil de crecimiento")
@@ -264,6 +270,8 @@ class MarketAllocationAdvisorService:
                 desc_parts.append("Posiciones más estables para anclar el portafolio")
             else:
                 desc_parts.append("Mayor convicción según scores del comité")
+            if not tickers_in:
+                desc_parts.append("Sin tickers asignados a este bucket hoy")
 
             buckets.append(
                 AllocationBucket(
@@ -272,15 +280,26 @@ class MarketAllocationAdvisorService:
                     allocation_pct=pct,
                     allocation_usd=usd,
                     tickers=tickers_in,
-                    description=" — ".join(desc_parts) + f": {', '.join(tickers_in) or '—'}",
+                    description=" — ".join(desc_parts) + (f": {', '.join(tickers_in)}" if tickers_in else ""),
                 )
             )
 
             if not candidates:
                 continue
 
-            total_cat_score = sum(max(0.1, c.score * c.confidence) for c in candidates[:5])
-            for c in candidates[:5]:
+            # Deduplicate by ticker within bucket before splitting allocation.
+            seen_in_bucket: set[str] = set()
+            unique_candidates: list[_ScoredTicker] = []
+            for c in candidates:
+                if c.ticker in seen_in_bucket:
+                    continue
+                seen_in_bucket.add(c.ticker)
+                unique_candidates.append(c)
+                if len(unique_candidates) >= 5:
+                    break
+
+            total_cat_score = sum(max(0.1, c.score * c.confidence) for c in unique_candidates)
+            for c in unique_candidates:
                 share = max(0.1, c.score * c.confidence) / total_cat_score
                 line_pct = round(pct * share, 1)
                 line_usd = round(capital * line_pct / 100, 2)
@@ -316,10 +335,15 @@ class MarketAllocationAdvisorService:
         )
 
         warnings: list[str] = []
-        if len(scored) < 3:
+        if len(eligible) < 3:
             warnings.append("Pocos tickers analizados — diversificación limitada.")
-        if not any(s.is_emerging for s in scored):
+        if not any(s.is_emerging for s in eligible):
             warnings.append("No se detectaron emergentes claros; revisa biotech/mid-cap en watchlist.")
+        empty_buckets = [b.label for b in buckets if b.key != "cash" and not b.tickers]
+        if empty_buckets:
+            warnings.append(
+                "Buckets sin tickers: " + ", ".join(empty_buckets) + ". Agrega más variedad a la watchlist."
+            )
 
         return MarketAllocationPlan(
             capital=capital,
