@@ -28,13 +28,21 @@ Sin Reddit OAuth — usa fuentes públicas:
 | Fuente | Método |
 |--------|--------|
 | **Stocktwits** | API pública por ticker |
+| **X (Twitter)** | API v2 oficial si `X_API_KEY` + `X_API_SECRET` (o `X_BEARER_TOKEN`); si no, búsqueda DDG |
 | **Reddit** | Búsqueda `site:reddit.com` (DDG) |
 | **Seeking Alpha** | Búsqueda `site:seekingalpha.com` |
 | **Yahoo Finance** | Búsqueda `site:finance.yahoo.com` |
 
 Cuando Reddit apruebe tu app OAuth, se conecta sin rehacer el agente.
 
-Cuando Reddit apruebe tu app OAuth, se conecta sin rehacer el agente.
+Variables X en `.env` / FastAPI Cloud:
+
+```bash
+X_API_KEY=tu_consumer_key
+X_API_SECRET=tu_consumer_secret
+# X_BEARER_TOKEN=opcional_si_ya_lo_generaste
+```
+
 
 ### Fase 3 — Automatización (implementado)
 - **Watchlist Engine**: monitoreo automático cada 30 min (horario de mercado)
@@ -154,6 +162,8 @@ En el dashboard de tu app → **Environment Variables** → añade:
 | `REDIS_ENABLED` | `false` |
 | `APP_ENV` | `production` |
 | `SCHEDULER_ENABLED` | `true` |
+| `X_API_KEY` | *(opcional)* Consumer key de developer.x.com |
+| `X_API_SECRET` | *(opcional)* Consumer secret — marca como Secret |
 
 Marca `DASHBOARD_ACCESS_TOKEN` como **Secret** si la opción existe. Pulsa **Redeploy** tras guardar.
 
