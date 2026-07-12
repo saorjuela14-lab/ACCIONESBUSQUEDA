@@ -5,11 +5,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-try:
-    import pandas_ta as ta
-except ImportError:
-    ta = None
-
 
 def calc_rsi(close: pd.Series, period: int = 14) -> pd.Series:
     delta = close.diff()
@@ -54,13 +49,6 @@ def enrich_indicators(df: pd.DataFrame) -> pd.DataFrame:
     out["SMA200"] = out["Close"].rolling(200).mean()
     out["EMA20"] = out["Close"].ewm(span=20, adjust=False).mean()
     out["VWAP"] = (out["Close"] * out["Volume"]).cumsum() / out["Volume"].cumsum()
-
-    if ta is not None:
-        out["ADX"] = ta.adx(out["High"], out["Low"], out["Close"])["ADX_14"]
-        out["MFI"] = ta.mfi(out["High"], out["Low"], out["Close"], out["Volume"])
-        st = ta.supertrend(out["High"], out["Low"], out["Close"])
-        if st is not None and not st.empty:
-            out["Supertrend"] = st.iloc[:, 0]
 
     return out
 

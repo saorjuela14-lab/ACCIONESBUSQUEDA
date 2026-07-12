@@ -7,7 +7,7 @@ name = "nexbuy-investment-committee"
 version = "1.0.0"
 description = "Professional multi-agent investment committee platform"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = "==3.12.*"
 dependencies = [
     "pydantic>=2.6",
     "pydantic-settings>=2.2",
@@ -22,7 +22,6 @@ dependencies = [
     "yfinance>=0.2",
     "pandas>=2.2",
     "numpy>=1.26",
-    "pandas-ta>=0.3.14b",
     "duckduckgo-search>=6.0",
     "python-dotenv>=1.0",
     "structlog>=24.1",

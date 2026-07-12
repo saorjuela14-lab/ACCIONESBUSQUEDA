@@ -134,6 +134,8 @@ Flujo recomendado: **GitHub como fuente única** — escribes los cambios en Cur
 
 #### Paso 2 — Conectar el repo (2 min)
 
+> **Importante:** el proyecto usa **Python 3.12** (archivo `.python-version`). FastAPI Cloud no debe usar 3.14 — `pandas-ta`/`numba` no son compatibles.
+
 1. Abre el [Dashboard](https://fastapicloud.com/dashboard)
 2. En tu team → **Create App** → **From GitHub**
 3. Instala la app **FastAPI Cloud** en GitHub si te lo pide
