@@ -122,11 +122,21 @@
             </div>
             <div class="tech-toolbar">
               <h4 class="subhead" style="margin:0">Vista del Analista Técnico</h4>
-              <select id="tech-period">
-                <option value="3mo">3 meses</option>
-                <option value="6mo" selected>6 meses</option>
-                <option value="1y">1 año</option>
-              </select>
+              <div class="tech-toolbar-controls">
+                <select id="tech-chart-tf" title="Timeframe del gráfico y gaps">
+                  <option value="1D" selected>1D</option>
+                  <option value="1W">1W</option>
+                  <option value="4H">4H</option>
+                  <option value="1H">1H</option>
+                  <option value="30m">30m</option>
+                  <option value="15m">15m</option>
+                </select>
+                <select id="tech-period">
+                  <option value="3mo">3 meses</option>
+                  <option value="6mo" selected>6 meses</option>
+                  <option value="1y">1 año</option>
+                </select>
+              </div>
             </div>
             <div class="tech-kpi-row" id="tech-kpi-row">
               <div class="tech-kpi"><label>RSI</label><div id="tk-rsi">—</div></div>
@@ -191,6 +201,7 @@
               </div>
               <div class="form-inline">
                 <input id="disc-themes" placeholder="Temas: biotech, IA, semiconductores" style="flex:1;min-width:180px" />
+                <input id="disc-budget" type="number" value="1000" min="1" step="1" title="Capital para propuesta automática" style="width:90px" /> USD
                 <select id="disc-analyze-top">
                   <option value="1">Analizar top 1</option>
                   <option value="2">Analizar top 2</option>
@@ -198,7 +209,8 @@
                   <option value="5">Analizar top 5</option>
                 </select>
                 <button id="btn-disc-research" class="btn">Investigar</button>
-                <button id="btn-disc-analyze" class="btn primary">Investigar y Analizar</button>
+                <button id="btn-disc-analyze" class="btn">Investigar y Analizar</button>
+                <button id="btn-disc-proposal" class="btn primary">Descubrir → Propuesta</button>
               </div>
               <p id="disc-summary" class="prose" style="font-size:12px;margin-top:0.5rem"></p>
               <div class="table-wrap" id="disc-table-wrap" style="display:none;margin-top:0.5rem">

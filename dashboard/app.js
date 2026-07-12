@@ -579,6 +579,27 @@ function destroyAllLwCharts() {
 
 const BIAS_ES = { bullish: "Alcista", bearish: "Bajista", neutral: "Neutral" };
 
+function isIntradayTf(tf) {
+  return tf && !["1D", "1W"].includes(tf);
+}
+
+function lwTime(dateStr, tf) {
+  if (!dateStr) return null;
+  if (!isIntradayTf(tf)) return String(dateStr).slice(0, 10);
+  const s = String(dateStr).trim();
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+  if (!m) return s.slice(0, 10);
+  if (!m[2]) return m[1];
+  const d = new Date(`${m[1]}T${m[2]}:${m[3]}:00`);
+  return Math.floor(d.getTime() / 1000);
+}
+
+function syncChartTimeframe(tf) {
+  activeGapTf = tf;
+  const sel = $("#tech-chart-tf");
+  if (sel && sel.value !== tf) sel.value = tf;
+}
+
 function renderTechnicalKpis(snap) {
   if (!snap) return;
   const rsiEl = $("#tk-rsi");
@@ -597,11 +618,12 @@ function renderTechnicalKpis(snap) {
     : "—";
 }
 
-function renderGapHighlights(candleSeries, gaps) {
+function renderGapHighlights(candleSeries, gaps, chartTf) {
   if (!gaps?.length) return;
+  const tf = chartTf || activeGapTf;
   const markers = [];
   gaps.forEach((g) => {
-    const time = (g.date || "").slice(0, 10);
+    const time = lwTime(g.date, tf);
     if (!time) return;
     const isOpen = !g.filled;
     const color = isOpen
@@ -660,8 +682,10 @@ function renderGapsPanel(data) {
 
   $$(".gap-tf-tab").forEach((btn) => {
     btn.onclick = () => {
-      activeGapTf = btn.dataset.tf;
+      syncChartTimeframe(btn.dataset.tf);
       renderGapsPanel(lastGapData);
+      const t = ticker();
+      if (t) loadTechnicalChart(t);
     };
   });
 
@@ -681,12 +705,16 @@ function renderGapsPanel(data) {
 
 async function loadTechnicalChart(t, techAgentReport) {
   const period = $("#tech-period")?.value || "6mo";
+  const chartTf = $("#tech-chart-tf")?.value || activeGapTf || "1D";
+  syncChartTimeframe(chartTf);
+  const intraday = isIntradayTf(chartTf);
   try {
-    const data = await api(`${API}/market/${t}/technical?period=${period}`);
+    const data = await api(`${API}/market/${t}/technical?period=${period}&timeframe=${encodeURIComponent(chartTf)}`);
     const pts = data.points || [];
     if (!pts.length) {
       destroyAllLwCharts();
       $("#tech-summary").textContent = data.summary || "Sin datos técnicos.";
+      if (data.gaps_by_timeframe) renderGapsPanel(data);
       return;
     }
 
@@ -702,9 +730,11 @@ async function loadTechnicalChart(t, techAgentReport) {
       layout: { background: { color: "transparent" }, textColor: "#7d8fa3" },
       grid: { vertLines: { color: "#1e2a38" }, horzLines: { color: "#1e2a38" } },
       rightPriceScale: { borderColor: "#1e2a38" },
-      timeScale: { borderColor: "#1e2a38", timeVisible: false },
+      timeScale: { borderColor: "#1e2a38", timeVisible: intraday, secondsVisible: false },
       crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     };
+
+    const mapTime = (p) => lwTime(p.date, chartTf);
 
     destroyLwChart("candle");
     const candleEl = $("#candle-chart");
@@ -715,11 +745,11 @@ async function loadTechnicalChart(t, techAgentReport) {
       wickUpColor: "#22c55e", wickDownColor: "#ef4444",
     });
     candleSeries.setData(pts.map((p) => ({
-      time: p.date, open: p.open, high: p.high, low: p.low, close: p.close,
+      time: mapTime(p), open: p.open, high: p.high, low: p.low, close: p.close,
     })));
 
-    const sma20Data = pts.filter((p) => p.sma20 != null).map((p) => ({ time: p.date, value: p.sma20 }));
-    const sma50Data = pts.filter((p) => p.sma50 != null).map((p) => ({ time: p.date, value: p.sma50 }));
+    const sma20Data = pts.filter((p) => p.sma20 != null).map((p) => ({ time: mapTime(p), value: p.sma20 }));
+    const sma50Data = pts.filter((p) => p.sma50 != null).map((p) => ({ time: mapTime(p), value: p.sma50 }));
     if (sma20Data.length) {
       const s20 = lwCharts.candle.addLineSeries({ color: "#f59e0b", lineWidth: 1, title: "SMA20" });
       s20.setData(sma20Data);
@@ -736,11 +766,11 @@ async function loadTechnicalChart(t, techAgentReport) {
       candleSeries.createPriceLine({ price: data.snapshot.resistance, color: "#ef4444", lineWidth: 1, lineStyle: 2, title: "Resistencia" });
     }
 
-    renderGapHighlights(candleSeries, data.gaps || []);
+    renderGapHighlights(candleSeries, data.gaps || [], chartTf);
     renderGapsPanel(data);
 
     const volData = pts.filter((p) => p.volume != null).map((p) => ({
-      time: p.date, value: p.volume,
+      time: mapTime(p), value: p.volume,
       color: p.close >= p.open ? "rgba(34,197,94,0.5)" : "rgba(239,68,68,0.5)",
     }));
     if (volData.length) {
@@ -756,7 +786,7 @@ async function loadTechnicalChart(t, techAgentReport) {
     const rsiEl = $("#rsi-chart");
     lwCharts.rsi = LightweightCharts.createChart(rsiEl, { ...chartOpts, height: rsiEl.clientHeight || 120 });
     const rsiSeries = lwCharts.rsi.addLineSeries({ color: "#3b82f6", lineWidth: 2, title: "RSI" });
-    rsiSeries.setData(pts.filter((p) => p.rsi != null).map((p) => ({ time: p.date, value: p.rsi })));
+    rsiSeries.setData(pts.filter((p) => p.rsi != null).map((p) => ({ time: mapTime(p), value: p.rsi })));
     rsiSeries.createPriceLine({ price: 70, color: "rgba(239,68,68,0.6)", lineWidth: 1, lineStyle: 2 });
     rsiSeries.createPriceLine({ price: 30, color: "rgba(34,197,94,0.6)", lineWidth: 1, lineStyle: 2 });
     lwCharts.rsi.timeScale().fitContent();
@@ -765,12 +795,12 @@ async function loadTechnicalChart(t, techAgentReport) {
     const macdEl = $("#macd-chart");
     lwCharts.macd = LightweightCharts.createChart(macdEl, { ...chartOpts, height: macdEl.clientHeight || 120 });
     const macdLine = lwCharts.macd.addLineSeries({ color: "#06b6d4", lineWidth: 1, title: "MACD" });
-    macdLine.setData(pts.filter((p) => p.macd != null).map((p) => ({ time: p.date, value: p.macd })));
+    macdLine.setData(pts.filter((p) => p.macd != null).map((p) => ({ time: mapTime(p), value: p.macd })));
     const sigLine = lwCharts.macd.addLineSeries({ color: "#f59e0b", lineWidth: 1, title: "Señal" });
-    sigLine.setData(pts.filter((p) => p.macd_signal != null).map((p) => ({ time: p.date, value: p.macd_signal })));
+    sigLine.setData(pts.filter((p) => p.macd_signal != null).map((p) => ({ time: mapTime(p), value: p.macd_signal })));
     const histSeries = lwCharts.macd.addHistogramSeries({ title: "Hist" });
     histSeries.setData(pts.filter((p) => p.macd_hist != null).map((p) => ({
-      time: p.date, value: p.macd_hist,
+      time: mapTime(p), value: p.macd_hist,
       color: p.macd_hist >= 0 ? "rgba(34,197,94,0.6)" : "rgba(239,68,68,0.6)",
     })));
     lwCharts.macd.timeScale().fitContent();
@@ -1348,6 +1378,62 @@ async function runDiscoveryAnalyze() {
   } catch (e) { toast("Descubrimiento: " + e.message); }
 }
 
+function switchToTab(tabName) {
+  const tabBtn = document.querySelector(`.tab[data-tab="${tabName}"]`);
+  if (tabBtn) tabBtn.click();
+}
+
+function renderProposalFromResult(p, extraSummary) {
+  lastProposal = p;
+  renderProposalVisual(p);
+  let out = (extraSummary ? extraSummary + "\n\n" : "") + (p.summary || "") + "\n\n" + (p.executive_report?.narrative || "") + "\n\n";
+  if (p.executive_report) {
+    out += "POR QUÉ SE SELECCIONARON:\n" + (p.executive_report.why_selected || []).join("\n") + "\n\n";
+    out += "POR QUÉ NO:\n" + (p.executive_report.why_excluded || []).join("\n") + "\n\n";
+    out += "RIESGOS:\n" + (p.executive_report.key_risks || []).join("\n") + "\n\n";
+    out += "A MONITOREAR:\n" + (p.executive_report.events_to_monitor || []).join("\n") + "\n\n";
+    if (p.executive_report.correlation_notes?.length) {
+      out += "CORRELACIONES:\n" + p.executive_report.correlation_notes.join("\n") + "\n\n";
+    }
+  }
+  out += (p.allocations || []).map((a) =>
+    `#${a.purchase_order} ${a.ticker} [${a.instrument}] $${a.allocation_usd} — ${a.rationale}`
+  ).join("\n");
+  $("#proposal-out").textContent = out;
+}
+
+async function runDiscoveryProposal() {
+  const budget = parseFloat($("#disc-budget")?.value) || 1000;
+  const proposalTop = Math.min(parseInt($("#disc-analyze-top").value, 10) || 3, 6);
+  toast("Descubriendo, analizando y generando propuesta… (puede tardar)");
+  $("#disc-analyses").innerHTML = "";
+  try {
+    const r = await api(`${API}/discover/proposal`, {
+      method: "POST",
+      body: JSON.stringify({
+        budget,
+        themes: parseDiscoveryThemes(),
+        max_candidates: 15,
+        proposal_top: proposalTop,
+        portfolio_id: lastPortfolioId,
+        risk_profile: "balanced",
+        instrument_mode: "auto",
+        add_to_watchlist: true,
+        use_llm_narrative: true,
+      }),
+    });
+    renderDiscoveryReport(r.discovery);
+    if (r.watchlist_added?.length) {
+      toast(`Watchlist: ${r.watchlist_added.join(", ")}`);
+      await loadDashboard();
+    }
+    $("#prop-budget").value = budget;
+    renderProposalFromResult(r.proposal, r.summary);
+    switchToTab("proposal");
+    toast(`Propuesta lista con ${(r.tickers_selected || []).join(", ")}`);
+  } catch (e) { toast("Descubrir → Propuesta: " + e.message); }
+}
+
 $$(".tab").forEach((btn) => btn.onclick = () => {
   $$(".tab").forEach((b) => b.classList.remove("active"));
   $$(".tab-pane").forEach((p) => p.classList.remove("active"));
@@ -1369,8 +1455,15 @@ $("#btn-simulate-proposal").onclick = simulateDemoProposal;
 $("#btn-scan").onclick = scanWatchlist;
 $("#btn-generate-trades").onclick = generateDailyTrades;
 $("#tech-period").onchange = () => { const t = ticker(); if (t) loadTechnicalChart(t); };
+$("#tech-chart-tf").onchange = () => {
+  syncChartTimeframe($("#tech-chart-tf").value);
+  if (lastGapData) renderGapsPanel(lastGapData);
+  const t = ticker();
+  if (t) loadTechnicalChart(t);
+};
 $("#btn-disc-research").onclick = runDiscoveryResearch;
 $("#btn-disc-analyze").onclick = runDiscoveryAnalyze;
+$("#btn-disc-proposal").onclick = runDiscoveryProposal;
 $("#btn-shock").onclick = simulateShock;
 
 $("#news-modal-close").onclick = closeNewsModal;

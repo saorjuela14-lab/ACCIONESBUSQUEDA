@@ -37,6 +37,9 @@ async def get_price_chart(
 async def get_technical_chart(
     ticker: str,
     period: str = Query(default="6mo", pattern=r"^(1mo|3mo|6mo|1y|2y|5y)$"),
+    timeframe: str = Query(default="1D", description="1D | 1W | 4H | 1H | 30m | 15m"),
 ) -> TechnicalChartData:
-    """OHLC velas + indicadores técnicos (RSI, MACD, SMA, Bollinger)."""
-    return await TechnicalChartService(get_market_provider()).build(ticker.upper(), period=period)
+    """OHLC velas + indicadores técnicos (RSI, MACD, SMA, Bollinger) + gaps por horario."""
+    return await TechnicalChartService(get_market_provider()).build(
+        ticker.upper(), period=period, chart_timeframe=timeframe
+    )
