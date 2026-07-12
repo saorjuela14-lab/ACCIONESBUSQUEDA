@@ -101,6 +101,13 @@ class XSearchScanner:
             if response.status_code == 429:
                 logger.warning("discovery.x.rate_limited", query=query)
                 return []
+            if response.status_code == 402:
+                logger.warning(
+                    "discovery.x.credits_depleted",
+                    query=query,
+                    detail="Créditos de X API agotados — usa plan de pago o fallback DDG",
+                )
+                return []
             response.raise_for_status()
             payload = response.json()
 
