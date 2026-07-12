@@ -42,6 +42,14 @@ const charts = {};
 let lastProposal = null;
 let lastPortfolioId = null;
 let lastNewsItems = [];
+let lastAllocationPlan = null;
+
+const BUCKET_ES = {
+  cash: "Efectivo",
+  emerging: "Emergentes",
+  core: "Núcleo",
+  momentum: "Momentum",
+};
 
 function escapeHtml(s) {
   return String(s ?? "")
@@ -760,6 +768,63 @@ function renderProposalVisual(p) {
     </table>`;
 }
 
+async function buildAllocationAdvise() {
+  const capital = parseFloat($("#alloc-capital").value) || 1000;
+  const style = $("#alloc-style").value;
+  toast("Analizando mercado y watchlist…");
+  try {
+    const plan = await api(`${API}/allocation/advise`, {
+      method: "POST",
+      body: JSON.stringify({ capital, strategy_style: style }),
+    });
+    lastAllocationPlan = plan;
+    renderAllocationPlan(plan);
+    toast("Asignación generada");
+  } catch (e) { toast("Asignación: " + e.message); }
+}
+
+function renderAllocationPlan(plan) {
+  $("#alloc-market-view").textContent = plan.market_view || "";
+  $("#alloc-summary").textContent = plan.summary || "";
+  const maxPct = Math.max(...(plan.buckets || []).map((b) => b.allocation_pct), 1);
+  $("#alloc-buckets").innerHTML = (plan.buckets || []).map((b) => `
+    <div class="alloc-bucket">
+      <div class="alloc-bucket-head">
+        <b>${b.label}</b>
+        <span class="alloc-bucket-pct">${b.allocation_pct}% · $${b.allocation_usd.toLocaleString()}</span>
+      </div>
+      <div class="alloc-bar"><div class="alloc-bar-fill" style="width:${(b.allocation_pct / maxPct * 100).toFixed(0)}%"></div></div>
+      ${b.tickers?.length ? `<div class="alloc-bucket-tickers">${b.tickers.join(" · ")}</div>` : ""}
+      <div class="alloc-bucket-desc">${b.description || ""}</div>
+    </div>`).join("");
+  const items = plan.items || [];
+  if (items.length) {
+    $("#alloc-table-wrap").style.display = "";
+    $("#btn-alloc-to-proposal").style.display = "";
+    $("#alloc-body").innerHTML = items.map((i) => `
+      <tr>
+        <td><b>${i.ticker}</b></td>
+        <td>${BUCKET_ES[i.bucket] || i.bucket}</td>
+        <td>${i.allocation_pct}%</td>
+        <td>$${i.allocation_usd}</td>
+        <td>${trRec(i.recommendation)}</td>
+        <td style="max-width:140px;font-size:10px;color:var(--muted)">${escapeHtml(i.rationale?.slice(0, 90) || "")}${i.is_emerging ? " 🌱" : ""}</td>
+      </tr>`).join("");
+  }
+  if (plan.warnings?.length) {
+    $("#alloc-market-view").textContent += " ⚠ " + plan.warnings.join("; ");
+  }
+}
+
+function useAllocationInProposal() {
+  if (!lastAllocationPlan) return;
+  $("#prop-budget").value = lastAllocationPlan.capital;
+  const styleMap = { emerging_focused: "aggressive", balanced: "balanced", defensive: "conservative" };
+  $("#prop-risk").value = styleMap[lastAllocationPlan.strategy_style] || "balanced";
+  toast("Capital y perfil copiados — pulsa Crear Propuesta");
+  buildProposal();
+}
+
 async function buildProposal() {
   const tickers = $("#prop-tickers").value.trim();
   const body = {
@@ -953,6 +1018,8 @@ $$(".tab").forEach((btn) => btn.onclick = () => {
 
 $("#btn-analyze").onclick = runAnalyze;
 $("#btn-refresh").onclick = loadDashboard;
+$("#btn-allocation-advise").onclick = buildAllocationAdvise;
+$("#btn-alloc-to-proposal").onclick = useAllocationInProposal;
 $("#btn-proposal").onclick = buildProposal;
 $("#btn-apply-proposal").onclick = applyProposal;
 $("#btn-create-portfolio").onclick = createPortfolio;

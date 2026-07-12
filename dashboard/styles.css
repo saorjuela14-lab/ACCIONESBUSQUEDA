@@ -234,6 +234,21 @@ body.modal-open { overflow: hidden; }
 .demo-badge.real { background: rgba(34,197,94,0.2); color: var(--green); }
 .hidden { display: none !important; }
 
+.alloc-buckets { display: flex; flex-direction: column; gap: 6px; margin-top: 0.5rem; }
+.alloc-bucket {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  padding: 0.5rem 0.65rem; font-size: 11px;
+}
+.alloc-bucket-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.alloc-bucket-head b { font-size: 12px; }
+.alloc-bucket-pct { font-size: 16px; font-weight: 700; color: var(--accent); }
+.alloc-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin: 4px 0; }
+.alloc-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), #6366f1); border-radius: 3px; }
+.alloc-bucket-tickers { color: var(--muted); font-size: 10px; }
+.alloc-bucket-desc { color: var(--muted); font-size: 10px; margin-top: 2px; line-height: 1.35; }
+.allocation-advisor-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.65rem; margin-bottom: 0.65rem; }
+.allocation-advisor-panel h3 { font-size: 11px; text-transform: uppercase; color: var(--muted); margin: 0; }
+
 .table-wrap { overflow-x: auto; }
 .matrix-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .matrix-table th { text-align: left; color: var(--muted); font-size: 10px; text-transform: uppercase; padding: 6px 8px; border-bottom: 1px solid var(--border); }

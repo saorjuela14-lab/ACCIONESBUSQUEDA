@@ -31,6 +31,14 @@ class DemoSimulateRequest(BaseModel):
     horizon_months: int = Field(default=6, ge=1, le=36)
 
 
+class AllocationAdviseRequest(BaseModel):
+    capital: float = Field(gt=0, description="Capital total a asignar")
+    strategy_style: str = Field(
+        default="balanced",
+        description="emerging_focused | balanced | defensive",
+    )
+
+
 class PositionAddRequest(BaseModel):
     ticker: str
     shares: float = Field(gt=0)
