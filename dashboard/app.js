@@ -45,6 +45,7 @@ let lastPortfolioId = null;
 let lastNewsItems = [];
 let lastAllocationPlan = null;
 let lastDiscoveryReport = null;
+let lastThesis = null;
 
 const BUCKET_ES = {
   cash: "Efectivo",
@@ -995,6 +996,7 @@ async function runAnalyze() {
       api(`${API}/graph/${t}`),
       api(`${API}/correlations/${t}`),
     ]);
+    lastThesis = thesis;
     $("#m-rec").textContent = trRec(thesis.recommendation);
     $("#m-rec").className = recClass(thesis.recommendation);
     $("#m-conf").textContent = thesis.confidence ? `${(thesis.confidence * 100).toFixed(0)}%` : "—";
@@ -1458,6 +1460,29 @@ function switchToTab(tabName) {
   if (tabBtn) tabBtn.click();
 }
 
+function speakAnalyzeResult(ticker) {
+  return new Promise((resolve) => {
+    if (!lastThesis || lastThesis.ticker?.toUpperCase() !== ticker.toUpperCase()) {
+      resolve();
+      return;
+    }
+    const rec = trRec(lastThesis.recommendation);
+    const conf = Math.round((lastThesis.confidence || 0) * 100);
+    const summary = (lastThesis.executive_summary || "").slice(0, 350);
+    const text = `${ticker}: ${rec}, confianza ${conf} por ciento. ${summary}`;
+    if (!window.speechSynthesis) { resolve(); return; }
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "es-ES";
+    const voices = window.speechSynthesis.getVoices();
+    const es = voices.find((v) => v.lang.startsWith("es"));
+    if (es) u.voice = es;
+    u.onend = resolve;
+    u.onerror = resolve;
+    window.speechSynthesis.speak(u);
+  });
+}
+
 function renderProposalFromResult(p, extraSummary) {
   lastProposal = p;
   renderProposalVisual(p);
@@ -1560,6 +1585,19 @@ document.addEventListener("keydown", (e) => {
   const t = localStorage.getItem("nexbuy_token");
   const exportBtn = $("#btn-export-briefing");
   if (exportBtn && t) exportBtn.href = `${API}/reports/daily/latest/export?token=${encodeURIComponent(t)}`;
+  if (typeof initVoiceModule === "function") {
+    initVoiceModule({
+      api,
+      API,
+      toast,
+      loadDashboard,
+      runAnalyze,
+      runDiscoveryResearch,
+      switchToTab,
+      getPortfolioId: () => lastPortfolioId,
+      speakAnalyzeResult,
+    });
+  }
   loadDashboard();
   setInterval(loadDashboard, REFRESH_MS);
 })();

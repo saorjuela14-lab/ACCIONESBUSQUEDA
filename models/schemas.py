@@ -97,3 +97,8 @@ class DiscoverProposalRequest(BaseModel):
     add_to_watchlist: bool = Field(default=True)
     use_llm_narrative: bool = Field(default=True)
     portfolio_id: str | None = None
+
+
+class VoiceCommandRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=500, description="Texto reconocido por voz")
+    portfolio_id: str | None = None

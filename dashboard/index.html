@@ -26,8 +26,14 @@
         <button id="btn-analyze" class="btn primary">Analizar</button>
         <button id="btn-scan" class="btn">Escanear WL</button>
         <button id="btn-refresh" class="btn">Actualizar</button>
+        <button id="btn-voice" class="btn voice-btn" title="Asistente de voz" type="button">🎙 Voz</button>
       </div>
     </header>
+
+    <div id="voice-bar" class="voice-bar">
+      <span id="voice-status" class="voice-status">Toca el micrófono para hablar</span>
+      <span class="muted voice-hint">Ej: «¿Cómo está el mercado?», «Analiza VRT», «Escanea watchlist»</span>
+    </div>
 
     <section class="ceo-bar" id="ceo-bar">
       <div class="ceo-kpi"><label>Portafolio</label><div id="ceo-portfolio">—</div></div>
@@ -367,6 +373,7 @@
     </div>
   </div>
 
+  <script src="/dashboard/static/voice.js"></script>
   <script src="/dashboard/static/app.js"></script>
   <script>
     if ("serviceWorker" in navigator) {
