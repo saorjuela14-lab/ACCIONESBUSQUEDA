@@ -18,6 +18,9 @@ class CacheManager:
         self._redis: redis.Redis | None = None
 
     async def connect(self) -> None:
+        if not self._settings.redis_enabled or not self._settings.redis_url.strip():
+            logger.info("cache.memory_only")
+            return
         try:
             self._redis = redis.from_url(self._settings.redis_url, decode_responses=True)
             await self._redis.ping()

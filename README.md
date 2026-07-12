@@ -99,7 +99,7 @@ python main.py scheduler
 docker compose up -d
 ```
 
-Producción usa PostgreSQL automáticamente vía `docker-compose.yml`.
+Desarrollo local con PostgreSQL + Redis: `docker compose -f docker-compose.dev.yml up -d`
 Kubernetes: `kubectl apply -f k8s/deployment.yaml`
 
 ## API Endpoints
@@ -136,13 +136,18 @@ Flujo recomendado: **GitHub como fuente única** — escribes los cambios en Cur
    - **Builder:** Dockerfile (detecta `./Dockerfile`)
    - **Port:** `8000`
    - **Health check:** `/health`
-4. Variables de entorno:
+4. Variables de entorno (**importante — no necesitas PostgreSQL ni Redis**):
 
    | Variable | Valor |
    |----------|--------|
    | `DASHBOARD_ACCESS_TOKEN` | `Portafolio111` |
+   | `DATABASE_URL` | `sqlite+aiosqlite:///./data/nexbuy.db` |
+   | `REDIS_ENABLED` | `false` |
    | `APP_ENV` | `production` |
    | `SCHEDULER_ENABLED` | `true` |
+
+   Si SnapDeploy sigue pidiendo add-ons de PostgreSQL/Redis, elige **Deploy from Docker image** con  
+   `ghcr.io/saorjuela14-lab/accionesbusqueda/nexbuy-ceo:latest` (no escanea dependencias del repo).
 
 5. Pulsa **Deploy**. Te dará una URL tipo `https://tu-app.snapdeploy.dev`.
 6. Cada push a `main` puede redeployar automáticamente (si activas auto-deploy en SnapDeploy).

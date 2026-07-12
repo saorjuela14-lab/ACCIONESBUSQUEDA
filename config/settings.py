@@ -24,7 +24,8 @@ class Settings(BaseSettings):
     api_port: int = Field(default=8000, validation_alias=AliasChoices("API_PORT", "PORT"))
 
     database_url: str = "sqlite+aiosqlite:///./data/nexbuy.db"
-    redis_url: str = "redis://localhost:6379/0"
+    redis_enabled: bool = False
+    redis_url: str = ""
     cache_ttl_seconds: int = 300
 
     yfinance_enabled: bool = True
