@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     memory_evaluation_days: int = 90
     alert_cooldown_hours: int = 24
 
+    # Push notifications (optional)
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    telegram_alerts_enabled: bool = True
+    alert_webhook_url: str = ""
+    push_daily_trades: bool = True
+
     http_max_retries: int = 3
     http_retry_backoff: float = 1.5
 

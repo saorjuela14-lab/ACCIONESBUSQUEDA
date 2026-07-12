@@ -50,7 +50,7 @@
       <div id="daily-briefing" class="briefing-body">Cargando briefing…</div>
     </section>
 
-    <section class="panel trade-recs-panel">
+    <section class="panel trade-recs-panel" id="trade-recs-panel">
       <div class="panel-head">
         <h3>Recomendaciones Corto Plazo</h3>
         <div>
@@ -300,7 +300,10 @@
           <div class="chart-box small"><canvas id="cap-chart"></canvas></div>
         </div>
         <div class="panel">
-          <h3>Alertas</h3>
+          <h3>Alertas <span id="push-status-badge" class="push-badge muted" title="Estado push"></span></h3>
+          <div class="alert-actions">
+            <button id="btn-test-push" class="btn" style="font-size:10px;margin-bottom:6px;width:100%">Probar push</button>
+          </div>
           <div id="alerts-panel" class="scroll-list"></div>
         </div>
         <div class="panel">
@@ -314,7 +317,7 @@
 
     <nav class="mobile-nav" id="mobile-nav" aria-label="Navegación móvil">
       <button type="button" data-scroll="ceo-bar" class="mob-nav-btn active">Inicio</button>
-      <button type="button" data-scroll="watchlist-matrix" class="mob-nav-btn">Matriz</button>
+      <button type="button" data-scroll="trade-recs-panel" class="mob-nav-btn">Trades</button>
       <button type="button" id="mob-analyze" class="mob-nav-btn primary">Analizar</button>
       <button type="button" data-tab="discovery" class="mob-nav-btn">Descubrir</button>
       <button type="button" data-tab="proposal" class="mob-nav-btn">Propuesta</button>
@@ -322,6 +325,10 @@
     </nav>
   </div>
   <div id="toast" class="toast hidden"></div>
+  <div id="loading-overlay" class="loading-overlay hidden" aria-live="polite" aria-busy="true">
+    <div class="loading-spinner"></div>
+    <p id="loading-msg">Procesando…</p>
+  </div>
 
   <div id="news-modal" class="news-modal hidden" aria-hidden="true">
     <div class="news-modal-backdrop" id="news-modal-backdrop"></div>

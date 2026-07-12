@@ -25,6 +25,7 @@ from services.daily_report_service import DailyReportService
 from services.daily_trade_recommendation_service import DailyTradeRecommendationService
 from services.memory_evaluation_service import MemoryEvaluationService
 from services.company_discovery_service import CompanyDiscoveryService
+from services.push_notification_service import PushNotificationService
 from services.watchlist_monitor_service import WatchlistMonitorService
 from utils.logging import get_logger
 from utils.market_hours import should_run_automation
@@ -127,6 +128,19 @@ class SchedulerService:
                 picks=len(report.picks),
                 regime=report.market_regime,
             )
+            if self._settings.push_daily_trades and report.picks:
+                push = PushNotificationService()
+                if push.any_channel_configured:
+                    lines = [
+                        f"• {p.ticker} ({p.action}) — {p.rationale[:80]}"
+                        for p in report.picks[:6]
+                    ]
+                    body = (
+                        f"Sesión: {session_label}\n"
+                        f"Régimen: {report.market_regime}\n\n"
+                        + "\n".join(lines)
+                    )
+                    await push.notify_message("Recomendaciones corto plazo", body)
             break
 
     async def _run_daily_report(self) -> None:
