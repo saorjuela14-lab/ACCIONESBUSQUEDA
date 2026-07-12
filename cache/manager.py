@@ -1,9 +1,7 @@
-"""Async cache manager with Redis primary and memory fallback."""
+"""Async cache manager with optional Redis and in-memory fallback."""
 
 import json
 from typing import Any
-
-import redis.asyncio as redis
 
 from config.settings import get_settings
 from utils.logging import get_logger
@@ -15,13 +13,15 @@ class CacheManager:
     def __init__(self) -> None:
         self._settings = get_settings()
         self._memory: dict[str, tuple[Any, float | None]] = {}
-        self._redis: redis.Redis | None = None
+        self._redis: Any | None = None
 
     async def connect(self) -> None:
         if not self._settings.redis_enabled or not self._settings.redis_url.strip():
             logger.info("cache.memory_only")
             return
         try:
+            import redis.asyncio as redis
+
             self._redis = redis.from_url(self._settings.redis_url, decode_responses=True)
             await self._redis.ping()
             logger.info("cache.redis.connected")

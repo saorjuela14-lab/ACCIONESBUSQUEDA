@@ -18,7 +18,7 @@ Professional multi-agent investment research, portfolio management, and thesis g
 - **14 specialized agents** delivering structured evidence (never buy/sell decisions)
 - **Investment Director** consolidates all reports into auditable investment theses
 - **FastAPI** REST API, **APScheduler** for automated market reports
-- **SQLite + Redis** (production-ready for PostgreSQL/Redis Cloud)
+- **SQLite** en producción (SnapDeploy). Sin PostgreSQL ni Redis en el despliegue online.
 
 ## Fase 2 — Integraciones de datos
 
@@ -96,11 +96,9 @@ python main.py scheduler
 ## Docker
 
 ```bash
-docker compose up -d
+docker build -t nexbuy-ceo .
+docker run -p 8000:8000 -e DASHBOARD_ACCESS_TOKEN=Portafolio111 nexbuy-ceo
 ```
-
-Desarrollo local con PostgreSQL + Redis: `docker compose -f docker-compose.dev.yml up -d`
-Kubernetes: `kubectl apply -f k8s/deployment.yaml`
 
 ## API Endpoints
 
@@ -125,18 +123,20 @@ Evidence Agents → Alert Engine → Investment Director → Investment Memory
 
 Flujo recomendado: **GitHub como fuente única** — escribes los cambios en Cursor (Cloud Agent), el código vive en el repo; no necesitas clonar en tu PC.
 
-### Opción recomendada: SnapDeploy (gratis, sin tarjeta)
+### SnapDeploy (gratis, sin tarjeta)
 
-[SnapDeploy](https://snapdeploy.dev) permite desplegar contenedores Docker **sin pedir tarjeta**. El contenedor duerme tras inactividad y despierta solo (~60 s).
+En SnapDeploy solo verás **GitHub**, **AI Templates** o **Upload Artifact**. Usa **GitHub**.
 
-1. Entra en [snapdeploy.dev](https://snapdeploy.dev) → **Sign up with GitHub** (no tarjeta).
-2. **New deployment** → **GitHub** → autoriza acceso al repo `saorjuela14-lab/ACCIONESBUSQUEDA`.
-3. Configura el servicio:
-   - **Branch:** `main`
-   - **Builder:** Dockerfile (detecta `./Dockerfile`)
+1. [snapdeploy.dev](https://snapdeploy.dev) → **Sign up with GitHub**
+2. **Deploy Your Application** → pestaña **GitHub**
+3. Repo: `saorjuela14-lab/ACCIONESBUSQUEDA`, rama **`main`**
+4. **Espera 1–2 min** a que GitHub tenga el último push (commit con `requirements.txt` sin PostgreSQL)
+5. Si ya habías conectado el repo antes: **desconéctalo y vuelve a conectar** para refrescar el escaneo
+6. Configura:
    - **Port:** `8000`
+   - **Start command** (si lo pide): `uvicorn main:app --host 0.0.0.0 --port 8000`
    - **Health check:** `/health`
-4. Variables de entorno (**importante — no necesitas PostgreSQL ni Redis**):
+7. Variables de entorno — **no crees add-ons de PostgreSQL ni Redis**:
 
    | Variable | Valor |
    |----------|--------|
@@ -146,15 +146,11 @@ Flujo recomendado: **GitHub como fuente única** — escribes los cambios en Cur
    | `APP_ENV` | `production` |
    | `SCHEDULER_ENABLED` | `true` |
 
-   Si SnapDeploy sigue pidiendo add-ons de PostgreSQL/Redis, elige **Deploy from Docker image** con  
-   `ghcr.io/saorjuela14-lab/accionesbusqueda/nexbuy-ceo:latest` (no escanea dependencias del repo).
+8. Pulsa **Deploy**
 
-5. Pulsa **Deploy**. Te dará una URL tipo `https://tu-app.snapdeploy.dev`.
-6. Cada push a `main` puede redeployar automáticamente (si activas auto-deploy en SnapDeploy).
+> **Si aún pide PostgreSQL/Redis:** el escaneo está cacheado. Prueba **Upload Artifact** → descarga el ZIP desde [github.com/saorjuela14-lab/ACCIONESBUSQUEDA/archive/refs/heads/main.zip](https://github.com/saorjuela14-lab/ACCIONESBUSQUEDA/archive/refs/heads/main.zip) y súbelo.
 
-**Alternativa por imagen Docker:** GitHub Actions publica la imagen en  
-`ghcr.io/saorjuela14-lab/accionesbusqueda/nexbuy-ceo:latest`  
-En SnapDeploy elige **Deploy from Docker image** y pega esa URL.
+La app usa **SQLite + caché en memoria**. No necesitas bases de datos externas ni add-ons de pago.
 
 ### Hugging Face (solo si tienes plan PRO)
 
