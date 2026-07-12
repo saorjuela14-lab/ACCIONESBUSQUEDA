@@ -43,6 +43,7 @@ let lastProposal = null;
 let lastPortfolioId = null;
 let lastNewsItems = [];
 let lastAllocationPlan = null;
+let lastDiscoveryReport = null;
 
 const BUCKET_ES = {
   cash: "Efectivo",
@@ -1009,6 +1010,106 @@ async function scanWatchlist() {
   } catch (e) { toast("Escaneo: " + e.message); }
 }
 
+function parseDiscoveryThemes() {
+  const raw = ($("#disc-themes").value || "").trim();
+  if (!raw) return null;
+  return raw.split(/[,;]+/).map((t) => t.trim()).filter(Boolean);
+}
+
+const REC_ES = {
+  strong_buy: "Compra fuerte",
+  buy: "Compra",
+  hold: "Mantener",
+  sell: "Venta",
+  strong_sell: "Venta fuerte",
+};
+
+function renderDiscoveryReport(report) {
+  lastDiscoveryReport = report;
+  $("#disc-summary").textContent = report.summary || "Sin resultados";
+  const candidates = report.candidates || [];
+  if (!candidates.length) {
+    $("#disc-table-wrap").style.display = "none";
+    return;
+  }
+  $("#disc-table-wrap").style.display = "block";
+  $("#disc-body").innerHTML = candidates.map((c) => `
+    <tr>
+      <td><b>${c.ticker}</b></td>
+      <td>${(c.company_name || "—").slice(0, 28)}</td>
+      <td>${c.score}</td>
+      <td>${c.mention_count}</td>
+      <td>${(c.sources || []).join(", ")}</td>
+      <td style="font-size:10px;color:var(--muted)">${(c.rationale || "").slice(0, 80)}</td>
+      <td><button class="btn disc-add-btn" data-t="${c.ticker}" style="font-size:10px;padding:2px 6px">+ WL</button></td>
+    </tr>`).join("");
+  $$(".disc-add-btn").forEach((btn) => {
+    btn.onclick = async () => {
+      try {
+        await api(`${API}/watchlist`, { method: "POST", body: JSON.stringify({ ticker: btn.dataset.t }) });
+        toast(`${btn.dataset.t} agregado a watchlist`);
+        await loadDashboard();
+      } catch (e) { toast("Watchlist: " + e.message); }
+    };
+  });
+}
+
+function renderDiscoveryAnalyses(result) {
+  renderDiscoveryReport(result.discovery);
+  const analyses = result.analyses || [];
+  if (!analyses.length) {
+    $("#disc-analyses").innerHTML = "";
+    if (result.recommendation_summary) {
+      $("#disc-summary").textContent = result.recommendation_summary;
+    }
+    return;
+  }
+  $("#disc-summary").textContent = result.recommendation_summary || result.discovery?.summary || "";
+  $("#disc-analyses").innerHTML = analyses.map((t) => `
+    <div class="disc-analysis-card">
+      <h4>${t.ticker}<span class="rec-tag">${REC_ES[t.recommendation] || t.recommendation} · ${(t.confidence * 100).toFixed(0)}%</span></h4>
+      <p class="prose" style="font-size:11px;margin:0">${(t.executive_summary || "").slice(0, 400)}</p>
+      <button class="btn disc-analyze-btn" data-t="${t.ticker}" style="margin-top:6px;font-size:10px">Ver análisis completo</button>
+    </div>`).join("");
+  $$(".disc-analyze-btn").forEach((btn) => {
+    btn.onclick = () => {
+      $("#ticker-input").value = btn.dataset.t;
+      runAnalyze();
+    };
+  });
+}
+
+async function runDiscoveryResearch() {
+  toast("Investigando redes sociales y noticias…");
+  $("#disc-analyses").innerHTML = "";
+  try {
+    const r = await api(`${API}/discover/research`, {
+      method: "POST",
+      body: JSON.stringify({ themes: parseDiscoveryThemes(), max_candidates: 15 }),
+    });
+    renderDiscoveryReport(r);
+    toast(`${(r.candidates || []).length} candidatos encontrados`);
+  } catch (e) { toast("Descubrimiento: " + e.message); }
+}
+
+async function runDiscoveryAnalyze() {
+  const analyzeTop = parseInt($("#disc-analyze-top").value, 10) || 3;
+  toast(`Investigando y analizando top ${analyzeTop}… (puede tardar)`);
+  try {
+    const r = await api(`${API}/discover/analyze`, {
+      method: "POST",
+      body: JSON.stringify({
+        themes: parseDiscoveryThemes(),
+        max_candidates: 15,
+        analyze_top: analyzeTop,
+        portfolio_id: lastPortfolioId,
+      }),
+    });
+    renderDiscoveryAnalyses(r);
+    toast("Descubrimiento y análisis completados");
+  } catch (e) { toast("Descubrimiento: " + e.message); }
+}
+
 $$(".tab").forEach((btn) => btn.onclick = () => {
   $$(".tab").forEach((b) => b.classList.remove("active"));
   $$(".tab-pane").forEach((p) => p.classList.remove("active"));
@@ -1028,6 +1129,8 @@ $("#portfolio-modal-close").onclick = closePortfolioModal;
 $("#portfolio-modal-backdrop").onclick = closePortfolioModal;
 $("#btn-simulate-proposal").onclick = simulateDemoProposal;
 $("#btn-scan").onclick = scanWatchlist;
+$("#btn-disc-research").onclick = runDiscoveryResearch;
+$("#btn-disc-analyze").onclick = runDiscoveryAnalyze;
 $("#btn-shock").onclick = simulateShock;
 
 $("#news-modal-close").onclick = closeNewsModal;

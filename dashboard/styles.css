@@ -249,6 +249,17 @@ body.modal-open { overflow: hidden; }
 .allocation-advisor-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.65rem; margin-bottom: 0.65rem; }
 .allocation-advisor-panel h3 { font-size: 11px; text-transform: uppercase; color: var(--muted); margin: 0; }
 
+.disc-analyses { display: flex; flex-direction: column; gap: 8px; }
+.disc-analysis-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  padding: 0.65rem; font-size: 12px;
+}
+.disc-analysis-card h4 { margin: 0 0 4px; font-size: 13px; }
+.disc-analysis-card .rec-tag {
+  display: inline-block; font-size: 10px; padding: 2px 6px; border-radius: 4px;
+  background: rgba(59,130,246,0.2); color: var(--accent); margin-left: 6px;
+}
+
 .table-wrap { overflow-x: auto; }
 .matrix-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .matrix-table th { text-align: left; color: var(--muted); font-size: 10px; text-transform: uppercase; padding: 6px 8px; border-bottom: 1px solid var(--border); }
