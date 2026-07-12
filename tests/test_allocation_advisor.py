@@ -60,3 +60,63 @@ async def test_allocation_advise_returns_buckets(market_mock):
     assert any(b.key == "emerging" for b in plan.buckets)
     assert len(plan.items) >= 1
     assert "5000" in plan.summary or "5,000" in plan.summary
+
+
+@pytest.mark.asyncio
+async def test_single_ticker_not_repeated_across_buckets(market_mock):
+    """Each ticker must appear in at most one allocation bucket."""
+    watchlist = [WatchlistItem(ticker="SEDG")]
+    memory = {
+        "SEDG": InvestmentMemoryRecord(
+            ticker="SEDG", thesis="Solar play", reasons=[], scores={"news_agent": 15},
+            confidence=0.7, scenario="base", expected_outcome="hold", recommendation="hold",
+        ),
+    }
+    svc = MarketAllocationAdvisorService(market_mock)
+    plan = await svc.advise(
+        capital=50,
+        watchlist=watchlist,
+        memory_by_ticker=memory,
+        market_regime="neutral",
+        strategy_style="balanced",
+    )
+
+    all_bucket_tickers = [t for b in plan.buckets if b.key != "cash" for t in b.tickers]
+    assert all_bucket_tickers.count("SEDG") <= 1
+    item_tickers = [i.ticker for i in plan.items]
+    assert item_tickers.count("SEDG") <= 1
+
+
+@pytest.mark.asyncio
+async def test_tickers_distributed_uniquely(market_mock):
+    watchlist = [
+        WatchlistItem(ticker="RVMD"),
+        WatchlistItem(ticker="ABBV"),
+        WatchlistItem(ticker="IONQ"),
+    ]
+    memory = {
+        "RVMD": InvestmentMemoryRecord(
+            ticker="RVMD", thesis="Biotech", reasons=[], scores={"news_agent": 25},
+            confidence=0.8, scenario="base", expected_outcome="up", recommendation="buy",
+        ),
+        "ABBV": InvestmentMemoryRecord(
+            ticker="ABBV", thesis="Pharma", reasons=[], scores={"fundamental_agent": 12},
+            confidence=0.65, scenario="base", expected_outcome="hold", recommendation="hold",
+        ),
+        "IONQ": InvestmentMemoryRecord(
+            ticker="IONQ", thesis="Quantum", reasons=[], scores={"technical_agent": 18},
+            confidence=0.7, scenario="base", expected_outcome="up", recommendation="buy",
+        ),
+    }
+    svc = MarketAllocationAdvisorService(market_mock)
+    plan = await svc.advise(
+        capital=5000,
+        watchlist=watchlist,
+        memory_by_ticker=memory,
+        market_regime="neutral",
+        strategy_style="balanced",
+    )
+
+    assigned = [t for b in plan.buckets if b.key != "cash" for t in b.tickers]
+    assert len(assigned) == len(set(assigned)), f"Tickers duplicados entre buckets: {assigned}"
+    assert len(plan.items) == len({i.ticker for i in plan.items})
