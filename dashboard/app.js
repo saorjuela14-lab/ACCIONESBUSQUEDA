@@ -386,7 +386,7 @@ function renderTradeRecommendations(r) {
   const picks = r.picks || [];
   const grid = $("#trade-recs-grid");
   if (!picks.length) {
-    grid.innerHTML = `<p class="muted">Sin setups de corto plazo hoy. Pulsa "Generar ahora" para buscar tendencias.</p>`;
+    grid.innerHTML = `<p class="muted">Sin setups de momentum hoy. Pulsa <b>Gestionar capital</b> para que el escritorio busque penny stocks asequibles a tu portafolio.</p>`;
     return;
   }
 
@@ -429,31 +429,100 @@ function renderTradeRecommendations(r) {
   });
 }
 
-async function loadDailyTradeRecommendations() {
-  try {
-    const r = await api(`${API}/recommendations/daily/latest`);
-    renderTradeRecommendations(r);
-  } catch {
-    $("#trade-recs-grid").innerHTML = `<p class="muted">Recomendaciones no disponibles. Pulsa "Generar ahora".</p>`;
+function renderMicroPlan(plan) {
+  const el = $("#micro-plan-panel");
+  if (!el) return;
+  if (!plan?.lines?.length) {
+    el.classList.add("hidden");
+    el.innerHTML = "";
+    return;
   }
+  el.classList.remove("hidden");
+  el.innerHTML = `
+    <div class="micro-plan-head">Plan de gestión · capital $${plan.capital} · máx $${plan.max_share_price}/acc</div>
+    <div class="micro-plan-cash">Efectivo reserva: $${plan.cash_reserve_usd} · Desplegable: $${plan.deployable_usd}</div>
+    <table class="matrix-table compact">
+      <thead><tr><th>Ticker</th><th>Precio</th><th>Acciones</th><th>$</th><th>%</th><th>Stop / Obj</th></tr></thead>
+      <tbody>
+        ${plan.lines.map((l) => `
+          <tr>
+            <td><b>${l.ticker}</b></td>
+            <td>$${l.price}</td>
+            <td>${l.shares}</td>
+            <td>$${l.allocation_usd}</td>
+            <td>${l.allocation_pct}%</td>
+            <td>$${l.stop_loss ?? "—"} / $${l.take_profit ?? "—"}</td>
+          </tr>`).join("")}
+      </tbody>
+    </table>
+    ${(plan.warnings || []).length ? `<p class="muted" style="font-size:10px">${plan.warnings.join(" · ")}</p>` : ""}
+  `;
+}
+
+function currentPortfolioCapital() {
+  const fromInputs = parseFloat($("#alloc-capital")?.value)
+    || parseFloat($("#prop-budget")?.value)
+    || parseFloat($("#disc-budget")?.value)
+    || parseFloat($("#pf-capital")?.value);
+  if (fromInputs) return fromInputs;
+  const ceo = $("#ceo-portfolio")?.textContent?.replace(/[^0-9.]/g, "");
+  const n = parseFloat(ceo);
+  return n > 0 ? n : null;
 }
 
 async function generateDailyTrades() {
-  const capital = parseFloat($("#alloc-capital")?.value)
-    || parseFloat($("#prop-budget")?.value)
-    || parseFloat($("#disc-budget")?.value)
-    || null;
-  await withLoading("Generando recomendaciones de corto plazo…", async () => {
+  const capital = currentPortfolioCapital();
+  await withLoading("Generando recomendaciones…", async () => {
     try {
-      const body = { session: "pre_market", max_picks: 8 };
+      const body = { session: "pre_market", max_picks: capital && capital <= 100 ? 3 : 8 };
       if (capital) body.capital = capital;
       const r = await api(`${API}/recommendations/daily/generate`, {
         method: "POST",
         body: JSON.stringify(body),
       });
+      $("#micro-plan-panel")?.classList.add("hidden");
       renderTradeRecommendations(r);
       toast(`${(r.picks || []).length} recomendaciones listas`);
     } catch (e) { toast("Recomendaciones: " + e.message); }
+  });
+}
+
+async function loadDailyTradeRecommendations() {
+  try {
+    const r = await api(`${API}/recommendations/daily/latest`);
+    renderTradeRecommendations(r);
+  } catch {
+    $("#trade-recs-grid").innerHTML = `<p class="muted">Recomendaciones no disponibles. Pulsa "Generar ahora" o "Gestionar capital".</p>`;
+  }
+}
+
+async function managePortfolioCapital() {
+  const capital = currentPortfolioCapital();
+  if (!capital) {
+    toast("Crea un portafolio o indica el capital primero");
+    openPortfolioModal();
+    return;
+  }
+  await withLoading(`Gestionando capital $${capital}…`, async () => {
+    try {
+      const plan = await api(`${API}/recommendations/manage-capital`, {
+        method: "POST",
+        body: JSON.stringify({ capital, persist_as_daily: true }),
+      });
+      renderMicroPlan(plan);
+      $("#trade-recs-summary").textContent = plan.summary || "";
+      if (plan.picks?.length) {
+        renderTradeRecommendations({
+          picks: plan.picks,
+          summary: plan.summary,
+          generated_at: new Date().toISOString(),
+          disclaimer: "Plan de escritorio de capital — penny stocks asequibles. No es asesoría financiera.",
+        });
+      }
+      toast(plan.lines?.length
+        ? `Plan: ${plan.lines.map((l) => l.ticker).join(", ")}`
+        : "Sin líneas — intenta de nuevo");
+    } catch (e) { toast("Gestión: " + e.message); }
   });
 }
 
@@ -1625,6 +1694,7 @@ $("#portfolio-modal-backdrop").onclick = closePortfolioModal;
 $("#btn-simulate-proposal").onclick = simulateDemoProposal;
 $("#btn-scan").onclick = scanWatchlist;
 $("#btn-generate-trades").onclick = generateDailyTrades;
+$("#btn-manage-capital").onclick = managePortfolioCapital;
 $("#tech-period").onchange = () => { const t = ticker(); if (t) loadTechnicalChart(t); };
 $("#tech-chart-tf").onchange = () => {
   syncChartTimeframe($("#tech-chart-tf").value);

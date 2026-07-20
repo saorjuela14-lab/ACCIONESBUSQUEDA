@@ -116,3 +116,12 @@ class DiscoverProposalRequest(BaseModel):
 class VoiceCommandRequest(BaseModel):
     text: str = Field(min_length=1, max_length=500, description="Texto reconocido por voz")
     portfolio_id: str | None = None
+
+
+class MicroManageRequest(BaseModel):
+    capital: float = Field(gt=0, description="Capital del portafolio a gestionar")
+    exclude_tickers: list[str] | None = None
+    persist_as_daily: bool = Field(
+        default=True,
+        description="Guardar también como recomendaciones diarias",
+    )
