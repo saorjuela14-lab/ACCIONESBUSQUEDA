@@ -51,6 +51,7 @@ async def create_proposal(
         risk_profile=RiskProfile(request.risk_profile),
         cfd_margin_pct=request.cfd_margin_pct,
         tickers_filter=tickers,
+        prefer_affordable=request.prefer_affordable,
     )
 
     if request.use_llm_narrative and proposal.executive_report:

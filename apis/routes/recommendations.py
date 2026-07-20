@@ -50,6 +50,7 @@ async def generate_daily_trades(
         max_picks=request.max_picks,
         exclude_tickers=exclude,
         persist=True,
+        capital=request.capital,
     )
 
 

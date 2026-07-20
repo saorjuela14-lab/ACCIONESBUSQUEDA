@@ -10,6 +10,7 @@ from database.repositories.daily_trade_repository import DailyTradeRepository
 from domain.daily_trade import DailyTradeReport, TradePick
 from domain.discovery import DiscoveryCandidate
 from providers.interfaces import MarketDataProvider
+from services.capital_fit import affordability_bonus, capital_price_policy, discovery_themes_for_capital
 from services.company_discovery_service import CompanyDiscoveryService
 from services.market_dashboard_service import MarketDashboardService
 from utils.logging import get_logger
@@ -50,26 +51,44 @@ class DailyTradeRecommendationService:
         max_picks: int = 8,
         exclude_tickers: list[str] | None = None,
         persist: bool = True,
+        capital: float | None = None,
     ) -> DailyTradeReport:
-        logger.info("daily_trade.generate.start", session=session)
+        logger.info("daily_trade.generate.start", session=session, capital=capital)
 
         regime = await self._fetch_market_regime()
+        policy = capital_price_policy(capital or 1000, target_positions=max_picks)
+        themes = discovery_themes_for_capital(policy, list(_SHORT_TERM_THEMES))
+
         discovery = await self._discovery.research(
-            themes=list(_SHORT_TERM_THEMES),
+            themes=themes,
             max_candidates=25,
             exclude_tickers=exclude_tickers or [],
+            max_price=policy.max_share_price if capital and capital <= 500 else None,
         )
 
         scored: list[TradePick] = []
         for candidate in discovery.candidates[:20]:
             pick = await self._score_candidate(candidate)
             if pick:
+                if capital:
+                    line = (capital * 0.9) / max(max_picks, 1)
+                    pick.score = pick.score + affordability_bonus(
+                        pick.current_price or 0, line, policy
+                    )
+                    if (
+                        policy.max_share_price
+                        and pick.current_price
+                        and pick.current_price > policy.max_share_price
+                    ):
+                        continue
                 scored.append(pick)
 
         scored.sort(key=lambda p: p.score, reverse=True)
         picks = scored[:max_picks]
 
         summary = self._build_summary(picks, regime, session)
+        if capital:
+            summary = f"{policy.description_es} {summary}"
         report = DailyTradeReport(
             report_date=date.today(),
             generated_at=datetime.now(timezone.utc),

@@ -57,6 +57,10 @@ class InvestmentProposalRequest(BaseModel):
     risk_profile: str = Field(default="balanced", description="conservative | balanced | aggressive")
     cfd_margin_pct: float | None = Field(default=None, ge=5, le=50, description="CFD margin % (default by risk profile)")
     use_llm_narrative: bool = Field(default=True, description="Enrich with LLM if OPENAI_API_KEY set")
+    prefer_affordable: bool = Field(
+        default=True,
+        description="Priorizar acciones que quepan en el capital (penny stocks si el presupuesto es bajo)",
+    )
 
 
 class ProposalApplyRequest(BaseModel):
@@ -74,6 +78,11 @@ class DiscoveryResearchRequest(BaseModel):
         default=None,
         description="Tickers a excluir (ej. watchlist actual)",
     )
+    max_price: float | None = Field(
+        default=None,
+        gt=0,
+        description="Filtrar candidatos por precio máximo (p. ej. penny ≤ $5)",
+    )
 
 
 class DiscoveryAnalyzeRequest(DiscoveryResearchRequest):
@@ -85,6 +94,11 @@ class DailyTradeGenerateRequest(BaseModel):
     session: str = Field(default="pre_market", description="pre_market | mid_session | post_market")
     max_picks: int = Field(default=8, ge=1, le=15)
     exclude_tickers: list[str] | None = None
+    capital: float | None = Field(
+        default=None,
+        gt=0,
+        description="Si se indica, filtra picks asequibles (penny stocks en capital micro)",
+    )
 
 
 class DiscoverProposalRequest(BaseModel):

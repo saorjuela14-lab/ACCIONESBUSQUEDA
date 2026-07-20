@@ -58,6 +58,7 @@ async def discover_research(
         themes=request.themes,
         max_candidates=request.max_candidates,
         exclude_tickers=exclude,
+        max_price=request.max_price,
     )
 
 

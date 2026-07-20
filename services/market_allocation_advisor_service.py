@@ -9,6 +9,7 @@ from domain.allocation_plan import AllocationBucket, MarketAllocationPlan, Ticke
 from domain.entities import InvestmentMemoryRecord, WatchlistItem
 from domain.enums import InvestmentRecommendation
 from providers.interfaces import MarketDataProvider
+from services.capital_fit import affordability_bonus, capital_price_policy, price_fits_line
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -187,6 +188,7 @@ class MarketAllocationAdvisorService:
         capital = max(1.0, capital)
         regime = market_regime.lower() if market_regime else "neutral"
         weights = self._bucket_weights(regime, strategy_style)
+        policy = capital_price_policy(capital, target_positions=4)
 
         if not watchlist:
             return MarketAllocationPlan(
@@ -215,6 +217,13 @@ class MarketAllocationAdvisorService:
             if s.recommendation in ("sell", "strong_sell") and s.score < -5:
                 excluded.append(s.ticker)
                 continue
+            # Soft boost / hard skip for capital fit
+            est_line = capital * 0.85 / max(policy.target_positions, 1)
+            if s.price and policy.tier in ("micro", "small"):
+                if policy.max_share_price and s.price > policy.max_share_price * 2:
+                    excluded.append(s.ticker)
+                    continue
+                s.score = s.score + affordability_bonus(s.price, est_line, policy)
             eligible.append(s)
 
         # Sort by conviction so best names claim their bucket first.
@@ -239,7 +248,8 @@ class MarketAllocationAdvisorService:
         market_view = (
             f"Mercado {regime_es} (score {market_regime_score:+.1f}). "
             f"Estrategia {style_es}.{sector_hint} "
-            f"Se analizaron {len(scored)} tickers de la watchlist."
+            f"Se analizaron {len(scored)} tickers de la watchlist. "
+            f"{policy.description_es}"
         )
 
         buckets: list[AllocationBucket] = []
@@ -262,6 +272,16 @@ class MarketAllocationAdvisorService:
                 continue
 
             candidates = by_cat.get(key, [])
+            # Prefer names that fit a typical line within this bucket
+            line_est = usd / max(1, min(5, len(candidates) or 1))
+            if policy.prefer_whole_shares and candidates:
+                affordable = [
+                    c for c in candidates
+                    if c.price and price_fits_line(c.price, max(line_est, usd * 0.15), policy)
+                ]
+                expensive = [c for c in candidates if c not in affordable]
+                candidates = affordable + expensive  # affordable first, keep proportions if enough
+
             tickers_in = list(dict.fromkeys(c.ticker for c in candidates[:5]))
             desc_parts = []
             if key == "emerging":
@@ -270,6 +290,8 @@ class MarketAllocationAdvisorService:
                 desc_parts.append("Posiciones más estables para anclar el portafolio")
             else:
                 desc_parts.append("Mayor convicción según scores del comité")
+            if policy.tier == "micro":
+                desc_parts.append("filtrado por asequibilidad / penny")
             if not tickers_in:
                 desc_parts.append("Sin tickers asignados a este bucket hoy")
 
@@ -293,16 +315,34 @@ class MarketAllocationAdvisorService:
             for c in candidates:
                 if c.ticker in seen_in_bucket:
                     continue
+                # Skip if even the full bucket USD can't buy 1 share under micro/small policy
+                if (
+                    policy.prefer_whole_shares
+                    and c.price
+                    and c.price > usd
+                    and policy.tier in ("micro", "small")
+                    and len([x for x in candidates if x.price and x.price <= usd]) >= 1
+                ):
+                    continue
                 seen_in_bucket.add(c.ticker)
                 unique_candidates.append(c)
                 if len(unique_candidates) >= 5:
                     break
+
+            if not unique_candidates:
+                continue
 
             total_cat_score = sum(max(0.1, c.score * c.confidence) for c in unique_candidates)
             for c in unique_candidates:
                 share = max(0.1, c.score * c.confidence) / total_cat_score
                 line_pct = round(pct * share, 1)
                 line_usd = round(capital * line_pct / 100, 2)
+                fit_note = ""
+                if c.price and line_usd >= c.price:
+                    shares = int(line_usd // c.price)
+                    fit_note = f" · ~{shares} acciones @ ${c.price:.2f}"
+                elif c.price:
+                    fit_note = f" · ${c.price:.2f}/acc (revisar tamaño línea)"
                 items.append(
                     TickerAllocationItem(
                         ticker=c.ticker,
@@ -313,7 +353,7 @@ class MarketAllocationAdvisorService:
                         recommendation=c.recommendation.upper(),
                         confidence=round(c.confidence, 2),
                         score=round(c.score, 1),
-                        rationale=c.rationale,
+                        rationale=(c.rationale + fit_note).strip(" ·"),
                         is_emerging=c.is_emerging,
                     )
                 )
@@ -331,10 +371,12 @@ class MarketAllocationAdvisorService:
         summary = (
             f"Con ${capital:,.0f} de capital, el comité sugiere: "
             + "; ".join(lines_summary)
-            + "."
+            + f". {policy.description_es}"
         )
 
         warnings: list[str] = []
+        if policy.tier in ("micro", "small"):
+            warnings.append(policy.description_es)
         if len(eligible) < 3:
             warnings.append("Pocos tickers analizados — diversificación limitada.")
         if not any(s.is_emerging for s in eligible):

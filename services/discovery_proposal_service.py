@@ -4,8 +4,8 @@ from domain.discovery import DiscoveryProposalResult
 from domain.entities import WatchlistItem
 from domain.proposal import InstrumentType, RiskProfile
 from domain.reports import InvestmentThesis
-from providers.interfaces import MarketDataProvider
 from services.analysis_service import AnalysisService
+from services.capital_fit import capital_price_policy, discovery_themes_for_capital
 from services.company_discovery_service import CompanyDiscoveryService
 from services.investment_proposal_service import InvestmentProposalService
 from services.watchlist_service import WatchlistService
@@ -40,11 +40,24 @@ class DiscoveryProposalService:
         instrument_mode: str = "auto",
         add_to_watchlist: bool = True,
     ) -> DiscoveryProposalResult:
+        policy = capital_price_policy(budget, target_positions=proposal_top)
+        themes = discovery_themes_for_capital(policy, themes)
+
         report = await self._discovery.research(
             themes=themes,
             max_candidates=max_candidates,
             exclude_tickers=exclude_tickers,
+            max_price=policy.max_share_price,
         )
+
+        if not report.candidates and policy.max_share_price is not None:
+            logger.info("discover.proposal.retry_without_price_cap", budget=budget)
+            report = await self._discovery.research(
+                themes=themes,
+                max_candidates=max_candidates,
+                exclude_tickers=exclude_tickers,
+                max_price=None,
+            )
 
         if not report.candidates:
             raise ValueError(
@@ -75,6 +88,7 @@ class DiscoveryProposalService:
             instrument_mode=InstrumentType(instrument_mode),
             risk_profile=RiskProfile(risk_profile),
             tickers_filter=tickers,
+            prefer_affordable=True,
         )
 
         added: list[str] = []
@@ -87,6 +101,7 @@ class DiscoveryProposalService:
                     logger.warning("discover.proposal.watchlist_failed", ticker=t, error=str(exc))
 
         summary = (
+            f"{policy.description_es} "
             f"Descubiertos {len(report.candidates)} candidatos; propuesta con {len(proposal.allocations)} "
             f"posiciones sobre ${budget:,.0f}: {', '.join(tickers)}."
         )

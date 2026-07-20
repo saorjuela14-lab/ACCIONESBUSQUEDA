@@ -54,6 +54,7 @@ class CompanyDiscoveryService:
         themes: list[str] | None = None,
         max_candidates: int = 15,
         exclude_tickers: list[str] | None = None,
+        max_price: float | None = None,
     ) -> DiscoveryReport:
         themes = themes or [
             "growth stocks",
@@ -62,7 +63,7 @@ class CompanyDiscoveryService:
         ]
         exclude = {t.upper() for t in (exclude_tickers or [])}
 
-        logger.info("discovery.research.start", themes=themes)
+        logger.info("discovery.research.start", themes=themes, max_price=max_price)
 
         st, x_hits, reddit_hits, news_hits = await asyncio.gather(
             self._stocktwits.scan(),
@@ -97,11 +98,19 @@ class CompanyDiscoveryService:
             aggregated[ticker].append(mention)
 
         validated = await self._validate_tickers(list(aggregated.keys()))
+        if max_price is not None:
+            validated = {
+                t: q for t, q in validated.items()
+                if float(q.get("current_price") or 0) <= max_price
+                and float(q.get("current_price") or 0) > 0
+            }
         candidates = self._rank_candidates(aggregated, validated)
         candidates = candidates[:max_candidates]
 
         total_mentions = sum(c.mention_count for c in candidates)
         summary = self._build_summary(candidates, sources_scanned, themes)
+        if max_price is not None:
+            summary += f" Filtro de precio: ≤ ${max_price:.2f}."
 
         report = DiscoveryReport(
             query_themes=themes,
