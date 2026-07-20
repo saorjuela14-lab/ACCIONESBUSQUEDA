@@ -13,6 +13,7 @@ from providers.interfaces import MarketDataProvider
 from services.capital_fit import affordability_bonus, capital_price_policy, discovery_themes_for_capital
 from services.company_discovery_service import CompanyDiscoveryService
 from services.market_dashboard_service import MarketDashboardService
+from services.micro_portfolio_manager_service import MicroPortfolioManagerService
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -56,19 +57,27 @@ class DailyTradeRecommendationService:
         logger.info("daily_trade.generate.start", session=session, capital=capital)
 
         regime = await self._fetch_market_regime()
+        # Micro books: few whole-share positions, not 8 tiny lines
+        if capital and capital <= 100:
+            max_picks = min(max_picks, 3 if capital <= 60 else 4)
         policy = capital_price_policy(capital or 1000, target_positions=max_picks)
         themes = discovery_themes_for_capital(policy, list(_SHORT_TERM_THEMES))
+        micro_mode = bool(capital and capital <= 500)
 
         discovery = await self._discovery.research(
             themes=themes,
             max_candidates=25,
             exclude_tickers=exclude_tickers or [],
-            max_price=policy.max_share_price if capital and capital <= 500 else None,
+            max_price=policy.max_share_price if micro_mode else None,
         )
 
         scored: list[TradePick] = []
         for candidate in discovery.candidates[:20]:
-            pick = await self._score_candidate(candidate)
+            pick = await self._score_candidate(
+                candidate,
+                min_score=22 if micro_mode else 35,
+                allow_watch=micro_mode,
+            )
             if pick:
                 if capital:
                     line = (capital * 0.9) / max(max_picks, 1)
@@ -85,10 +94,42 @@ class DailyTradeRecommendationService:
 
         scored.sort(key=lambda p: p.score, reverse=True)
         picks = scored[:max_picks]
+        used_manager = False
 
-        summary = self._build_summary(picks, regime, session)
-        if capital:
+        # Capital desk fallback: always try to manage micro/small books
+        if capital and capital <= 500 and len(picks) < max(1, max_picks // 2):
+            manager = MicroPortfolioManagerService(self._market, self._discovery)
+            plan = await manager.manage(
+                capital=capital,
+                exclude_tickers=exclude_tickers,
+                max_candidates=20,
+            )
+            if plan.picks:
+                used_manager = True
+                # Prefer manager picks for micro; merge unique
+                seen = {p.ticker for p in plan.picks}
+                merged = list(plan.picks)
+                for p in picks:
+                    if p.ticker not in seen:
+                        merged.append(p)
+                        seen.add(p.ticker)
+                picks = merged[:max_picks]
+                summary = plan.summary
+            else:
+                summary = self._build_summary(picks, regime, session)
+                if plan.warnings:
+                    summary += " " + " ".join(plan.warnings)
+        else:
+            summary = self._build_summary(picks, regime, session)
+
+        if capital and not used_manager:
             summary = f"{policy.description_es} {summary}"
+        if used_manager and not picks:
+            summary = (
+                f"{policy.description_es} El escritorio de capital no encontró penny stocks "
+                "líquidos hoy. Mantén efectivo y vuelve a generar más tarde."
+            )
+
         report = DailyTradeReport(
             report_date=date.today(),
             generated_at=datetime.now(timezone.utc),
@@ -101,7 +142,12 @@ class DailyTradeRecommendationService:
         if persist and self._repo:
             await self._repo.save(report)
 
-        logger.info("daily_trade.generate.done", picks=len(picks), session=session)
+        logger.info(
+            "daily_trade.generate.done",
+            picks=len(picks),
+            session=session,
+            micro_manager=used_manager,
+        )
         return report
 
     async def get_latest(self) -> DailyTradeReport | None:
@@ -123,7 +169,12 @@ class DailyTradeRecommendationService:
             logger.warning("daily_trade.regime_failed", error=str(exc))
             return "neutral"
 
-    async def _score_candidate(self, candidate: DiscoveryCandidate) -> TradePick | None:
+    async def _score_candidate(
+        self,
+        candidate: DiscoveryCandidate,
+        min_score: float = 35,
+        allow_watch: bool = False,
+    ) -> TradePick | None:
         ticker = candidate.ticker
         try:
             quote = await self._market.get_quote(ticker)
@@ -157,11 +208,11 @@ class DailyTradeRecommendationService:
                 2,
             )
 
-            if total < 35:
+            if total < min_score:
                 return None
 
             action, horizon = self._classify_action(change_1d, change_5d, rsi, vol_spike)
-            if action == _ACTION_WATCH and total < 50:
+            if action == _ACTION_WATCH and total < 50 and not allow_watch:
                 return None
 
             target = levels.get("take_profit_1") or price * 1.05

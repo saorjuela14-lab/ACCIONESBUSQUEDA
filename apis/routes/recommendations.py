@@ -1,16 +1,21 @@
 """Daily short-term trade recommendation API."""
 
+from datetime import date, datetime, timezone
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.engine import get_session
 from database.repositories.daily_trade_repository import DailyTradeRepository
+from database.repositories.portfolio_repository import PortfolioRepository
 from database.repositories.watchlist_repository import WatchlistRepository
 from domain.daily_trade import DailyTradeReport
-from models.schemas import DailyTradeGenerateRequest
+from domain.micro_portfolio import MicroAllocationLineOut, MicroPortfolioPlanOut
+from models.schemas import DailyTradeGenerateRequest, MicroManageRequest
 from providers.market.factory import get_market_provider
 from services.company_discovery_service import CompanyDiscoveryService
 from services.daily_trade_recommendation_service import DailyTradeRecommendationService
+from services.micro_portfolio_manager_service import MicroPortfolioManagerService
 
 router = APIRouter()
 
@@ -24,6 +29,14 @@ def _build_service(session: AsyncSession) -> DailyTradeRecommendationService:
     )
 
 
+async def _portfolio_capital(session: AsyncSession) -> float | None:
+    portfolios = await PortfolioRepository(session).list_all()
+    if not portfolios:
+        return None
+    p = sorted(portfolios, key=lambda x: x.updated_at, reverse=True)[0]
+    return p.initial_capital or p.cash
+
+
 @router.get("/recommendations/daily/latest", response_model=DailyTradeReport)
 async def latest_daily_trades(
     session: AsyncSession = Depends(get_session),
@@ -31,7 +44,12 @@ async def latest_daily_trades(
     """Últimas recomendaciones diarias de corto plazo."""
     report = await _build_service(session).get_latest()
     if not report:
-        report = await _build_service(session).generate(session="pre_market", persist=True)
+        capital = await _portfolio_capital(session)
+        report = await _build_service(session).generate(
+            session="pre_market",
+            persist=True,
+            capital=capital,
+        )
     return report
 
 
@@ -45,12 +63,69 @@ async def generate_daily_trades(
     exclude = list(request.exclude_tickers or [])
     exclude.extend(w.ticker for w in watchlist)
 
+    capital = request.capital
+    if capital is None:
+        capital = await _portfolio_capital(session)
+
     return await _build_service(session).generate(
         session=request.session,
         max_picks=request.max_picks,
         exclude_tickers=exclude,
         persist=True,
-        capital=request.capital,
+        capital=capital,
+    )
+
+
+@router.post("/recommendations/manage-capital", response_model=MicroPortfolioPlanOut)
+async def manage_micro_capital(
+    request: MicroManageRequest,
+    session: AsyncSession = Depends(get_session),
+) -> MicroPortfolioPlanOut:
+    """Escritorio de capital: investiga penny stocks y arma plan con acciones enteras."""
+    watchlist = await WatchlistRepository(session).list_active()
+    exclude = list(request.exclude_tickers or [])
+    exclude.extend(w.ticker for w in watchlist)
+
+    market = get_market_provider()
+    manager = MicroPortfolioManagerService(
+        market,
+        CompanyDiscoveryService(market_provider=market),
+    )
+    plan = await manager.manage(capital=request.capital, exclude_tickers=exclude)
+
+    if request.persist_as_daily and plan.picks:
+        report = DailyTradeReport(
+            report_date=date.today(),
+            generated_at=datetime.now(timezone.utc),
+            session="capital_desk",
+            market_regime="managed",
+            summary=plan.summary,
+            picks=plan.picks,
+        )
+        await DailyTradeRepository(session).save(report)
+
+    return MicroPortfolioPlanOut(
+        capital=plan.capital,
+        cash_reserve_usd=plan.cash_reserve_usd,
+        deployable_usd=plan.deployable_usd,
+        max_share_price=plan.max_share_price,
+        lines=[
+            MicroAllocationLineOut(
+                ticker=l.ticker,
+                company_name=l.company_name,
+                price=l.price,
+                shares=l.shares,
+                allocation_usd=l.allocation_usd,
+                allocation_pct=l.allocation_pct,
+                rationale=l.rationale,
+                stop_loss=l.stop_loss,
+                take_profit=l.take_profit,
+            )
+            for l in plan.lines
+        ],
+        picks=plan.picks,
+        summary=plan.summary,
+        warnings=plan.warnings,
     )
 
 
