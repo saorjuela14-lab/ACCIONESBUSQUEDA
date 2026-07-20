@@ -198,9 +198,64 @@ function syncBudgetFields(fromId, toId) {
   if (from?.value && to) to.value = from.value;
 }
 
+function capitalFitHint(capital) {
+  const c = parseFloat(capital) || 0;
+  if (c <= 0) return "";
+  if (c <= 100) {
+    return `Capital micro ($${c}): se buscarán penny stocks ≤ ~$5 para comprar acciones enteras manteniendo los %.`;
+  }
+  if (c <= 500) {
+    return `Capital pequeño ($${c}): preferencia por acciones ≤ ~$25 que quepan en cada línea de asignación.`;
+  }
+  if (c <= 2000) {
+    return `Capital medio ($${c}): se priorizan acciones asequibles respecto al tamaño de cada posición.`;
+  }
+  return `Capital estándar ($${c}): proporciones % normales; CFD solo si una acción no cabe.`;
+}
+
+function updateCapitalFitHints() {
+  const capital = parseFloat($("#alloc-capital")?.value)
+    || parseFloat($("#prop-budget")?.value)
+    || parseFloat($("#disc-budget")?.value)
+    || parseFloat($("#pf-capital")?.value)
+    || 0;
+  const hint = capitalFitHint(capital);
+  const el = $("#capital-fit-hint");
+  if (el) el.textContent = hint;
+  const pf = $("#pf-capital-hint");
+  if (pf && $("#pf-capital")?.value) pf.textContent = capitalFitHint($("#pf-capital").value);
+}
+
+function syncAllCapitalFields(sourceId) {
+  const val = $(sourceId)?.value;
+  if (!val) return;
+  ["#alloc-capital", "#prop-budget", "#disc-budget", "#pf-capital"].forEach((id) => {
+    if (id !== sourceId && $(id)) $(id).value = val;
+  });
+  updateCapitalFitHints();
+}
+
 function setupBudgetSync() {
-  $("#disc-budget")?.addEventListener("change", () => syncBudgetFields("#disc-budget", "#prop-budget"));
-  $("#prop-budget")?.addEventListener("change", () => syncBudgetFields("#prop-budget", "#disc-budget"));
+  $("#disc-budget")?.addEventListener("change", () => {
+    syncBudgetFields("#disc-budget", "#prop-budget");
+    syncBudgetFields("#disc-budget", "#alloc-capital");
+    updateCapitalFitHints();
+  });
+  $("#prop-budget")?.addEventListener("change", () => {
+    syncBudgetFields("#prop-budget", "#disc-budget");
+    syncBudgetFields("#prop-budget", "#alloc-capital");
+    updateCapitalFitHints();
+  });
+  $("#alloc-capital")?.addEventListener("change", () => {
+    syncBudgetFields("#alloc-capital", "#prop-budget");
+    syncBudgetFields("#alloc-capital", "#disc-budget");
+    updateCapitalFitHints();
+  });
+  $("#pf-capital")?.addEventListener("input", () => updateCapitalFitHints());
+  $("#pf-capital")?.addEventListener("change", () => {
+    syncAllCapitalFields("#pf-capital");
+  });
+  updateCapitalFitHints();
 }
 
 function setupMobileNav() {
@@ -384,11 +439,17 @@ async function loadDailyTradeRecommendations() {
 }
 
 async function generateDailyTrades() {
+  const capital = parseFloat($("#alloc-capital")?.value)
+    || parseFloat($("#prop-budget")?.value)
+    || parseFloat($("#disc-budget")?.value)
+    || null;
   await withLoading("Generando recomendaciones de corto plazo…", async () => {
     try {
+      const body = { session: "pre_market", max_picks: 8 };
+      if (capital) body.capital = capital;
       const r = await api(`${API}/recommendations/daily/generate`, {
         method: "POST",
-        body: JSON.stringify({ session: "pre_market", max_picks: 8 }),
+        body: JSON.stringify(body),
       });
       renderTradeRecommendations(r);
       toast(`${(r.picks || []).length} recomendaciones listas`);
@@ -1176,6 +1237,7 @@ async function buildProposal() {
     use_watchlist: !tickers,
     risk_profile: $("#prop-risk").value,
     instrument_mode: "auto",
+    prefer_affordable: true,
   };
   await withLoading("Creando propuesta…", async () => {
     try {
@@ -1339,8 +1401,14 @@ async function submitPortfolioForm() {
     });
     lastPortfolioId = p.id;
     closePortfolioModal();
+    syncAllCapitalFields("#pf-capital");
     toast(`${p.name} (${mode === "demo" ? "Demo" : "Real"}) creado — $${p.initial_capital}`);
     await loadDashboard();
+    // Auto-sugerir asignación acorde al capital recién creado
+    if ($("#alloc-capital")) {
+      $("#alloc-capital").value = p.initial_capital;
+      updateCapitalFitHints();
+    }
   } catch (e) { toast("Portafolio: " + e.message); }
 }
 

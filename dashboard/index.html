@@ -251,6 +251,7 @@
                 </select>
                 <button id="btn-allocation-advise" class="btn primary">Generar asignación</button>
               </div>
+              <p id="capital-fit-hint" class="muted" style="font-size:11px;margin:0.35rem 0 0"></p>
               <p id="alloc-market-view" class="muted" style="font-size:11px;margin:0.5rem 0"></p>
               <p id="alloc-summary" class="prose" style="font-size:12px"></p>
               <div id="alloc-buckets" class="alloc-buckets"></div>
@@ -373,6 +374,7 @@
         <p class="muted pf-mode-hint">Real: seguimiento con precios de mercado. Demo: incluye simulaciones y proyecciones.</p>
         <label for="pf-capital">Capital a gestionar (USD)</label>
         <input id="pf-capital" type="number" value="1000" min="1" step="1" />
+        <p id="pf-capital-hint" class="muted pf-mode-hint">Con capital bajo (p. ej. $50) el comité buscará penny stocks asequibles manteniendo los %.</p>
         <button id="btn-pf-submit" class="btn primary" style="width:100%;margin-top:0.75rem">Crear portafolio</button>
       </div>
     </div>

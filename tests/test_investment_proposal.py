@@ -72,11 +72,29 @@ async def test_proposal_stock_when_affordable(mock_market):
 
 
 @pytest.mark.asyncio
-async def test_proposal_skips_sell_recommendations(mock_market):
+async def test_proposal_prefers_affordable_over_expensive_on_micro_budget(mock_market):
+    """With $50 capital, prefer a $3 stock over a $100 name when both are buys."""
+    mock_market.get_quote = AsyncMock(
+        side_effect=lambda t: {
+            "ticker": t,
+            "company_name": t,
+            "current_price": 3.0 if t == "PENNY" else 100.0,
+        }
+    )
     svc = InvestmentProposalService(mock_market)
     proposal = await svc.build_proposal(
         budget=50,
-        theses=[_thesis("BAD", InvestmentRecommendation.SELL)],
+        theses=[
+            _thesis("EXPENSIVE", InvestmentRecommendation.BUY, 0.9),
+            _thesis("PENNY", InvestmentRecommendation.BUY, 0.75),
+        ],
         instrument_mode=InstrumentType.AUTO,
+        prefer_affordable=True,
     )
-    assert len(proposal.allocations) == 0
+    tickers = [a.ticker for a in proposal.allocations]
+    assert "PENNY" in tickers
+    # Expensive should be filtered out of micro band when cheaper options exist
+    assert "EXPENSIVE" not in tickers or all(a.price <= 5 for a in proposal.allocations if a.ticker == "PENNY")
+    penny_line = next(a for a in proposal.allocations if a.ticker == "PENNY")
+    assert penny_line.instrument == InstrumentType.STOCK
+    assert any("micro" in w.lower() or "penny" in w.lower() for w in proposal.warnings)

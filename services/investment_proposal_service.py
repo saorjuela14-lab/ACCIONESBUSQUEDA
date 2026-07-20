@@ -16,6 +16,7 @@ from domain.proposal import (
 )
 from domain.reports import InvestmentThesis
 from providers.interfaces import MarketDataProvider
+from services.capital_fit import affordability_bonus, capital_price_policy, price_fits_hard
 from services.correlation_service import CorrelationService
 from services.knowledge_graph_service import KnowledgeGraphService
 from services.portfolio_optimizer_service import PortfolioOptimizerService
@@ -146,18 +147,23 @@ class InvestmentProposalService:
         risk_profile: RiskProfile = RiskProfile.BALANCED,
         cfd_margin_pct: float | None = None,
         tickers_filter: list[str] | None = None,
+        prefer_affordable: bool = True,
     ) -> InvestmentProposal:
         margin_pct = cfd_margin_pct or CFD_MARGIN_DEFAULTS[risk_profile]
         reserve_pct = CASH_RESERVE[risk_profile]
         deployable = budget * (1 - reserve_pct)
         warnings: list[str] = []
+        policy = capital_price_policy(budget, target_positions=min(4, max(2, len(theses) or 4)))
 
         if budget < 20:
-            warnings.append("Budget under $20 — limited diversification.")
+            warnings.append("Presupuesto bajo $20 — diversificación limitada.")
+        if prefer_affordable:
+            warnings.append(policy.description_es)
 
-        candidates: list[tuple[str, InvestmentThesis, float]] = []
+        candidates: list[tuple[str, InvestmentThesis, float, float]] = []
         excluded: list[tuple[str, str]] = []
         thesis_map: dict[str, InvestmentThesis] = {}
+        quotes: dict[str, dict] = {}
 
         for thesis in theses:
             t = thesis.ticker.upper()
@@ -168,7 +174,49 @@ class InvestmentProposalService:
             if w <= 0:
                 excluded.append((t, f"recommendation {thesis.recommendation.value}"))
                 continue
-            candidates.append((t, thesis, w))
+
+            quote = await self._market.get_quote(t)
+            quotes[t] = quote
+            price = float(quote.get("current_price") or 0)
+            if price <= 0:
+                excluded.append((t, "precio no disponible"))
+                continue
+
+            if prefer_affordable and policy.tier in ("micro", "small") and not price_fits_hard(price, policy):
+                excluded.append(
+                    (t, f"precio ${price:.2f} fuera del rango para capital ${budget:,.0f} "
+                     f"(máx ${policy.max_share_price})")
+                )
+                continue
+
+            est_line = deployable / max(policy.target_positions, 1)
+            adj = w
+            if prefer_affordable:
+                adj = w * (1.0 + affordability_bonus(price, est_line, policy) / 100.0)
+            candidates.append((t, thesis, adj, price))
+
+        # If hard filter wiped everyone, fall back to soft ranking (still prefer cheap)
+        if not candidates and theses:
+            for thesis in theses:
+                t = thesis.ticker.upper()
+                if tickers_filter and t not in {x.upper() for x in tickers_filter}:
+                    continue
+                w = REC_WEIGHT.get(thesis.recommendation, 0) * thesis.confidence
+                if w <= 0:
+                    continue
+                quote = quotes.get(t) or await self._market.get_quote(t)
+                quotes[t] = quote
+                price = float(quote.get("current_price") or 0)
+                if price <= 0:
+                    continue
+                est_line = deployable / max(policy.target_positions, 1)
+                adj = w * (1.0 + affordability_bonus(price, est_line, policy) / 100.0)
+                candidates.append((t, thesis, adj, price))
+            if candidates:
+                warnings.append(
+                    "Ningún ticker cabía en el rango de precio estricto; "
+                    "se relajó el filtro y se priorizaron los más asequibles."
+                )
 
         if not candidates:
             return InvestmentProposal(
@@ -181,6 +229,15 @@ class InvestmentProposalService:
                 warnings=warnings + ["No buy-rated tickers."],
                 summary="No proposal generated.",
             )
+
+        # Prefer names that fit capital; keep top N for % diversification
+        candidates.sort(key=lambda x: x[2], reverse=True)
+        max_keep = policy.target_positions + (1 if policy.tier == "standard" else 0)
+        if prefer_affordable and len(candidates) > max_keep:
+            dropped = candidates[max_keep:]
+            for t, _, _, price in dropped:
+                excluded.append((t, f"prioridad capital: ${price:.2f} menos asequible que top {max_keep}"))
+            candidates = candidates[:max_keep]
 
         tickers = [c[0] for c in candidates]
         scores = [c[2] * 100 for c in candidates]
@@ -203,22 +260,28 @@ class InvestmentProposalService:
         allocations: list[AllocationLine] = []
         total_margin = total_spread = total_overnight = 0.0
         order = 1
+        whole_share_count = 0
 
-        for ticker, thesis, _ in sorted(candidates, key=lambda x: opt_weights.get(x[0], 0), reverse=True):
+        for ticker, thesis, _, price in sorted(candidates, key=lambda x: opt_weights.get(x[0], 0), reverse=True):
             weight = opt_weights.get(ticker, 0)
             line_budget = deployable * weight
             if line_budget < MIN_LINE_USD:
                 excluded.append((ticker, "weight below minimum after optimization"))
                 continue
 
-            quote = await self._market.get_quote(ticker)
-            price = float(quote.get("current_price") or 0)
+            quote = quotes.get(ticker) or await self._market.get_quote(ticker)
+            price = float(quote.get("current_price") or price)
             if price <= 0:
                 excluded.append((ticker, "price unavailable"))
                 continue
 
+            # Prefer stock mode when capital policy wants whole shares and price fits
+            mode = instrument_mode
+            if prefer_affordable and policy.prefer_whole_shares and price <= line_budget:
+                mode = InstrumentType.STOCK if instrument_mode == InstrumentType.AUTO else instrument_mode
+
             instrument, units, notional, margin = self._choose_instrument(
-                price, line_budget, instrument_mode, margin_pct
+                price, line_budget, mode, margin_pct
             )
             spread_cost, overnight = (None, None)
             if instrument == InstrumentType.CFD:
@@ -231,7 +294,11 @@ class InvestmentProposalService:
                     f"margin ${margin:.2f}, spread ~${spread_cost}, overnight ~${overnight}/day"
                 )
             else:
-                rationale = f"Stock: {int(units)} shares @ ${price:.2f} = ${notional:.2f}"
+                whole_share_count += 1
+                rationale = (
+                    f"Stock: {int(units)} shares @ ${price:.2f} = ${notional:.2f} "
+                    f"(cabe en capital ${budget:,.0f})"
+                )
 
             exp_ret = thesis.confidence * REC_WEIGHT.get(thesis.recommendation, 0) * 12
             stop = round(price * 0.92, 2) if instrument == InstrumentType.STOCK else round(price * 0.95, 2)
@@ -267,6 +334,12 @@ class InvestmentProposalService:
         exec_report = self._executive_report(budget, allocations, excluded, thesis_map)
         if correlation_notes:
             exec_report.correlation_notes = correlation_notes
+        if prefer_affordable and policy.tier in ("micro", "small"):
+            exec_report.narrative = (
+                f"{policy.description_es} "
+                + exec_report.narrative
+                + f" Acciones enteras: {whole_share_count}/{len(allocations)}."
+            )
 
         if total_margin:
             warnings.append(f"Total CFD margin required: ${total_margin:.2f}. Leverage amplifies risk.")
@@ -288,7 +361,7 @@ class InvestmentProposalService:
             instrument_summary=(
                 f"{sum(1 for a in allocations if a.instrument == InstrumentType.STOCK)} stocks, "
                 f"{sum(1 for a in allocations if a.instrument == InstrumentType.CFD)} CFDs. "
-                f"Optimized weights via mean-variance."
+                f"Capital tier={policy.tier}; proporciones % preservadas."
             ),
             warnings=warnings,
             summary=exec_report.narrative,
