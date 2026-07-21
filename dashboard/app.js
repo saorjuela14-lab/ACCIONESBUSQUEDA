@@ -337,6 +337,7 @@ function renderHeatmap(sectors) {
 
 function renderCeoBar(d) {
   const p = d.portfolio;
+  lastDashboardPortfolio = p || null;
   $("#ceo-portfolio").textContent = p ? `$${p.total_value?.toFixed(0)}` : "—";
   const ret = p?.return_pct;
   const retEl = $("#ceo-return");
@@ -345,6 +346,10 @@ function renderCeoBar(d) {
   $("#ceo-alerts").textContent = (d.active_alerts || []).length;
   $("#ceo-watchlist-count").textContent = (d.watchlist || []).length;
   $("#ceo-updated").textContent = d.timestamp ? new Date(d.timestamp).toLocaleTimeString(LOCALE) : new Date().toLocaleTimeString(LOCALE);
+  if (p && !alpacaBookCapital()) {
+    const cap = Number(p.cash || p.total_value || p.initial_capital || 0);
+    if (cap > 0 && cap !== 1000) syncCapitalInputsFromBroker(cap);
+  }
 }
 
 function renderProviderHealth(health) {
@@ -447,6 +452,34 @@ function renderTradeRecommendations(r) {
 
 let lastMicroPlan = null;
 let lastAlpacaStatus = null;
+let lastDashboardPortfolio = null;
+let capitalInputsSyncedFromBroker = false;
+
+function alpacaBookCapital() {
+  const acc = lastAlpacaStatus?.account;
+  if (!acc || !lastAlpacaStatus?.connected) return null;
+  for (const key of ["equity", "portfolio_value", "cash", "buying_power"]) {
+    const n = Number(acc[key]);
+    if (Number.isFinite(n) && n > 0) return Math.round(n * 100) / 100;
+  }
+  return null;
+}
+
+function syncCapitalInputsFromBroker(capital) {
+  if (!capital || capital <= 0) return;
+  const rounded = Math.round(capital * 100) / 100;
+  ["#alloc-capital", "#prop-budget", "#disc-budget", "#pf-capital"].forEach((id) => {
+    const el = $(id);
+    if (!el) return;
+    // Only overwrite the HTML default (1000) or empty — keep intentional user edits
+    const cur = parseFloat(el.value);
+    if (!el.value || cur === 1000 || capitalInputsSyncedFromBroker) {
+      el.value = String(rounded);
+    }
+  });
+  capitalInputsSyncedFromBroker = true;
+  if (typeof updateCapitalFitHints === "function") updateCapitalFitHints();
+}
 
 function renderAlpacaStatus(st) {
   lastAlpacaStatus = st;
@@ -465,14 +498,17 @@ function renderAlpacaStatus(st) {
   }
   const mode = st.paper ? "Paper" : "LIVE";
   const cash = st.account?.cash != null ? ` · cash $${Number(st.account.cash).toFixed(2)}` : "";
+  const eq = st.account?.equity != null ? ` · equity $${Number(st.account.equity).toFixed(2)}` : "";
   const mkt = st.market_open === true ? " · mercado abierto" : (st.market_open === false ? " · mercado cerrado" : "");
   if (st.paper) {
     el.classList.add("ok");
-    el.textContent = `Alpaca Paper conectado${cash}${mkt}`;
+    el.textContent = `Alpaca Paper conectado${cash}${eq}${mkt}`;
   } else {
     el.classList.add("err");
-    el.textContent = `Alpaca LIVE · dinero real${cash}${mkt}`;
+    el.textContent = `Alpaca LIVE · dinero real${cash}${eq}${mkt}`;
   }
+  const book = alpacaBookCapital();
+  if (book) syncCapitalInputsFromBroker(book);
 }
 
 async function loadAlpacaStatus() {
@@ -708,11 +744,31 @@ function renderMicroPlan(plan) {
 }
 
 function currentPortfolioCapital() {
-  const fromInputs = parseFloat($("#alloc-capital")?.value)
-    || parseFloat($("#prop-budget")?.value)
-    || parseFloat($("#disc-budget")?.value)
-    || parseFloat($("#pf-capital")?.value);
-  if (fromInputs) return fromInputs;
+  // 1) Live Alpaca book (source of truth for real money)
+  const alpaca = alpacaBookCapital();
+  if (alpaca) return alpaca;
+
+  // 2) NexBuy portfolio from dashboard (after sync-alpaca)
+  if (lastDashboardPortfolio) {
+    for (const key of ["cash", "total_value", "initial_capital"]) {
+      const n = Number(lastDashboardPortfolio[key]);
+      if (Number.isFinite(n) && n > 0) return Math.round(n * 100) / 100;
+    }
+  }
+
+  // 3) Inputs — ignore the HTML default of 1000 unless user synced/edited
+  const inputs = ["#alloc-capital", "#prop-budget", "#disc-budget", "#pf-capital"]
+    .map((id) => parseFloat($(id)?.value))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (inputs.length) {
+    const v = inputs[0];
+    // Treat untouched default 1000 as "unknown" when no broker/portfolio
+    if (v === 1000 && !capitalInputsSyncedFromBroker && !lastDashboardPortfolio) {
+      return null;
+    }
+    return v;
+  }
+
   const ceo = $("#ceo-portfolio")?.textContent?.replace(/[^0-9.]/g, "");
   const n = parseFloat(ceo);
   return n > 0 ? n : null;
@@ -745,18 +801,21 @@ async function loadDailyTradeRecommendations() {
 }
 
 async function managePortfolioCapital() {
-  const capital = currentPortfolioCapital();
-  if (!capital) {
-    toast("Crea un portafolio o indica el capital primero");
-    openPortfolioModal();
-    return;
+  // Prefer live Alpaca; if missing, ask API to resolve (Alpaca/server-side portfolio)
+  let capital = currentPortfolioCapital();
+  if (capital === 1000 && !capitalInputsSyncedFromBroker && !alpacaBookCapital()) {
+    capital = null; // don't send the HTML default
   }
-  await withLoading(`Gestionando capital $${capital}…`, async () => {
+  const label = capital ? `$${capital}` : "Alpaca/portafolio";
+  await withLoading(`Gestionando capital ${label}…`, async () => {
     try {
+      const body = { persist_as_daily: true };
+      if (capital && capital > 0) body.capital = capital;
       const plan = await api(`${API}/recommendations/manage-capital`, {
         method: "POST",
-        body: JSON.stringify({ capital, persist_as_daily: true }),
+        body: JSON.stringify(body),
       });
+      if (plan.capital) syncCapitalInputsFromBroker(plan.capital);
       renderMicroPlan(plan);
       $("#trade-recs-summary").textContent = plan.summary || "";
       if (plan.picks?.length) {
@@ -768,9 +827,12 @@ async function managePortfolioCapital() {
         });
       }
       toast(plan.lines?.length
-        ? `Plan: ${plan.lines.map((l) => l.ticker).join(", ")}`
-        : "Sin líneas — intenta de nuevo");
-    } catch (e) { toast("Gestión: " + e.message); }
+        ? `Plan $${plan.capital}: ${plan.lines.map((l) => l.ticker).join(", ")}`
+        : `Sin líneas (capital $${plan.capital}) — intenta de nuevo`);
+    } catch (e) {
+      toast("Gestión: " + e.message);
+      if (String(e.message || "").includes("capital")) openPortfolioModal();
+    }
   });
 }
 
@@ -1498,7 +1560,11 @@ function renderProposalVisual(p) {
 }
 
 async function buildAllocationAdvise() {
-  const capital = parseFloat($("#alloc-capital").value) || 1000;
+  const capital = parseFloat($("#alloc-capital").value);
+  if (!capital || capital <= 0) {
+    toast("Espera a que cargue Alpaca o indica el capital real");
+    return;
+  }
   const style = $("#alloc-style").value;
   await withLoading("Analizando mercado y watchlist…", async () => {
     try {
