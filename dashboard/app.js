@@ -1977,7 +1977,11 @@ function renderProposalFromResult(p, extraSummary) {
 }
 
 async function runDiscoveryProposal() {
-  const budget = parseFloat($("#disc-budget")?.value) || 1000;
+  const budget = parseFloat($("#disc-budget")?.value) || currentPortfolioCapital() || alpacaBookCapital();
+  if (!budget || budget <= 0) {
+    toast("Espera a que cargue Alpaca o indica el capital real");
+    return;
+  }
   const proposalTop = Math.min(parseInt($("#disc-analyze-top").value, 10) || 3, 6);
   $("#disc-analyses").innerHTML = "";
   await withLoading("Descubriendo y generando propuesta…", async () => {
