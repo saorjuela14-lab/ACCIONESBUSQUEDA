@@ -214,7 +214,9 @@ En el dashboard de tu app → **Environment Variables** → añade:
 
 Marca `DASHBOARD_ACCESS_TOKEN` como **Secret** si la opción existe. Pulsa **Redeploy** tras guardar.
 
-> **No añadas** PostgreSQL ni Redis — la app usa SQLite + caché en memoria.
+> **No añadas** PostgreSQL ni Redis en el plan Hobby por defecto — la app usa SQLite + caché en memoria.
+
+> **Importante — persistencia:** en FastAPI Cloud el disco es **efímero**. Cada redeploy borra `./data/nexbuy.db` (portafolios, watchlist, historial). El panel **recrea el portafolio desde Alpaca** automáticamente si hay keys. Para no perder datos: botón **Sincronizar desde Alpaca**, o configura un Postgres externo (p. ej. Neon) en `DATABASE_URL=postgresql+asyncpg://...` (requiere añadir el driver en un próximo deploy).
 
 #### Paso 4 — URL pública
 

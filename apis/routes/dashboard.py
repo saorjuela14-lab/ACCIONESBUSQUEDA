@@ -63,21 +63,48 @@ async def get_terminal_dashboard(
     alerts = [f"[{a.severity.value}] {a.ticker}: {a.title}" for a in alerts_raw[:15]]
 
     portfolio_slice = None
-    portfolios = await PortfolioRepository(session).list_all()
-    if portfolios:
-        p = sorted(portfolios, key=lambda x: x.updated_at, reverse=True)[0]
-        from providers.market.factory import get_market_provider
-        from services.portfolio_service import PortfolioService
+    bootstrap_note = None
+    from providers.market.factory import get_market_provider
+    from services.portfolio_bootstrap_service import PortfolioBootstrapService
+    from services.portfolio_service import PortfolioService
 
-        svc = PortfolioService(PortfolioRepository(session), get_market_provider())
+    svc = PortfolioService(PortfolioRepository(session), get_market_provider())
+    try:
+        p, source = await PortfolioBootstrapService(svc).ensure_portfolio()
+        if source == "alpaca":
+            bootstrap_note = (
+                "Portafolio recreado desde Alpaca (la DB SQLite se reinicia en cada redeploy). "
+                "Para persistencia permanente usa Postgres en DATABASE_URL."
+            )
+        elif source == "default":
+            bootstrap_note = (
+                "Portafolio por defecto recreado tras reinicio del servidor. "
+                "Conecta Alpaca o usa Postgres para no perder datos."
+            )
+    except Exception:
+        portfolios = await PortfolioRepository(session).list_all()
+        p = sorted(portfolios, key=lambda x: x.updated_at, reverse=True)[0] if portfolios else None
+        source = "existing" if p else "none"
+
+    if p:
         try:
             p = await svc.refresh_prices(p.id)
+        except Exception:
+            # Keep DB portfolio even if market quotes fail
+            pass
+        try:
             metrics = await svc.compute_metrics(p)
-            sector_w: dict[str, float] = {}
-            country_w: dict[str, float] = {}
-            cap_w: dict[str, float] = {"large": 0.0, "mid": 0.0, "small": 0.0}
+        except Exception:
+            metrics = {}
+        sector_w: dict[str, float] = {}
+        country_w: dict[str, float] = {}
+        cap_w: dict[str, float] = {"large": 0.0, "mid": 0.0, "small": 0.0}
+        try:
             for pos in p.positions:
-                q = await get_market_provider().get_quote(pos.ticker)
+                try:
+                    q = await get_market_provider().get_quote(pos.ticker)
+                except Exception:
+                    q = {}
                 sec = q.get("sector") or "Unknown"
                 country = q.get("country") or "Unknown"
                 mcap = float(q.get("market_cap") or 0)
@@ -90,33 +117,36 @@ async def get_terminal_dashboard(
                     cap_w["mid"] += val
                 else:
                     cap_w["small"] += val
-            total = p.total_value or p.initial_capital
-            if total:
-                sector_w = {k: round(v / total * 100, 1) for k, v in sector_w.items()}
-                country_w = {k: round(v / total * 100, 1) for k, v in country_w.items()}
-                cap_w = {k: round(v / total * 100, 1) for k, v in cap_w.items()}
-            unrealized = sum(
-                ((pos.current_price or pos.average_cost) - pos.average_cost) * pos.shares
-                for pos in p.positions
-            )
-            portfolio_slice = PortfolioDashboardSlice(
-                portfolio_id=p.id,
-                name=p.name,
-                mode=p.mode.value,
-                initial_capital=p.initial_capital,
-                cash=p.cash,
-                total_value=total,
-                return_pct=p.return_pct,
-                sharpe=metrics.get("sharpe"),
-                sortino=metrics.get("sortino"),
-                max_drawdown=metrics.get("max_drawdown"),
-                diversification_score=min(100, len(p.positions) * 20),
-                sector_weights=sector_w,
-                country_weights=country_w,
-                cap_exposure=cap_w,
-                currency_exposure={"USD": 100.0} if total else {},
-                unrealized_pnl=round(unrealized, 2),
-            )
+        except Exception:
+            pass
+        total = p.total_value or p.initial_capital
+        if total:
+            sector_w = {k: round(v / total * 100, 1) for k, v in sector_w.items()}
+            country_w = {k: round(v / total * 100, 1) for k, v in country_w.items()}
+            cap_w = {k: round(v / total * 100, 1) for k, v in cap_w.items()}
+        unrealized = sum(
+            ((pos.current_price or pos.average_cost) - pos.average_cost) * pos.shares
+            for pos in p.positions
+        )
+        portfolio_slice = PortfolioDashboardSlice(
+            portfolio_id=p.id,
+            name=p.name,
+            mode=p.mode.value,
+            initial_capital=p.initial_capital,
+            cash=p.cash,
+            total_value=total,
+            return_pct=p.return_pct,
+            sharpe=metrics.get("sharpe"),
+            sortino=metrics.get("sortino"),
+            max_drawdown=metrics.get("max_drawdown"),
+            diversification_score=min(100, len(p.positions) * 20),
+            sector_weights=sector_w,
+            country_weights=country_w,
+            cap_exposure=cap_w,
+            currency_exposure={"USD": 100.0} if total else {},
+            unrealized_pnl=round(unrealized, 2),
+        )
+        try:
             await PortfolioSnapshotRepository(session).save(
                 p.id, total, p.return_pct, p.cash
             )
@@ -131,9 +161,12 @@ async def get_terminal_dashboard(
         provider_health = await get_providers_status()
     except Exception:
         provider_health = {}
+    if bootstrap_note:
+        provider_health = dict(provider_health or {})
+        provider_health["portfolio_bootstrap"] = bootstrap_note
 
-    svc = MarketDashboardService()
-    return await svc.build(
+    svc_mkt = MarketDashboardService()
+    return await svc_mkt.build(
         watchlist=watchlist,
         alerts=alerts,
         portfolio_slice=portfolio_slice,

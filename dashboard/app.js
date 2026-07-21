@@ -948,9 +948,17 @@ function renderDashboard(d) {
     <div>Drawdown: ${p.max_drawdown?.toFixed(2) ?? "—"}%</div>
     <div>P&amp;L no realizado: $${p.unrealized_pnl?.toFixed(2)}</div>
     <div>Países: ${Object.entries(p.country_weights || {}).map(([k,v]) => `${k} ${v}%`).join(", ") || "—"}</div>
-  ` : "Sin portafolio — créalo con el botón de arriba";
+    <button type="button" id="btn-sync-alpaca-pf" class="btn" style="margin-top:6px;width:100%;font-size:11px">Sincronizar desde Alpaca</button>
+    <p class="muted" style="font-size:10px;margin-top:6px">Nota: en FastAPI Cloud el SQLite se reinicia en cada redeploy. Usa «Sincronizar» o Postgres en DATABASE_URL.</p>
+  ` : "Sin portafolio — créalo con el botón de arriba o sincroniza Alpaca";
   renderPortfolioPies(p);
   lastPortfolioId = p?.portfolio_id || null;
+  if (lastPortfolioId) {
+    try { localStorage.setItem("nexbuy_portfolio_id", lastPortfolioId); } catch {}
+  }
+  const bootNote = d.provider_health?.portfolio_bootstrap;
+  if (bootNote) toast(bootNote, 9000);
+  $("#btn-sync-alpaca-pf") && ($("#btn-sync-alpaca-pf").onclick = syncPortfolioFromAlpaca);
   if (p?.portfolio_id) {
     loadPortfolioHistory(p.portfolio_id);
     if (p.mode === "demo") {
@@ -1694,6 +1702,18 @@ function closePortfolioModal() {
   $("#portfolio-modal").classList.add("hidden");
   $("#portfolio-modal").setAttribute("aria-hidden", "true");
   document.body.classList.remove("modal-open");
+}
+
+async function syncPortfolioFromAlpaca() {
+  await withLoading("Sincronizando portafolio desde Alpaca…", async () => {
+    try {
+      const p = await api(`${API}/portfolios/sync-alpaca`, { method: "POST", body: "{}" });
+      lastPortfolioId = p.id;
+      try { localStorage.setItem("nexbuy_portfolio_id", p.id); } catch {}
+      toast(`Portafolio sync · cash $${Number(p.cash || 0).toFixed(2)} · ${(p.positions || []).length} posiciones`, 8000);
+      await loadDashboard();
+    } catch (e) { toast("Sync Alpaca: " + e.message, 8000); }
+  });
 }
 
 async function createPortfolio() {
