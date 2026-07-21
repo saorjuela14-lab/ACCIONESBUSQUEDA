@@ -449,7 +449,7 @@ function renderAlpacaStatus(st) {
   el.classList.remove("ok", "warn", "err");
   if (!st?.configured) {
     el.classList.add("warn");
-    el.textContent = "Alpaca: sin keys — añade ALPACA_API_KEY + ALPACA_SECRET_KEY (Paper) en el entorno";
+    el.textContent = "Alpaca LIVE: sin keys — añade ALPACA_API_KEY + ALPACA_SECRET_KEY (brokerage) en el entorno";
     return;
   }
   if (!st.connected) {
@@ -457,10 +457,15 @@ function renderAlpacaStatus(st) {
     el.textContent = `Alpaca: ${st.message || "error de conexión"}`;
     return;
   }
-  el.classList.add("ok");
   const mode = st.paper ? "Paper" : "LIVE";
   const cash = st.account?.cash != null ? ` · cash $${Number(st.account.cash).toFixed(2)}` : "";
-  el.textContent = `Alpaca ${mode} conectado${cash}`;
+  if (st.paper) {
+    el.classList.add("ok");
+    el.textContent = `Alpaca Paper conectado${cash}`;
+  } else {
+    el.classList.add("err");
+    el.textContent = `Alpaca LIVE · dinero real${cash} — las órdenes usan capital real`;
+  }
 }
 
 async function loadAlpacaStatus() {
@@ -477,9 +482,9 @@ async function loadAlpacaStatus() {
 }
 
 function confirmAlpacaLive() {
-  if (lastAlpacaStatus && lastAlpacaStatus.paper === false) {
+  if (!lastAlpacaStatus || lastAlpacaStatus.paper === false) {
     return window.confirm(
-      "ATENCIÓN: Alpaca está en modo LIVE (dinero real). ¿Confirmas enviar órdenes?"
+      "ATENCIÓN: vas a enviar órdenes LIVE a Alpaca con dinero REAL.\n\n¿Confirmas la ejecución?"
     );
   }
   return true;

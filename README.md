@@ -67,19 +67,22 @@ GET  /api/v1/reports/daily/latest
 
 Redeploy. En el panel → Alertas → **Probar push**.
 
-#### Trading con Alpaca (Paper / Live)
+#### Trading con Alpaca (LIVE / dinero real)
 
-1. Crea cuenta en [Alpaca](https://app.alpaca.markets/) → **Paper Trading** → genera API Key + Secret
+1. Crea/verifica cuenta brokerage en [Alpaca](https://app.alpaca.markets/brokerage/dashboard/overview) → **API Keys** → Generate New Keys
 2. En FastAPI Cloud → Environment Variables (márcalas como Secret):
 
 | Variable | Valor |
 |----------|--------|
-| `ALPACA_API_KEY` | Key ID de Paper |
-| `ALPACA_SECRET_KEY` | Secret Key de Paper |
-| `ALPACA_PAPER` | `true` (default; `false` solo para cuenta real) |
+| `ALPACA_API_KEY` | Key ID de cuenta **LIVE** |
+| `ALPACA_SECRET_KEY` | Secret Key LIVE |
+| `ALPACA_PAPER` | `false` (default) |
+| `ALPACA_DATA_FEED` | `iex` (gratis) o `sip` si tienes suscripción |
 
-3. Redeploy. En el panel verás el estado **Alpaca Paper conectado**.
-4. **Gestionar capital** → **Ejecutar en Alpaca**, o botón **Alpaca** en cada recomendación.
+3. Redeploy. El panel mostrará **Alpaca LIVE · dinero real**.
+4. **Gestionar capital** → **Ejecutar en Alpaca** (pide confirmación), o botón **Alpaca** en cada pick.
+
+Misma key alimenta **Trading API** (`api.alpaca.markets`) y **Market Data** (`data.alpaca.markets`) en la cadena de precios: Alpaca → Polygon → Alpha Vantage → YFinance.
 
 API: `GET /api/v1/broker/status`, `POST /api/v1/broker/execute/micro-plan`, `POST /api/v1/broker/execute/pick`.
 Los errores incluyen `X-Request-ID` para soporte de Alpaca.
@@ -95,16 +98,19 @@ Botón **🎙 Voz** en el header del panel. Ejemplos:
 API: `POST /api/v1/voice/command` con `{ "text": "..." }`.
 
 ### Fase 2.2 — Market Data (implementado)
-Cadena de fallback automática: **Polygon → Alpha Vantage → YFinance**
+Cadena de fallback automática: **Alpaca → Polygon → Alpha Vantage → YFinance**
 
 ```bash
+ALPACA_API_KEY=your_key
+ALPACA_SECRET_KEY=your_secret
+ALPACA_DATA_FEED=iex
 POLYGON_API_KEY=your_key
 ALPHA_VANTAGE_API_KEY=your_key
 POLYGON_PER_MINUTE_LIMIT=5
 ALPHA_VANTAGE_DAILY_LIMIT=25
 ```
 
-Si Polygon agota su cuota por minuto o falla, Alpha Vantage toma el relevo. Si Alpha Vantage agota sus 25 req/día, YFinance complementa.
+Con keys de Alpaca, cotizaciones e histórico salen de `data.alpaca.markets`. Si Alpaca falla o no está configurada, Polygon / Alpha Vantage / YFinance toman el relevo.
 
 ### FRED (implementado)
 Con `FRED_API_KEY` en `.env`, el `macro_agent` consume datos verificados:
@@ -199,9 +205,10 @@ En el dashboard de tu app → **Environment Variables** → añade:
 | `SCHEDULER_ENABLED` | `true` |
 | `TELEGRAM_BOT_TOKEN` | *(opcional)* Token del bot Telegram |
 | `TELEGRAM_CHAT_ID` | *(opcional)* Chat ID para alertas push |
-| `ALPACA_API_KEY` | *(opcional)* Key Paper Trading |
-| `ALPACA_SECRET_KEY` | *(opcional)* Secret Paper Trading |
-| `ALPACA_PAPER` | `true` (recomendado) |
+| `ALPACA_API_KEY` | *(recomendado)* Key brokerage LIVE |
+| `ALPACA_SECRET_KEY` | *(recomendado)* Secret brokerage LIVE |
+| `ALPACA_PAPER` | `false` (LIVE / dinero real) |
+| `ALPACA_DATA_FEED` | `iex` (default) |
 
 Marca `DASHBOARD_ACCESS_TOKEN` como **Secret** si la opción existe. Pulsa **Redeploy** tras guardar.
 

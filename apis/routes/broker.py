@@ -64,15 +64,18 @@ async def broker_orders(
 
 
 @router.post("/broker/orders", response_model=BrokerOrderResult)
-async def submit_broker_order(request: BrokerOrderRequest) -> BrokerOrderResult:
+async def submit_broker_order(
+    request: BrokerOrderRequest,
+    confirm_live: bool = Query(default=False, description="Obligatorio True en cuenta LIVE"),
+) -> BrokerOrderResult:
     """Envía una orden individual a Alpaca (market/limit; bracket si hay stop+target)."""
     svc = _svc()
     if not svc.is_configured():
         raise HTTPException(status_code=503, detail="Alpaca no configurada")
-    if not svc.paper:
+    if not svc.paper and not confirm_live:
         raise HTTPException(
             status_code=400,
-            detail="Usa POST /broker/execute con confirm_live=true para cuenta LIVE",
+            detail="Cuenta LIVE: pasa confirm_live=true (dinero real)",
         )
     result = await svc.submit_one(request)
     if result.error:

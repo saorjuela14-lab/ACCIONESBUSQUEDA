@@ -12,18 +12,23 @@ _provider: MarketDataProvider | None = None
 
 
 def get_market_provider() -> MarketDataProvider:
-    """Return singleton composite provider (Polygon → Alpha Vantage → YFinance)."""
+    """Return singleton composite provider (Alpaca → Polygon → Alpha Vantage → YFinance)."""
     global _provider
     if _provider is not None:
         return _provider
 
     settings = get_settings()
-    has_premium = bool(settings.polygon_api_key or settings.alpha_vantage_api_key)
+    has_premium = bool(
+        settings.alpaca_api_key
+        or settings.polygon_api_key
+        or settings.alpha_vantage_api_key
+    )
 
     if has_premium or settings.yfinance_enabled:
         logger.info(
             "market.provider",
             mode="composite",
+            alpaca=bool(settings.alpaca_api_key and settings.alpaca_secret_key),
             polygon=bool(settings.polygon_api_key),
             alpha_vantage=bool(settings.alpha_vantage_api_key),
             yfinance=settings.yfinance_enabled,

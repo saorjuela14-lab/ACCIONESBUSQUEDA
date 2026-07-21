@@ -63,8 +63,8 @@ class AlpacaOrderService:
                 connected=False,
                 message=(
                     "Alpaca no configurada. En FastAPI Cloud / .env define "
-                    "ALPACA_API_KEY + ALPACA_SECRET_KEY (keys de Paper Trading) "
-                    "y ALPACA_PAPER=true."
+                    "ALPACA_API_KEY + ALPACA_SECRET_KEY (keys de cuenta brokerage LIVE) "
+                    "y ALPACA_PAPER=false."
                 ),
                 base_url=self._broker.base_url,
             )

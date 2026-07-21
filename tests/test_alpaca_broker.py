@@ -183,3 +183,97 @@ async def test_http_error_includes_request_id():
     with patch("providers.broker.alpaca_provider.httpx.AsyncClient", return_value=mock_client):
         with pytest.raises(httpx.HTTPStatusError, match="X-Request-ID: bad-id"):
             await broker.get_account()
+
+
+@pytest.mark.asyncio
+async def test_alpaca_live_base_url_default():
+    from providers.broker.alpaca_provider import LIVE_BASE_URL
+
+    broker = AlpacaBrokerProvider(api_key="k", secret_key="s", paper=False)
+    assert broker.paper is False
+    assert broker.base_url == LIVE_BASE_URL
+
+
+@pytest.mark.asyncio
+async def test_alpaca_market_data_quote_and_history():
+    from providers.market.alpaca_provider import AlpacaMarketDataProvider
+
+    provider = AlpacaMarketDataProvider(api_key="k", secret_key="s", feed="iex")
+
+    trade_payload = {
+        "symbol": "AAPL",
+        "trade": {"p": 190.5, "s": 100, "t": "2024-01-02T15:00:00Z"},
+        "currency": "USD",
+    }
+    bars_payload = {
+        "symbol": "AAPL",
+        "bars": [
+            {
+                "t": "2024-01-02T05:00:00Z",
+                "o": 189,
+                "h": 191,
+                "l": 188,
+                "c": 190.5,
+                "v": 1000,
+                "n": 10,
+                "vw": 190,
+            }
+        ],
+        "next_page_token": None,
+    }
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(
+        side_effect=[
+            _mock_response(200, trade_payload),
+            _mock_response(200, bars_payload),
+        ]
+    )
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("providers.market.alpaca_provider.httpx.AsyncClient", return_value=mock_client):
+        quote = await provider.get_quote("AAPL")
+        hist = await provider.get_history("AAPL", period="5d", interval="1d")
+
+    assert quote["current_price"] == 190.5
+    assert quote["source"] == "alpaca"
+    assert not hist.empty
+    assert float(hist["Close"].iloc[-1]) == 190.5
+    assert provider.last_request_id == "req-test-123"
+
+
+@pytest.mark.asyncio
+async def test_composite_prefers_alpaca():
+    import pandas as pd
+    from providers.market.composite_market_provider import CompositeMarketDataProvider
+
+    sample_df = pd.DataFrame(
+        {"Open": [100], "High": [101], "Low": [99], "Close": [100.5], "Volume": [1000]},
+        index=pd.to_datetime(["2025-01-01"]),
+    )
+    sample_quote = {
+        "ticker": "AAPL",
+        "company_name": "Apple Inc.",
+        "current_price": 150.0,
+        "sector": "Technology",
+        "source": "alpaca",
+    }
+
+    alpaca = AsyncMock()
+    alpaca.get_history.return_value = sample_df
+    alpaca.get_quote.return_value = sample_quote
+
+    polygon = AsyncMock()
+    alpha = AsyncMock()
+    yfinance = AsyncMock()
+
+    provider = CompositeMarketDataProvider(
+        alpaca=alpaca, polygon=polygon, alpha_vantage=alpha, yfinance=yfinance
+    )
+    df = await provider.get_history("AAPL")
+    quote = await provider.get_quote("AAPL")
+    assert not df.empty
+    assert quote["source"] == "alpaca"
+    polygon.get_history.assert_not_called()
+    alpha.get_history.assert_not_called()

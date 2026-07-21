@@ -65,11 +65,14 @@ class Settings(BaseSettings):
     alert_webhook_url: str = ""
     push_daily_trades: bool = True
 
-    # Alpaca Trading API (paper by default — https://docs.alpaca.markets/)
+    # Alpaca Trading API — LIVE by default (https://docs.alpaca.markets/)
+    # Use brokerage keys from https://app.alpaca.markets/brokerage/dashboard/overview
     alpaca_api_key: str = ""
     alpaca_secret_key: str = ""
-    alpaca_paper: bool = True
-    alpaca_base_url: str = ""  # override; empty → paper-api or api.alpaca.markets
+    alpaca_paper: bool = False
+    alpaca_base_url: str = ""  # override; empty → api.alpaca.markets (live) or paper-api
+    alpaca_data_base_url: str = "https://data.alpaca.markets"
+    alpaca_data_feed: str = "iex"  # iex (free) | sip (paid) | delayed_sip
 
     http_max_retries: int = 3
     http_retry_backoff: float = 1.5
