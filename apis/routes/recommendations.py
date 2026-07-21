@@ -2,7 +2,7 @@
 
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.engine import get_session
@@ -34,7 +34,44 @@ async def _portfolio_capital(session: AsyncSession) -> float | None:
     if not portfolios:
         return None
     p = sorted(portfolios, key=lambda x: x.updated_at, reverse=True)[0]
-    return p.initial_capital or p.cash
+    # Prefer live cash / total value over stale initial_capital (often the $1000 default)
+    for candidate in (p.cash, getattr(p, "total_value", None), p.initial_capital):
+        if candidate is not None and float(candidate) > 0:
+            return float(candidate)
+    return None
+
+
+async def _resolve_manage_capital(
+    session: AsyncSession,
+    requested: float | None,
+) -> float:
+    """Prefer explicit request → Alpaca book → NexBuy portfolio. Never invent $1000."""
+    if requested is not None and requested > 0:
+        return float(requested)
+
+    try:
+        from services.alpaca_order_service import AlpacaOrderService
+
+        alpaca = AlpacaOrderService()
+        if alpaca.is_configured():
+            account = await alpaca.get_account()
+            for candidate in (account.equity, account.portfolio_value, account.cash, account.buying_power):
+                if candidate is not None and float(candidate) > 0:
+                    return round(float(candidate), 2)
+    except Exception:
+        pass
+
+    from_pf = await _portfolio_capital(session)
+    if from_pf and from_pf > 0:
+        return round(from_pf, 2)
+
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "No hay capital detectable. Conecta Alpaca, sincroniza el portafolio "
+            "(Sincronizar desde Alpaca) o envía capital>0 en el body."
+        ),
+    )
 
 
 @router.get("/recommendations/daily/latest", response_model=DailyTradeReport)
@@ -86,12 +123,14 @@ async def manage_micro_capital(
     exclude = list(request.exclude_tickers or [])
     exclude.extend(w.ticker for w in watchlist)
 
+    capital = await _resolve_manage_capital(session, request.capital)
+
     market = get_market_provider()
     manager = MicroPortfolioManagerService(
         market,
         CompanyDiscoveryService(market_provider=market),
     )
-    plan = await manager.manage(capital=request.capital, exclude_tickers=exclude)
+    plan = await manager.manage(capital=capital, exclude_tickers=exclude)
 
     if request.persist_as_daily and plan.picks:
         report = DailyTradeReport(
