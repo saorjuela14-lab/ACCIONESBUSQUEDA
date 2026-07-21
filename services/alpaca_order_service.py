@@ -252,12 +252,28 @@ class AlpacaOrderService:
         if not self._broker.paper:
             warnings.append("ATENCIÓN: órdenes en cuenta LIVE con dinero real.")
 
+        account = None
+        try:
+            account = await self.get_account()
+            if account.cash <= 0 and account.buying_power <= 0 and not request.dry_run:
+                return ExecuteOrdersResponse(
+                    paper=self._broker.paper,
+                    dry_run=request.dry_run,
+                    warnings=[
+                        "Tu cuenta Alpaca tiene cash/buying power ≈ $0. "
+                        "Fondea en app.alpaca.markets → Fund your account. "
+                        "Sin fondos la orden se rechaza y no aparece en el portafolio."
+                    ],
+                )
+        except Exception:
+            pass
+
         try:
             clock = await self.get_clock()
             if not clock.is_open and not request.dry_run:
                 warnings.append(
-                    "Mercado cerrado ahora — la orden puede quedar pending hasta la apertura "
-                    f"(next_open={clock.next_open})."
+                    "Mercado cerrado ahora — si Alpaca acepta la orden, búscala en "
+                    f"Orders/Activity (pending). next_open={clock.next_open}."
                 )
         except Exception:
             pass
@@ -267,6 +283,20 @@ class AlpacaOrderService:
         request_ids: list[str] = []
 
         for line in request.lines:
+            if account and line.side == "buy":
+                if account.buying_power < 0.01 and account.cash < 0.01 and not request.dry_run:
+                    failed.append(
+                        BrokerOrderResult(
+                            symbol=line.ticker.upper(),
+                            qty=line.shares,
+                            side=line.side,
+                            type=line.order_type,
+                            status="failed",
+                            error="Fondos insuficientes en Alpaca (cash $0). Fondea la cuenta.",
+                        )
+                    )
+                    continue
+
             order_req = BrokerOrderRequest(
                 symbol=line.ticker.upper().strip(),
                 qty=line.shares,

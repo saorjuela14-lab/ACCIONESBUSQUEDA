@@ -164,9 +164,15 @@ async function api(path, opts = {}) {
 
 function toast(msg, ms = 3500) {
   const t = $("#toast");
+  if (!t) return;
   t.textContent = msg;
+  t.classList.add("show");
   t.classList.remove("hidden");
-  setTimeout(() => t.classList.add("hidden"), ms);
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => {
+    t.classList.remove("show");
+    t.classList.add("hidden");
+  }, ms);
 }
 
 let loadingCount = 0;
@@ -521,6 +527,11 @@ async function cancelAllAlpacaOrders() {
 
 async function executeAlpacaPick(ticker, opts = {}) {
   if (!confirmAlpacaLive()) return;
+  const cash = lastAlpacaStatus?.account?.cash;
+  if (cash != null && Number(cash) <= 0) {
+    toast("Alpaca tiene $0 de cash. Fondea en app.alpaca.markets antes de comprar.", 8000);
+    return;
+  }
   const price = opts.price || 0;
   const capital = currentPortfolioCapital() || 22;
   let shares = 1;
@@ -531,24 +542,46 @@ async function executeAlpacaPick(ticker, opts = {}) {
     dry_run: false,
     confirm_live: lastAlpacaStatus?.paper === false,
   };
-  if (opts.stop_loss) body.stop_loss = opts.stop_loss;
-  if (opts.take_profit) body.take_profit = opts.take_profit;
+  // Market order simple (sin bracket) evita rechazos extra en cuentas pequeñas
+  // stop/target se pueden poner luego en Alpaca
   await withLoading(`Enviando ${shares}× ${ticker} a Alpaca…`, async () => {
     try {
       const r = await api(`${API}/broker/execute/pick`, {
         method: "POST",
         body: JSON.stringify(body),
       });
-      if (r.warnings?.length && !r.submitted?.length) {
-        toast(r.warnings[0]);
-        return;
-      }
-      const ok = (r.submitted || []).map((o) => `${o.symbol}:${o.status}`).join(", ");
-      const fail = (r.failed || []).map((o) => o.error || o.symbol).join("; ");
-      toast(ok ? `Alpaca OK · ${ok}` : `Alpaca fallo · ${fail || "sin órdenes"}`);
+      showAlpacaExecuteResult(r);
       await loadAlpacaStatus();
-    } catch (e) { toast("Alpaca: " + e.message); }
+    } catch (e) { toast("Alpaca: " + e.message, 8000); }
   });
+}
+
+function showAlpacaExecuteResult(r) {
+  const submitted = r.submitted || [];
+  const failed = r.failed || [];
+  const warnings = r.warnings || [];
+  if (warnings.length && !submitted.length && !failed.length) {
+    toast(warnings[0], 9000);
+    return;
+  }
+  if (failed.length) {
+    const fail = failed.map((o) => `${o.symbol}: ${o.error || o.status}`).join(" · ");
+    toast(`Alpaca rechazó · ${fail}`, 10000);
+    return;
+  }
+  if (submitted.length) {
+    const ok = submitted.map((o) => {
+      const id = o.id ? ` #${String(o.id).slice(0, 8)}` : "";
+      return `${o.symbol} ${o.status || "ok"}${id}`;
+    }).join(", ");
+    const extra = warnings.length ? ` · ${warnings[0]}` : "";
+    toast(
+      `Enviada a Alpaca · ${ok}${extra}. Revisa Orders/Activity (no solo el portafolio).`,
+      10000
+    );
+    return;
+  }
+  toast("Alpaca: sin órdenes enviadas", 6000);
 }
 
 async function executeAlpacaMicroPlan(dryRun = false) {
@@ -556,9 +589,20 @@ async function executeAlpacaMicroPlan(dryRun = false) {
     toast("Genera primero un plan con Gestionar capital");
     return;
   }
+  if (!dryRun) {
+    const cash = lastAlpacaStatus?.account?.cash;
+    if (cash != null && Number(cash) <= 0) {
+      toast("Alpaca tiene $0 de cash. Fondea en app.alpaca.markets antes de ejecutar.", 8000);
+      return;
+    }
+  }
   if (!dryRun && !confirmAlpacaLive()) return;
   const body = {
-    lines: lastMicroPlan.lines,
+    lines: lastMicroPlan.lines.map((l) => ({
+      ticker: l.ticker,
+      shares: l.shares,
+      // sin stop/target en el envío → market simple (más fiable con poco capital)
+    })),
     dry_run: dryRun,
     confirm_live: lastAlpacaStatus?.paper === false,
   };
@@ -568,17 +612,13 @@ async function executeAlpacaMicroPlan(dryRun = false) {
         method: "POST",
         body: JSON.stringify(body),
       });
-      if (r.warnings?.length && !(r.submitted || []).length) {
-        toast(r.warnings[0]);
-        return;
+      if (dryRun) {
+        toast(`Simulación (no enviada): ${(r.submitted || []).length} órdenes listas`, 6000);
+      } else {
+        showAlpacaExecuteResult(r);
       }
-      const n = (r.submitted || []).length;
-      const f = (r.failed || []).length;
-      toast(dryRun
-        ? `Dry-run: ${n} órdenes listas (no enviadas)`
-        : `Alpaca: ${n} enviadas${f ? `, ${f} fallidas` : ""}`);
       if (!dryRun) await loadAlpacaStatus();
-    } catch (e) { toast("Alpaca plan: " + e.message); }
+    } catch (e) { toast("Alpaca plan: " + e.message, 8000); }
   });
 }
 

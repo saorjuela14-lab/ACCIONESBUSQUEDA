@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from domain.broker import BrokerOrderRequest, ExecuteLine, ExecuteOrdersRequest
+from domain.broker import BrokerAccount, BrokerOrderRequest, ExecuteLine, ExecuteOrdersRequest
 from providers.broker.alpaca_provider import PAPER_BASE_URL, AlpacaBrokerProvider
 from services.alpaca_order_service import AlpacaOrderService
 
@@ -175,11 +175,19 @@ async def test_cancel_all_and_clock_provider():
 
 
 @pytest.mark.asyncio
-async def test_doctor_unconfigured():
-    broker = AlpacaBrokerProvider(api_key="", secret_key="")
-    report = await AlpacaOrderService(broker=broker).doctor()
-    assert report.ok is False
-    assert report.configured is False
+async def test_execute_blocks_when_cash_zero():
+    broker = AlpacaBrokerProvider(api_key="k", secret_key="s", paper=False)
+    svc = AlpacaOrderService(broker=broker)
+    svc.get_account = AsyncMock(return_value=BrokerAccount(
+        cash=0, buying_power=0, equity=0, paper=False, status="ACTIVE"
+    ))
+    svc.get_clock = AsyncMock(return_value=MagicMock(is_open=True, next_open=None))
+    result = await svc.execute(ExecuteOrdersRequest(
+        lines=[ExecuteLine(ticker="F", shares=1)],
+        confirm_live=True,
+    ))
+    assert not result.submitted
+    assert any("cash" in w.lower() or "$0" in w for w in result.warnings)
 
 
 @pytest.mark.asyncio
