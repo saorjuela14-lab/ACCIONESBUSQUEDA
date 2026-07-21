@@ -24,6 +24,7 @@ class InvestmentDirector(BaseAgent):
         "corporate_actions_agent": 0.7,
         "market_dependency_agent": 0.85,
         "portfolio_agent": 1.0,
+        "investment_memory": 0.85,
     }
 
     def __init__(self, strategy_lab: StrategyLab | None = None) -> None:

@@ -96,6 +96,7 @@ class Settings(BaseSettings):
     auto_execute_max_notional: float = 25.0
     auto_execute_require_market_open: bool = True
     auto_execute_paper_first: bool = True  # block LIVE auto unless promoted
+    autopilot_interval_minutes: int = 0  # 0 = disabled scheduled autopilot; use POST /ops/autopilot/run
 
     # Lifecycle desk
     lifecycle_enabled: bool = True

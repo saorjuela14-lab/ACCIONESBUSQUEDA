@@ -36,6 +36,14 @@ const AGENT_ES = {
   valuation: "Valoración",
   risk: "Riesgo",
   options: "Opciones",
+  investment_memory: "Memoria",
+  fundamental: "Fundamental",
+  portfolio: "Portafolio",
+  watchlist: "Watchlist",
+  alert: "Alertas",
+  company_risk: "Riesgo co.",
+  country_risk: "Riesgo país",
+  corporate_actions: "Corp. actions",
 };
 
 const charts = {};
@@ -625,6 +633,57 @@ async function runLifecycleScan() {
   });
 }
 
+async function runAutopilot() {
+  const exec = confirm(
+    "¿Autopilot completo?\nOK = también intenta auto-execute (respeta AUTO_EXECUTE_*).\nCancel = solo research/reconcile/lifecycle sin enviar órdenes."
+  );
+  await withLoading("Autopilot de la firma…", async () => {
+    try {
+      const r = await api(`${API}/ops/autopilot/run`, {
+        method: "POST",
+        body: JSON.stringify({
+          execute_trades: exec ? null : false,
+          session_label: "ceo_autopilot",
+        }),
+      });
+      if (r.aborted) {
+        toast("Autopilot abortado: " + r.aborted, 8000);
+        return;
+      }
+      const picks = r.recommendations?.tickers?.join(", ") || "—";
+      const exits = (r.lifecycle?.exits || []).join(", ") || "—";
+      const ae = r.auto_execute || {};
+      toast(
+        `Autopilot OK · picks ${picks} · exits ${exits} · exec ${ae.skipped ? "skip:" + ae.reason : "sent " + (ae.submitted || 0)}`,
+        12000
+      );
+      await loadOpsDesk();
+      await loadRiskDesk();
+      await loadDailyTradeRecommendations();
+      await loadAlpacaBook();
+    } catch (e) { toast("Autopilot: " + e.message, 8000); }
+  });
+}
+
+async function loadAuditLog() {
+  const el = $("#ops-audit-log");
+  if (!el) return;
+  el.classList.remove("hidden");
+  try {
+    const rows = await api(`${API}/ops/audit?limit=15`);
+    if (!rows?.length) {
+      el.textContent = "Sin eventos de audit aún.";
+      return;
+    }
+    el.innerHTML = rows.map((e) =>
+      `<div>${new Date(e.created_at).toLocaleString(LOCALE)} · <b>${e.action}</b>` +
+      `${e.symbol ? " " + e.symbol : ""} · ${e.success ? "OK" : "FAIL"} · ${(e.message || "").slice(0, 80)}</div>`
+    ).join("");
+  } catch (e) {
+    el.textContent = "Audit: " + e.message;
+  }
+}
+
 async function loadAlpacaBook() {
   const el = $("#alpaca-book");
   if (!el || !lastAlpacaStatus?.connected) return;
@@ -724,6 +783,7 @@ async function executeAlpacaPick(ticker, opts = {}) {
     dry_run: false,
     // Usuario ya confirmó en el diálogo — siempre true en LIVE
     confirm_live: true,
+    sync_portfolio_id: lastPortfolioId || undefined,
   };
   await withLoading(`Enviando ${shares}× ${ticker} a Alpaca…`, async () => {
     try {
@@ -788,6 +848,7 @@ async function executeAlpacaMicroPlan(dryRun = false) {
     })),
     dry_run: dryRun,
     confirm_live: true,
+    sync_portfolio_id: lastPortfolioId || undefined,
   };
   await withLoading(dryRun ? "Simulando órdenes Alpaca…" : "Ejecutando plan en Alpaca…", async () => {
     try {
@@ -1543,8 +1604,10 @@ async function runAnalyze() {
   const t = ticker();
   await withLoading(`Analizando ${t}…`, async () => {
     try {
+      const body = { ticker: t };
+      if (lastPortfolioId) body.portfolio_id = lastPortfolioId;
       const [thesis, sent, graph, corr] = await Promise.all([
-      api(`${API}/analyze`, { method: "POST", body: JSON.stringify({ ticker: t }) }),
+      api(`${API}/analyze`, { method: "POST", body: JSON.stringify(body) }),
       api(`${API}/sentiment/${t}/engine`),
       api(`${API}/graph/${t}`),
       api(`${API}/correlations/${t}`),
@@ -1560,12 +1623,14 @@ async function runAnalyze() {
     await loadTechnicalChart(t, techReport);
 
     const news = (thesis.agent_reports || []).find((r) => r.agent_name === "news_agent");
+    const mem = (thesis.agent_reports || []).find((r) => r.agent_name === "investment_memory");
     $("#agents-grid").innerHTML = (thesis.agent_reports || []).map((r) => {
       const c = r.score >= 0 ? "pos" : "neg";
       return `<div class="agent-chip"><span>${trAgent(r.agent_name)}</span><span class="${c}">${fmtScore(r.score)}</span></div>`;
     }).join("");
 
     let txt = `${thesis.ticker} ${trRec(thesis.recommendation)} @ ${(thesis.confidence * 100).toFixed(0)}%\n\n${thesis.executive_summary}\n\n${thesis.investment_thesis}\n`;
+    if (mem?.summary) txt += `\nMEMORIA: ${mem.summary}`;
     if (news?.raw_data) {
       txt += `\n2 años: ${news.raw_data.two_year_summary || ""}\n3 meses: ${news.raw_data.three_month_summary || ""}\nIMPACTO: ${news.raw_data.investment_impact || ""}`;
     }
@@ -1574,6 +1639,9 @@ async function runAnalyze() {
     const tech = (thesis.agent_reports || []).find((r) => r.agent_name === "technical_agent");
     if (tech?.raw_data?.cross_agent_correlations?.length) {
       txt += `\n\nCONTEXTO TÉCNICO:\n` + tech.raw_data.cross_agent_correlations.join("\n");
+    }
+    if (["sell", "strong_sell"].includes(String(thesis.recommendation || "").toLowerCase())) {
+      txt += "\n\n⚠ Comité en SELL — si hay posición abierta, Lifecycle puede cerrarla.";
     }
     $("#analysis-out").textContent = txt;
     renderSentiment(sent);
@@ -2145,6 +2213,8 @@ $("#btn-risk-refresh") && ($("#btn-risk-refresh").onclick = () => { loadRiskDesk
 $("#btn-kill-switch") && ($("#btn-kill-switch").onclick = runKillSwitch);
 $("#btn-ops-reconcile") && ($("#btn-ops-reconcile").onclick = runReconcile);
 $("#btn-ops-lifecycle") && ($("#btn-ops-lifecycle").onclick = runLifecycleScan);
+$("#btn-ops-autopilot") && ($("#btn-ops-autopilot").onclick = runAutopilot);
+$("#btn-ops-audit") && ($("#btn-ops-audit").onclick = loadAuditLog);
 $("#tech-period").onchange = () => { const t = ticker(); if (t) loadTechnicalChart(t); };
 $("#tech-chart-tf").onchange = () => {
   syncChartTimeframe($("#tech-chart-tf").value);

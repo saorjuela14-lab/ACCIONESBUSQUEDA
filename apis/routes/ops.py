@@ -14,6 +14,7 @@ from domain.ops import (
     PortfolioRiskMetrics,
     ReconcileReport,
 )
+from services.autopilot_service import AutopilotService
 from services.alpaca_order_service import AlpacaOrderService
 from services.audit_service import AuditService
 from services.auto_execute_service import AutoExecuteService
@@ -21,6 +22,8 @@ from services.kill_switch_service import KillSwitchService
 from services.portfolio_risk_metrics_service import PortfolioRiskMetricsService
 from services.position_lifecycle_service import PositionLifecycleService
 from services.reconcile_service import ReconcileService
+from database.repositories.ops_repository import OpsFlagRepository
+from domain.ops import utc_now
 
 router = APIRouter()
 
@@ -35,6 +38,20 @@ class KillSwitchRequest(BaseModel):
 class ThesisInvalidateRequest(BaseModel):
     symbol: str = Field(min_length=1, max_length=12)
     reason: str = Field(min_length=1, max_length=500)
+
+
+class AutopilotRunRequest(BaseModel):
+    execute_trades: bool | None = Field(
+        default=None,
+        description="None = usa AUTO_EXECUTE_TRADES; true/false fuerza el ciclo",
+    )
+    session_label: str = "autopilot"
+
+
+class PromoteLiveRequest(BaseModel):
+    confirm: bool = False
+    note: str = "Promovido tras paper soak"
+    min_paper_fills: int = Field(default=3, ge=0)
 
 
 @router.get("/ops/kill-switch", response_model=KillSwitchState)
@@ -119,7 +136,7 @@ async def invalidate_thesis(
 async def auto_execute_policy(session: AsyncSession = Depends(get_session)) -> AutoExecutePolicy:
     svc = AutoExecuteService(session)
     policy = svc.policy()
-    ok, reason = svc.can_auto_trade()
+    ok, reason = await svc.can_auto_trade_async()
     policy.promotion_note = f"{policy.promotion_note} Estado: {reason} (allowed={ok})"
     return policy
 
@@ -142,7 +159,8 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
     settings = get_settings()
     ks = await KillSwitchService(session).status()
     auto = AutoExecuteService(session)
-    ok, reason = auto.can_auto_trade()
+    ok, reason = await auto.can_auto_trade_async()
+    promo = await OpsFlagRepository(session).get_json("paper_promotion")
     return {
         "kill_switch": ks.model_dump(mode="json"),
         "auto_execute": {
@@ -150,6 +168,7 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
             "reason": reason,
             "policy": auto.policy().model_dump(mode="json"),
         },
+        "paper_promotion": promo or {"promoted": False},
         "lifecycle_enabled": settings.lifecycle_enabled,
         "reconcile_auto_sync": settings.reconcile_auto_sync,
         "risk": {
@@ -157,4 +176,63 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
             "max_beta": settings.risk_max_portfolio_beta,
             "max_sector_pct": settings.risk_max_sector_pct,
         },
+    }
+
+
+@router.post("/ops/autopilot/run")
+async def autopilot_run(
+    body: AutopilotRunRequest | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Ciclo completo de la firma: reconcile → risk → lifecycle → picks → (auto)execute."""
+    req = body or AutopilotRunRequest()
+    return await AutopilotService(session).run(
+        session_label=req.session_label,
+        execute_trades=req.execute_trades,
+        actor="user_autopilot",
+    )
+
+
+@router.post("/ops/autopilot/promote-live")
+async def promote_live(
+    body: PromoteLiveRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Marca paper soak completo. LIVE aún requiere AUTO_EXECUTE_LIVE=true."""
+    if not body.confirm:
+        raise HTTPException(status_code=400, detail="confirm=true requerido")
+    # Soft check: count successful auto_execute / buy_submit in audit
+    recent = await AuditService(session).recent(limit=100)
+    paper_fills = sum(
+        1
+        for e in recent
+        if e.success
+        and e.paper is True
+        and e.action in ("buy_submit", "auto_execute", "lifecycle_exit")
+    )
+    if paper_fills < body.min_paper_fills:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Paper soak incompleto: {paper_fills}/{body.min_paper_fills} eventos paper. "
+                "Opera en Alpaca Paper primero."
+            ),
+        )
+    payload = {
+        "promoted": True,
+        "promoted_at": utc_now().isoformat(),
+        "note": body.note,
+        "paper_fills_seen": paper_fills,
+    }
+    await OpsFlagRepository(session).set_json("paper_promotion", payload)
+    await AuditService(session).record(
+        "auto_execute",
+        actor="user",
+        message=f"Paper→LIVE promotion flag set ({body.note})",
+        payload=payload,
+    )
+    return {
+        "ok": True,
+        "promotion": payload,
+        "next": "Define AUTO_EXECUTE_LIVE=true (y preferible AUTO_EXECUTE_TRADES=true) para LIVE.",
     }

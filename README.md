@@ -70,15 +70,21 @@ Sin esas flags el sistema recomienda y alerta; **tú** confirmas cada orden LIVE
 3. ~~Reconciliación continua Alpaca ↔ DB + audit log~~
 4. ~~Auto-execute paper-first → LIVE con límites~~
 5. ~~VaR / beta / sectores duros + kill switch (pánico → flat)~~
+6. ~~Comité completo: memoria como evidencia + SELL → exit~~
+7. ~~Autopilot unificado + promoción paper→LIVE~~
 
 ```
 GET  /api/v1/ops/status
+POST /api/v1/ops/autopilot/run
+POST /api/v1/ops/autopilot/promote-live
 POST /api/v1/ops/kill-switch/on  {"confirm":true,"flatten":true}
 POST /api/v1/ops/reconcile
 POST /api/v1/ops/lifecycle/scan
 GET  /api/v1/ops/audit
 GET  /api/v1/ops/risk-metrics
 ```
+
+**Cierre del prompt fundacional + broker autónomo:** el comité genera tesis auditables con memoria; el CEO Terminal opera el ciclo; el escritorio de capital reconcilia, gestiona riesgo/macro, cierra posiciones y puede auto-ejecutar en paper (LIVE solo tras promoción + flags).
 
 ```bash
 python main.py serve      # API + scheduler integrado

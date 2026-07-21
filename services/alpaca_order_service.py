@@ -607,6 +607,22 @@ class AlpacaOrderService:
                             )
                             if px <= 0 and order_req.stop_loss and order_req.take_profit:
                                 px = (order_req.stop_loss + order_req.take_profit) / 2
+                            thesis_txt = None
+                            try:
+                                from database.repositories.investment_memory_repository import (
+                                    InvestmentMemoryRepository,
+                                )
+
+                                mem = await InvestmentMemoryRepository(session).latest_by_ticker(
+                                    [order_req.symbol]
+                                )
+                                rec = mem.get(order_req.symbol)
+                                if rec:
+                                    thesis_txt = (
+                                        f"{rec.recommendation}: {(rec.thesis or '')[:240]}"
+                                    )
+                            except Exception:
+                                pass
                             if px > 0:
                                 await PositionLifecycleService(session, self).register_from_fill(
                                     symbol=order_req.symbol,
@@ -614,6 +630,7 @@ class AlpacaOrderService:
                                     entry_price=px,
                                     stop_loss=order_req.stop_loss,
                                     take_profit=order_req.take_profit,
+                                    thesis=thesis_txt,
                                 )
                         break
                 except Exception as exc:

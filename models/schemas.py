@@ -145,3 +145,4 @@ class TradePickExecuteRequest(BaseModel):
     take_profit: float | None = None
     dry_run: bool = False
     confirm_live: bool = False
+    sync_portfolio_id: str | None = None

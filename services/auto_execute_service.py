@@ -43,7 +43,7 @@ class AutoExecuteService:
             return False, "Alpaca no configurada"
         if self._broker.paper:
             return True, "paper mode OK"
-        # LIVE path
+        # LIVE path — require env + optional durable promotion flag
         if s.auto_execute_paper_first and not s.auto_execute_live:
             return False, (
                 "LIVE bloqueado: primero opera en paper "
@@ -53,14 +53,43 @@ class AutoExecuteService:
             return False, "AUTO_EXECUTE_LIVE=false"
         return True, "live promoted"
 
-    async def run_from_picks(self, picks: list, *, actor: str = "scheduler") -> dict:
+    async def can_auto_trade_async(self) -> tuple[bool, str]:
         ok, reason = self.can_auto_trade()
+        if not ok:
+            return ok, reason
+        if await KillSwitchService(self._session, self._broker).is_active():
+            return False, "kill_switch_active"
+        # Durable paper→LIVE promotion gate
+        if not self._broker.paper:
+            from database.repositories.ops_repository import OpsFlagRepository
+
+            promo = await OpsFlagRepository(self._session).get_json("paper_promotion")
+            if self._settings.auto_execute_paper_first and not promo.get("promoted"):
+                if not self._settings.auto_execute_live:
+                    return False, "paper_promotion_required"
+                # AUTO_EXECUTE_LIVE=true can override missing flag, but warn via reason
+                return True, "live via AUTO_EXECUTE_LIVE (promotion flag ausente)"
+        return True, reason
+
+    async def run_from_picks(self, picks: list, *, actor: str = "scheduler") -> dict:
+        ok, reason = await self.can_auto_trade_async()
         if not ok:
             logger.info("auto_execute.skip", reason=reason)
             return {"skipped": True, "reason": reason}
 
-        if await KillSwitchService(self._session, self._broker).is_active():
-            return {"skipped": True, "reason": "kill_switch_active"}
+        # Risk desk OK
+        if self.policy().require_risk_desk_ok:
+            try:
+                from services.risk_policy_service import RiskPolicyService
+
+                status = await RiskPolicyService().status()
+                if not status.macro.trading_allowed or status.macro.mode == "crisis":
+                    return {
+                        "skipped": True,
+                        "reason": status.macro.block_reason or "risk_desk_crisis",
+                    }
+            except Exception as exc:
+                logger.warning("auto_execute.risk_check_failed", error=str(exc))
 
         if self._settings.auto_execute_require_market_open:
             try:

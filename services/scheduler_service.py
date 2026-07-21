@@ -205,6 +205,21 @@ class SchedulerService:
             )
             break
 
+    async def _run_autopilot(self) -> None:
+        if not should_run_automation():
+            return
+        async for session in get_session():
+            from services.autopilot_service import AutopilotService
+
+            result = await AutopilotService(session).run(actor="scheduler_autopilot")
+            logger.info(
+                "scheduler.autopilot",
+                aborted=result.get("aborted"),
+                picks=(result.get("recommendations") or {}).get("picks"),
+                exits=(result.get("lifecycle") or {}).get("exits"),
+            )
+            break
+
     async def _run_daily_report(self) -> None:
         async for session in get_session():
             service = await self._build_daily_report_service(session)
@@ -280,6 +295,15 @@ class SchedulerService:
             replace_existing=True,
         )
 
+        # Full firm autopilot (optional; 0 disables)
+        if self._settings.autopilot_interval_minutes and self._settings.autopilot_interval_minutes > 0:
+            self._scheduler.add_job(
+                self._run_autopilot,
+                IntervalTrigger(minutes=self._settings.autopilot_interval_minutes),
+                id="firm_autopilot",
+                replace_existing=True,
+            )
+
         self._scheduler.start()
         logger.info(
             "scheduler.started",
@@ -288,6 +312,7 @@ class SchedulerService:
             watchlist_interval=self._settings.watchlist_scan_interval_minutes,
             lifecycle_interval=self._settings.lifecycle_scan_interval_minutes,
             reconcile_interval=self._settings.reconcile_interval_minutes,
+            autopilot_interval=self._settings.autopilot_interval_minutes,
         )
 
     def stop(self) -> None:
