@@ -200,7 +200,7 @@ En el dashboard de tu app → **Environment Variables** → añade:
 | Variable | Valor |
 |----------|--------|
 | `DASHBOARD_ACCESS_TOKEN` | `Portafolio111` |
-| `DATABASE_URL` | `sqlite+aiosqlite:///./data/nexbuy.db` |
+| `DATABASE_URL` | `sqlite+aiosqlite:///./data/nexbuy.db` **o** Postgres Neon (ver abajo) |
 | `REDIS_ENABLED` | `false` |
 | `APP_ENV` | `production` |
 | `SCHEDULER_ENABLED` | `true` |
@@ -212,11 +212,26 @@ En el dashboard de tu app → **Environment Variables** → añade:
 | `ALPACA_LIVE_TRADE` | `true` (alias CLI; gana sobre PAPER) |
 | `ALPACA_DATA_FEED` | `iex` (default) |
 
-Marca `DASHBOARD_ACCESS_TOKEN` como **Secret** si la opción existe. Pulsa **Redeploy** tras guardar.
+Marca `DASHBOARD_ACCESS_TOKEN`, keys Alpaca y `DATABASE_URL` como **Secret** si la opción existe. Pulsa **Redeploy** tras guardar.
 
-> **No añadas** PostgreSQL ni Redis en el plan Hobby por defecto — la app usa SQLite + caché en memoria.
+#### Persistencia con Neon Postgres (recomendado)
 
-> **Importante — persistencia:** en FastAPI Cloud el disco es **efímero**. Cada redeploy borra `./data/nexbuy.db` (portafolios, watchlist, historial). El panel **recrea el portafolio desde Alpaca** automáticamente si hay keys. Para no perder datos: botón **Sincronizar desde Alpaca**, o configura un Postgres externo (p. ej. Neon) en `DATABASE_URL=postgresql+asyncpg://...` (requiere añadir el driver en un próximo deploy).
+SQLite en FastAPI Cloud **se borra en cada redeploy**. Para conservar portafolios, watchlist e historial:
+
+1. Crea cuenta gratis en **[console.neon.tech](https://console.neon.tech)**
+2. **Create project** → copia la connection string (tipo `postgresql://...@ep-xxx.neon.tech/neondb?sslmode=require`)
+3. En FastAPI Cloud → Environment Variables:
+
+```
+DATABASE_URL=postgresql://USER:PASSWORD@ep-XXXX.neon.tech/neondb?sslmode=require
+```
+
+(La app la convierte sola a `postgresql+asyncpg://...`.)
+
+4. Redeploy. Al arrancar se crean las tablas automáticamente.
+5. En el panel: **Sincronizar desde Alpaca** una vez para cargar cash/posiciones.
+
+> Con Postgres ya **no** pierdes datos al redesplegar. El sync Alpaca sigue siendo útil para alinear el panel con el broker.
 
 #### Paso 4 — URL pública
 

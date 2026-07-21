@@ -79,6 +79,13 @@ class Settings(BaseSettings):
     http_max_retries: int = 3
     http_retry_backoff: float = 1.5
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_db_url(cls, value: str) -> str:
+        from database.url import normalize_database_url
+
+        return normalize_database_url(str(value or ""))
+
     @field_validator("report_times", mode="before")
     @classmethod
     def parse_report_times(cls, value: str | list[str]) -> str:

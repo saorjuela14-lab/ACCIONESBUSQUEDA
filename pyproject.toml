@@ -17,6 +17,7 @@ dependencies = [
     "tenacity>=8.2",
     "sqlalchemy[asyncio]>=2.0",
     "aiosqlite>=0.20",
+    "asyncpg>=0.29",
     "dependency-injector>=4.41",
     "apscheduler>=3.10",
     "yfinance>=0.2",
