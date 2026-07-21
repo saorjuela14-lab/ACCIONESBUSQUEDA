@@ -12,8 +12,10 @@ from domain.discovery import DiscoveryCandidate
 from providers.interfaces import MarketDataProvider
 from services.capital_fit import affordability_bonus, capital_price_policy, discovery_themes_for_capital
 from services.company_discovery_service import CompanyDiscoveryService
+from services.macro_regime_service import MacroRegimeService
 from services.market_dashboard_service import MarketDashboardService
 from services.micro_portfolio_manager_service import MicroPortfolioManagerService
+from services.risk_policy_service import RiskPolicyService
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -45,6 +47,8 @@ class DailyTradeRecommendationService:
         self._discovery = discovery_service
         self._repo = trade_repo
         self._dashboard = MarketDashboardService()
+        self._macro = MacroRegimeService()
+        self._risk = RiskPolicyService(self._macro)
 
     async def generate(
         self,
@@ -57,39 +61,80 @@ class DailyTradeRecommendationService:
         logger.info("daily_trade.generate.start", session=session, capital=capital)
 
         regime = await self._fetch_market_regime()
+        macro = await self._macro.assess(market_regime=regime)
+        policy = self._risk.policy_from_settings()
+        risk_notes: list[str] = [macro.thesis]
+        if macro.block_reason:
+            risk_notes.append(macro.block_reason)
+
         # Micro books: few whole-share positions, not 8 tiny lines
         if capital and capital <= 100:
             max_picks = min(max_picks, 3 if capital <= 60 else 4)
-        policy = capital_price_policy(capital or 1000, target_positions=max_picks)
-        themes = discovery_themes_for_capital(policy, list(_SHORT_TERM_THEMES))
+        if macro.mode in ("risk_off", "crisis"):
+            max_picks = min(max_picks, 2 if capital and capital <= 100 else 4)
+            risk_notes.append(
+                f"Régimen {macro.mode}: menos picks y tamaño ×{macro.size_multiplier:.2f}."
+            )
+
+        price_policy = capital_price_policy(capital or 1000, target_positions=max_picks)
+        themes = discovery_themes_for_capital(price_policy, list(_SHORT_TERM_THEMES))
+        # Defensive themes overlay when risk-off
+        if macro.mode in ("risk_off", "crisis"):
+            themes = [
+                "defensive dividend stock low volatility",
+                "consumer staples ETF constituents",
+                *themes[:3],
+            ]
         micro_mode = bool(capital and capital <= 500)
 
         discovery = await self._discovery.research(
             themes=themes,
             max_candidates=25,
             exclude_tickers=exclude_tickers or [],
-            max_price=policy.max_share_price if micro_mode else None,
+            max_price=price_policy.max_share_price if micro_mode else None,
         )
 
         scored: list[TradePick] = []
+        min_score = 22 if micro_mode else 35
+        if macro.mode == "risk_off":
+            min_score += 8
+        elif macro.mode == "crisis":
+            min_score += 20
+
         for candidate in discovery.candidates[:20]:
             pick = await self._score_candidate(
                 candidate,
-                min_score=22 if micro_mode else 35,
-                allow_watch=micro_mode,
+                min_score=min_score,
+                allow_watch=micro_mode or macro.mode in ("risk_off", "crisis"),
             )
             if pick:
                 if capital:
-                    line = (capital * 0.9) / max(max_picks, 1)
+                    line = (capital * 0.9 * macro.size_multiplier) / max(max_picks, 1)
                     pick.score = pick.score + affordability_bonus(
-                        pick.current_price or 0, line, policy
+                        pick.current_price or 0, line, price_policy
                     )
                     if (
-                        policy.max_share_price
+                        price_policy.max_share_price
                         and pick.current_price
-                        and pick.current_price > policy.max_share_price
+                        and pick.current_price > price_policy.max_share_price
                     ):
                         continue
+                # Reward/risk filter
+                if (
+                    pick.entry_price
+                    and pick.stop_loss
+                    and pick.target_price
+                    and pick.entry_price > pick.stop_loss
+                ):
+                    rr = (pick.target_price - pick.entry_price) / (
+                        pick.entry_price - pick.stop_loss
+                    )
+                    if rr < policy.min_reward_risk and pick.action != _ACTION_WATCH:
+                        pick.risks = list(pick.risks) + [
+                            f"Reward/risk {rr:.2f} < mínimo {policy.min_reward_risk:.1f}."
+                        ]
+                        if macro.mode != "risk_on":
+                            continue
                 scored.append(pick)
 
         scored.sort(key=lambda p: p.score, reverse=True)
@@ -97,10 +142,10 @@ class DailyTradeRecommendationService:
         used_manager = False
 
         # Capital desk fallback: always try to manage micro/small books
-        if capital and capital <= 500 and len(picks) < max(1, max_picks // 2):
+        if capital and capital <= 500 and len(picks) < max(1, max_picks // 2) and macro.mode != "crisis":
             manager = MicroPortfolioManagerService(self._market, self._discovery)
             plan = await manager.manage(
-                capital=capital,
+                capital=capital * macro.size_multiplier,
                 exclude_tickers=exclude_tickers,
                 max_candidates=20,
             )
@@ -116,25 +161,44 @@ class DailyTradeRecommendationService:
                 picks = merged[:max_picks]
                 summary = plan.summary
             else:
-                summary = self._build_summary(picks, regime, session)
+                summary = self._build_summary(picks, regime, session, macro.mode)
                 if plan.warnings:
                     summary += " " + " ".join(plan.warnings)
         else:
-            summary = self._build_summary(picks, regime, session)
+            summary = self._build_summary(picks, regime, session, macro.mode)
 
-        if capital and not used_manager:
-            summary = f"{policy.description_es} {summary}"
+        picks = self._risk.filter_picks_for_regime(
+            picks,
+            size_multiplier=macro.size_multiplier,
+            mode=macro.mode,
+        )
+
+        if macro.mode == "crisis":
+            summary = (
+                f"{macro.thesis} Sin nuevas compras recomendadas hasta que baje el estrés macro/VIX. "
+                f"Cash objetivo ≈ {macro.cash_target_pct:.0f}%."
+            )
+            picks = []
+        elif capital and not used_manager:
+            summary = f"{price_policy.description_es} {summary}"
         if used_manager and not picks:
             summary = (
-                f"{policy.description_es} El escritorio de capital no encontró penny stocks "
+                f"{price_policy.description_es} El escritorio de capital no encontró penny stocks "
                 "líquidos hoy. Mantén efectivo y vuelve a generar más tarde."
             )
+        if macro.thesis and macro.mode != "crisis":
+            summary = f"{summary} | Macro: {macro.thesis}"
 
         report = DailyTradeReport(
             report_date=date.today(),
             generated_at=datetime.now(timezone.utc),
             session=session,
             market_regime=regime,
+            macro_mode=macro.mode,
+            macro_bias=macro.macro_bias,
+            macro_thesis=macro.thesis,
+            size_multiplier=macro.size_multiplier,
+            risk_notes=risk_notes,
             summary=summary,
             picks=picks,
         )
@@ -147,6 +211,8 @@ class DailyTradeRecommendationService:
             picks=len(picks),
             session=session,
             micro_manager=used_manager,
+            macro_mode=macro.mode,
+            size_mult=macro.size_multiplier,
         )
         return report
 
@@ -365,7 +431,13 @@ class DailyTradeRecommendationService:
             parts.append(f"RSI {rsi:.0f}.")
         return " ".join(parts)
 
-    def _build_summary(self, picks: list[TradePick], regime: str, session: str) -> str:
+    def _build_summary(
+        self,
+        picks: list[TradePick],
+        regime: str,
+        session: str,
+        macro_mode: str = "neutral",
+    ) -> str:
         session_es = {
             "pre_market": "pre-apertura",
             "mid_session": "media sesión",
@@ -374,8 +446,8 @@ class DailyTradeRecommendationService:
 
         if not picks:
             return (
-                f"Recomendaciones {session_es} ({regime}): no se encontraron setups de corto plazo "
-                "con suficiente momentum y tendencia social hoy."
+                f"Recomendaciones {session_es} ({regime}/{macro_mode}): no se encontraron setups "
+                "de corto plazo con suficiente momentum, tendencia social y filtro de riesgo hoy."
             )
 
         top = picks[:3]
@@ -384,7 +456,7 @@ class DailyTradeRecommendationService:
             for p in top
         )
         return (
-            f"Recomendaciones {session_es} — régimen {regime}. "
-            f"{len(picks)} oportunidades de corto plazo detectadas por tendencias sociales, "
-            f"noticias y momentum técnico. Destacados: {leaders}."
+            f"Recomendaciones {session_es} — régimen precio {regime}, macro {macro_mode}. "
+            f"{len(picks)} oportunidades de corto plazo con filtros de riesgo. "
+            f"Destacados: {leaders}."
         )

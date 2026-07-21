@@ -40,6 +40,17 @@ async def allocation_advise(
     regime, regime_score = dash._compute_market_regime(indices, sectors)
     strong_sectors = [s.sector for s in sectors if s.regime == "bullish"][:5]
 
+    # Overlay macro risk mode (risk_off / crisis) on price regime for bucket weights
+    try:
+        from services.macro_regime_service import MacroRegimeService
+
+        macro = await MacroRegimeService().assess(market_regime=regime)
+        if macro.mode in ("risk_off", "crisis", "risk_on"):
+            regime = macro.mode
+            regime_score = macro.score
+    except Exception:
+        pass
+
     advisor = MarketAllocationAdvisorService(get_market_provider())
     return await advisor.advise(
         capital=request.capital,

@@ -127,8 +127,9 @@ class SchedulerService:
                 session=session_label,
                 picks=len(report.picks),
                 regime=report.market_regime,
+                macro_mode=report.macro_mode,
             )
-            if self._settings.push_daily_trades and report.picks:
+            if self._settings.push_daily_trades and (report.picks or report.macro_mode == "crisis"):
                 push = PushNotificationService()
                 if push.any_channel_configured:
                     lines = [
@@ -137,11 +138,88 @@ class SchedulerService:
                     ]
                     body = (
                         f"Sesión: {session_label}\n"
-                        f"Régimen: {report.market_regime}\n\n"
-                        + "\n".join(lines)
+                        f"Régimen: {report.market_regime} | Macro: {report.macro_mode}\n"
+                        f"{(report.macro_thesis or '')[:200]}\n\n"
+                        + ("\n".join(lines) if lines else "Sin compras (filtro riesgo/macro).")
                     )
                     await push.notify_message("Recomendaciones corto plazo", body)
+
+            if self._settings.auto_execute_trades and report.picks:
+                await self._maybe_auto_execute(report)
             break
+
+    async def _maybe_auto_execute(self, report) -> None:
+        """Optional closed-loop execution — gated by AUTO_EXECUTE_* + Risk Desk."""
+        from domain.broker import ExecuteLine, ExecuteOrdersRequest
+        from services.alpaca_order_service import AlpacaOrderService
+
+        settings = self._settings
+        broker = AlpacaOrderService()
+        if not broker.is_configured():
+            logger.info("scheduler.auto_execute.skip", reason="alpaca_not_configured")
+            return
+        if not broker.paper and not settings.auto_execute_live:
+            logger.warning(
+                "scheduler.auto_execute.blocked",
+                reason="LIVE requires AUTO_EXECUTE_LIVE=true (second safety gate)",
+            )
+            return
+
+        try:
+            clock = await broker.get_clock()
+            if settings.auto_execute_require_market_open and not clock.is_open:
+                logger.info("scheduler.auto_execute.skip", reason="market_closed")
+                return
+        except Exception as exc:
+            logger.warning("scheduler.auto_execute.clock_failed", error=str(exc))
+            return
+
+        lines: list[ExecuteLine] = []
+        max_n = float(settings.auto_execute_max_notional)
+        for pick in report.picks[:3]:
+            if pick.action == "vigilar":
+                continue
+            price = pick.current_price or pick.entry_price
+            if not price or price <= 0:
+                continue
+            shares = int(max_n // price)
+            if shares < 1:
+                continue
+            lines.append(
+                ExecuteLine(
+                    ticker=pick.ticker,
+                    shares=float(shares),
+                    side="buy",
+                    order_type="market",
+                    stop_loss=pick.stop_loss,
+                    take_profit=pick.target_price,
+                )
+            )
+        if not lines:
+            logger.info("scheduler.auto_execute.skip", reason="no_affordable_lines")
+            return
+
+        req = ExecuteOrdersRequest(
+            lines=lines,
+            dry_run=False,
+            confirm_live=not broker.paper,
+        )
+        result = await broker.execute(req)
+        logger.info(
+            "scheduler.auto_execute.done",
+            submitted=len(result.submitted),
+            failed=len(result.failed),
+            warnings=result.warnings[:3],
+            paper=result.paper,
+        )
+        if settings.push_daily_trades:
+            push = PushNotificationService()
+            if push.any_channel_configured:
+                await push.notify_message(
+                    "Auto-execute Risk Desk",
+                    f"OK={len(result.submitted)} FAIL={len(result.failed)} "
+                    f"paper={result.paper}\n" + "; ".join(result.warnings[:4]),
+                )
 
     async def _run_daily_report(self) -> None:
         async for session in get_session():

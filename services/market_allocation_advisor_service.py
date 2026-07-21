@@ -52,6 +52,9 @@ _STYLE_WEIGHTS: dict[str, dict[str, float]] = {
 _REGIME_ADJ: dict[str, dict[str, float]] = {
     "bullish": {"emerging": 5, "momentum": 5, "cash": -10},
     "bearish": {"emerging": -5, "momentum": -5, "cash": 10},
+    "risk_on": {"emerging": 5, "momentum": 8, "cash": -12},
+    "risk_off": {"emerging": -10, "momentum": -12, "cash": 22, "core": 5},
+    "crisis": {"cash": 45, "emerging": -20, "momentum": -20, "core": -5},
     "neutral": {},
 }
 

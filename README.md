@@ -44,6 +44,33 @@ Cuando Reddit apruebe tu app OAuth, se conecta sin rehacer el agente.
 - **Daily Investment Report**: generado a las 17:30 ET
 - **Investment Memory**: evaluación automática a los 90 días + recalibración de pesos
 
+### Risk Desk + macro (gestión de riesgo)
+
+El escritorio de riesgo aplica **límites duros** a compras (concentración, cash mínimo, pérdida diaria, stops) y un **régimen macro** (Fed, CPI, curva, VIX) que cambia tamaño y puede bloquear compras en crisis.
+
+| Endpoint | Uso |
+|----------|-----|
+| `GET /api/v1/risk/status` | Política + macro + libro Alpaca |
+| `GET /api/v1/risk/macro` | Solo régimen macro |
+
+Autonomía opcional (OFF por defecto):
+
+```
+AUTO_EXECUTE_TRADES=false
+AUTO_EXECUTE_LIVE=false   # segunda llave para LIVE
+AUTO_EXECUTE_MAX_NOTIONAL=25
+```
+
+Sin esas flags el sistema recomienda y alerta; **tú** confirmas cada orden LIVE.
+
+### Roadmap hacia autonomía tipo firma de capital
+
+1. ~~Risk Desk + macro en picks y órdenes~~ (este release)
+2. Ciclo de vida de posiciones (trailing stops, time-stops, invalidación de tesis)
+3. Reconciliación continua Alpaca ↔ DB + audit log de decisiones
+4. Auto-execute solo en paper → promoción a LIVE con límites
+5. Cumplimiento / kill switch operativo / VaR formal
+
 ```bash
 python main.py serve      # API + scheduler integrado
 python main.py scheduler  # Solo scheduler (standalone)
@@ -51,6 +78,7 @@ POST /api/v1/watchlist/scan  # Scan manual
 GET  /api/v1/alerts
 POST /api/v1/alerts/test-push
 GET  /api/v1/reports/daily/latest
+GET  /api/v1/risk/status
 ```
 
 #### Alertas push (Telegram)

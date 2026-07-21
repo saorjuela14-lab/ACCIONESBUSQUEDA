@@ -386,13 +386,21 @@ function renderTradeRecommendations(r) {
   $("#trade-recs-date").textContent = r.generated_at
     ? new Date(r.generated_at).toLocaleString(LOCALE)
     : "";
-  $("#trade-recs-summary").textContent = r.summary || "";
+  const macroBits = [
+    r.macro_mode ? `macro ${r.macro_mode}` : null,
+    r.size_multiplier != null ? `size ×${r.size_multiplier}` : null,
+  ].filter(Boolean).join(" · ");
+  $("#trade-recs-summary").textContent =
+    (macroBits ? `[${macroBits}] ` : "") + (r.summary || "");
   $("#trade-recs-disclaimer").textContent = r.disclaimer || "";
 
   const picks = r.picks || [];
   const grid = $("#trade-recs-grid");
   if (!picks.length) {
-    grid.innerHTML = `<p class="muted">Sin setups de momentum hoy. Pulsa <b>Gestionar capital</b> para que el escritorio busque penny stocks asequibles a tu portafolio.</p>`;
+    const crisis = r.macro_mode === "crisis"
+      ? " Risk Desk en crisis: sin nuevas compras."
+      : "";
+    grid.innerHTML = `<p class="muted">Sin setups de momentum hoy.${crisis} Pulsa <b>Gestionar capital</b> para que el escritorio busque penny stocks asequibles a tu portafolio.</p>`;
     return;
   }
 
@@ -486,6 +494,32 @@ async function loadAlpacaStatus() {
       el.classList.add("warn");
       el.textContent = "Alpaca: estado no disponible";
     }
+  }
+}
+
+async function loadRiskDesk() {
+  const el = $("#risk-desk-status");
+  if (!el) return;
+  try {
+    const r = await api(`${API}/risk/status`);
+    const m = r.macro || {};
+    const mode = m.mode || "neutral";
+    el.classList.remove("ok", "warn", "err");
+    if (mode === "crisis") el.classList.add("err");
+    else if (mode === "risk_off") el.classList.add("warn");
+    else if (mode === "risk_on") el.classList.add("ok");
+    const vix = m.vix != null ? `VIX ${m.vix}` : "";
+    const cash = r.portfolio ? `cash ${r.portfolio.cash_pct}%` : "";
+    const auto = r.auto_execute_enabled ? "AUTO-ON" : "auto-off";
+    el.textContent =
+      `Risk Desk: ${mode} · sesgo ${m.macro_bias || "—"} · size ×${m.size_multiplier ?? 1}` +
+      (vix ? ` · ${vix}` : "") +
+      (cash ? ` · ${cash}` : "") +
+      ` · ${auto}`;
+    el.title = (m.thesis || "") + "\n" + (r.notes || []).join("\n");
+  } catch (e) {
+    el.classList.add("warn");
+    el.textContent = "Risk Desk: no disponible";
   }
 }
 
@@ -647,6 +681,8 @@ async function executeAlpacaMicroPlan(dryRun = false) {
     lines: lastMicroPlan.lines.map((l) => ({
       ticker: l.ticker,
       shares: l.shares,
+      stop_loss: l.stop_loss ?? null,
+      take_profit: l.take_profit ?? null,
     })),
     dry_run: dryRun,
     confirm_live: true,
@@ -1016,6 +1052,7 @@ async function loadDashboard() {
       loadWatchlistMatrix(),
       loadPushStatus(),
       loadAlpacaStatus(),
+      loadRiskDesk(),
     ]);
   } catch (e) { toast("Panel: " + e.message); }
 }
@@ -1967,6 +2004,7 @@ $("#btn-manage-capital").onclick = managePortfolioCapital;
 $("#btn-alpaca-doctor") && ($("#btn-alpaca-doctor").onclick = runAlpacaDoctor);
 $("#btn-alpaca-refresh-book") && ($("#btn-alpaca-refresh-book").onclick = loadAlpacaBook);
 $("#btn-alpaca-cancel-all") && ($("#btn-alpaca-cancel-all").onclick = cancelAllAlpacaOrders);
+$("#btn-risk-refresh") && ($("#btn-risk-refresh").onclick = loadRiskDesk);
 $("#tech-period").onchange = () => { const t = ticker(); if (t) loadTechnicalChart(t); };
 $("#tech-chart-tf").onchange = () => {
   syncChartTimeframe($("#tech-chart-tf").value);

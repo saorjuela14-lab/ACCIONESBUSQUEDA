@@ -27,6 +27,8 @@ from domain.broker import (
 )
 from providers.broker.alpaca_provider import AlpacaBrokerProvider
 from providers.broker.factory import get_broker_provider
+from services.macro_regime_service import MacroRegimeService
+from services.risk_policy_service import RiskPolicyService
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -55,8 +57,14 @@ def _parse_dt(value: Any) -> datetime | None:
 class AlpacaOrderService:
     """Status, account, and order submission against Alpaca."""
 
-    def __init__(self, broker: AlpacaBrokerProvider | None = None) -> None:
+    def __init__(
+        self,
+        broker: AlpacaBrokerProvider | None = None,
+        risk_service: RiskPolicyService | None = None,
+    ) -> None:
         self._broker = broker or get_broker_provider()
+        self._risk = risk_service or RiskPolicyService()
+        self._macro = MacroRegimeService()
 
     @property
     def paper(self) -> bool:
@@ -253,6 +261,7 @@ class AlpacaOrderService:
             warnings.append("ATENCIÓN: órdenes en cuenta LIVE con dinero real.")
 
         account = None
+        positions: list[BrokerPosition] = []
         try:
             account = await self.get_account()
             if account.cash <= 0 and account.buying_power <= 0 and not request.dry_run:
@@ -267,6 +276,53 @@ class AlpacaOrderService:
                 )
         except Exception:
             pass
+
+        try:
+            positions = await self.get_positions()
+        except Exception:
+            positions = []
+
+        # --- Risk desk + macro gate ---
+        policy = self._risk.policy_from_settings()
+        portfolio_snap = None
+        macro = None
+        try:
+            macro = await self._macro.assess()
+            if account:
+                portfolio_snap = self._risk.portfolio_from_broker(
+                    equity=account.equity or account.portfolio_value or 0.0,
+                    cash=account.cash,
+                    buying_power=account.buying_power,
+                    positions=positions,
+                )
+            if macro.mode in ("risk_off", "crisis"):
+                warnings.append(macro.thesis)
+            if not macro.trading_allowed:
+                buy_lines = [ln for ln in request.lines if ln.side == "buy"]
+                if buy_lines and not request.dry_run:
+                    return ExecuteOrdersResponse(
+                        paper=self._broker.paper,
+                        dry_run=request.dry_run,
+                        warnings=[
+                            macro.block_reason
+                            or "Régimen crisis: Risk Desk bloqueó nuevas compras.",
+                            *warnings,
+                        ],
+                        failed=[
+                            BrokerOrderResult(
+                                symbol=ln.ticker.upper(),
+                                qty=ln.shares,
+                                side=ln.side,
+                                type=ln.order_type,
+                                status="failed",
+                                error="Bloqueado por Risk Desk (crisis macro).",
+                            )
+                            for ln in buy_lines
+                        ],
+                    )
+        except Exception as exc:
+            warnings.append(f"Risk/macro desk no disponible ({exc}); se continúa con checks básicos.")
+            macro = None
 
         try:
             clock = await self.get_clock()
@@ -296,6 +352,63 @@ class AlpacaOrderService:
                         )
                     )
                     continue
+
+                # Hard risk policy on buys
+                if macro is not None:
+                    # Estimate price from stop/TP mid or skip size checks without price
+                    est_price = None
+                    if line.limit_price:
+                        est_price = line.limit_price
+                    elif line.stop_loss and line.take_profit:
+                        est_price = (line.stop_loss + line.take_profit) / 2
+                    stop = line.stop_loss
+                    tp = line.take_profit
+                    # Risk desk: attach default protective stop if policy requires it
+                    if policy.require_stop_loss and (stop is None or stop <= 0) and est_price:
+                        stop = round(est_price * 0.92, 4)
+                        warnings.append(
+                            f"{line.ticker.upper()}: Risk Desk añadió stop -8% @ ${stop}."
+                        )
+                    if (tp is None or tp <= 0) and est_price and stop:
+                        tp = round(est_price * 1.12, 4)
+                        warnings.append(
+                            f"{line.ticker.upper()}: Risk Desk añadió take-profit +12% @ ${tp}."
+                        )
+                    verdict = self._risk.evaluate_buy(
+                        symbol=line.ticker,
+                        qty=line.shares,
+                        price=est_price,
+                        stop_loss=stop,
+                        take_profit=tp,
+                        policy=policy,
+                        macro_mode=macro.mode,
+                        size_multiplier=macro.size_multiplier,
+                        portfolio=portfolio_snap,
+                        trading_allowed=macro.trading_allowed,
+                        block_reason=macro.block_reason,
+                    )
+                    warnings.extend(verdict.warnings)
+                    if not verdict.allowed:
+                        failed.append(
+                            BrokerOrderResult(
+                                symbol=line.ticker.upper(),
+                                qty=line.shares,
+                                side=line.side,
+                                type=line.order_type,
+                                status="failed",
+                                error="; ".join(verdict.reasons) or "Rechazado por Risk Desk.",
+                            )
+                        )
+                        continue
+                    updates: dict[str, Any] = {}
+                    if verdict.adjusted_qty is not None and verdict.adjusted_qty + 1e-9 < line.shares:
+                        updates["shares"] = verdict.adjusted_qty
+                    if stop and stop != line.stop_loss:
+                        updates["stop_loss"] = stop
+                    if tp and tp != line.take_profit:
+                        updates["take_profit"] = tp
+                    if updates:
+                        line = line.model_copy(update=updates)
 
             order_req = BrokerOrderRequest(
                 symbol=line.ticker.upper().strip(),
@@ -361,6 +474,7 @@ class AlpacaOrderService:
             dry_run=request.dry_run,
             submitted=len(submitted),
             failed=len(failed),
+            macro_mode=getattr(macro, "mode", None),
         )
         return ExecuteOrdersResponse(
             paper=self._broker.paper,
