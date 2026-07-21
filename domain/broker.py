@@ -70,6 +70,14 @@ class BrokerOrderResult(BaseModel):
     error: str | None = None
 
 
+class BrokerClock(BaseModel):
+    is_open: bool = False
+    timestamp: datetime | None = None
+    next_open: datetime | None = None
+    next_close: datetime | None = None
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+
 class BrokerStatus(BaseModel):
     configured: bool = False
     paper: bool = True
@@ -78,6 +86,31 @@ class BrokerStatus(BaseModel):
     account: BrokerAccount | None = None
     base_url: str = ""
     last_request_id: str | None = None
+    clock: BrokerClock | None = None
+    market_open: bool | None = None
+
+
+class BrokerDoctorReport(BaseModel):
+    """Connectivity check inspired by `alpaca doctor` (alpacahq/cli)."""
+
+    ok: bool = False
+    paper: bool = True
+    configured: bool = False
+    trading_reachable: bool = False
+    data_reachable: bool | None = None
+    market_open: bool | None = None
+    account_status: str = ""
+    cash: float | None = None
+    equity: float | None = None
+    base_url: str = ""
+    data_base_url: str = ""
+    checks: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    last_request_id: str | None = None
+    cli_hint: str = (
+        "Opcional: brew install alpacahq/tap/cli · "
+        "ALPACA_API_KEY + ALPACA_SECRET_KEY + ALPACA_LIVE_TRADE=true"
+    )
 
 
 class ExecuteLine(BaseModel):
@@ -88,6 +121,7 @@ class ExecuteLine(BaseModel):
     limit_price: float | None = None
     stop_loss: float | None = None
     take_profit: float | None = None
+    client_order_id: str | None = None
 
 
 class ExecuteOrdersRequest(BaseModel):

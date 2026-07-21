@@ -281,6 +281,7 @@ body.modal-open { overflow: hidden; }
 .alpaca-status.ok { color: var(--green); border-color: rgba(34,197,94,0.35); }
 .alpaca-status.warn { color: var(--amber, #f59e0b); }
 .alpaca-status.err { color: var(--red, #ef4444); }
+.alpaca-actions { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 0.5rem; }
 .trade-rec-card {
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
   padding: 0.65rem; font-size: 12px;

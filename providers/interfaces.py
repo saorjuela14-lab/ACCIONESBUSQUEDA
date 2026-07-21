@@ -83,3 +83,19 @@ class BrokerProvider(ABC):
     @abstractmethod
     async def cancel_order(self, order_id: str) -> dict[str, Any]:
         raise NotImplementedError
+
+    @abstractmethod
+    async def cancel_all_orders(self) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def close_position(self, symbol: str) -> dict[str, Any]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def close_all_positions(self, *, cancel_orders: bool = True) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_clock(self) -> dict[str, Any]:
+        raise NotImplementedError

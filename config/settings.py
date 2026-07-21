@@ -66,10 +66,12 @@ class Settings(BaseSettings):
     push_daily_trades: bool = True
 
     # Alpaca Trading API — LIVE by default (https://docs.alpaca.markets/)
-    # Use brokerage keys from https://app.alpaca.markets/brokerage/dashboard/overview
+    # Compatible with https://github.com/alpacahq/cli env vars
     alpaca_api_key: str = ""
     alpaca_secret_key: str = ""
     alpaca_paper: bool = False
+    # CLI-compatible: ALPACA_LIVE_TRADE=true → live (overrides alpaca_paper when set)
+    alpaca_live_trade: bool | None = None
     alpaca_base_url: str = ""  # override; empty → api.alpaca.markets (live) or paper-api
     alpaca_data_base_url: str = "https://data.alpaca.markets"
     alpaca_data_feed: str = "iex"  # iex (free) | sip (paid) | delayed_sip
@@ -91,6 +93,13 @@ class Settings(BaseSettings):
     @property
     def daily_trade_schedule(self) -> list[str]:
         return [t.strip() for t in self.daily_trade_sessions.split(",") if t.strip()]
+
+    @property
+    def effective_alpaca_paper(self) -> bool:
+        """Paper vs LIVE. ALPACA_LIVE_TRADE (CLI) wins when set."""
+        if self.alpaca_live_trade is not None:
+            return not self.alpaca_live_trade
+        return self.alpaca_paper
 
 
 @lru_cache

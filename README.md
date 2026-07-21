@@ -77,15 +77,16 @@ Redeploy. En el panel → Alertas → **Probar push**.
 | `ALPACA_API_KEY` | Key ID de cuenta **LIVE** |
 | `ALPACA_SECRET_KEY` | Secret Key LIVE |
 | `ALPACA_PAPER` | `false` (default) |
+| `ALPACA_LIVE_TRADE` | `true` (compatible con [alpacahq/cli](https://github.com/alpacahq/cli)) |
 | `ALPACA_DATA_FEED` | `iex` (gratis) o `sip` si tienes suscripción |
 
-3. Redeploy. El panel mostrará **Alpaca LIVE · dinero real**.
-4. **Gestionar capital** → **Ejecutar en Alpaca** (pide confirmación), o botón **Alpaca** en cada pick.
+3. Redeploy. El panel mostrará **Alpaca LIVE · dinero real** (+ mercado abierto/cerrado).
+4. **Doctor** verifica trading + market data; **Gestionar capital** → **Ejecutar en Alpaca**.
 
-Misma key alimenta **Trading API** (`api.alpaca.markets`) y **Market Data** (`data.alpaca.markets`) en la cadena de precios: Alpaca → Polygon → Alpha Vantage → YFinance.
+Misma key alimenta **Trading API** y **Market Data**. Cada orden lleva `client_order_id` (idempotencia, como el CLI).
 
-API: `GET /api/v1/broker/status`, `POST /api/v1/broker/execute/micro-plan`, `POST /api/v1/broker/execute/pick`.
-Los errores incluyen `X-Request-ID` para soporte de Alpaca.
+API: `GET /broker/status|doctor|clock`, `POST /broker/execute/*`, `DELETE /broker/orders` (cancel-all).
+Opcional en tu máquina: `brew install alpacahq/tap/cli` para `alpaca account get` / `alpaca doctor`.
 
 #### Asistente de voz (Chrome / Edge)
 
@@ -208,6 +209,7 @@ En el dashboard de tu app → **Environment Variables** → añade:
 | `ALPACA_API_KEY` | *(recomendado)* Key brokerage LIVE |
 | `ALPACA_SECRET_KEY` | *(recomendado)* Secret brokerage LIVE |
 | `ALPACA_PAPER` | `false` (LIVE / dinero real) |
+| `ALPACA_LIVE_TRADE` | `true` (alias CLI; gana sobre PAPER) |
 | `ALPACA_DATA_FEED` | `iex` (default) |
 
 Marca `DASHBOARD_ACCESS_TOKEN` como **Secret** si la opción existe. Pulsa **Redeploy** tras guardar.

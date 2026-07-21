@@ -17,6 +17,6 @@ def get_broker_provider() -> AlpacaBrokerProvider:
     return AlpacaBrokerProvider(
         api_key=settings.alpaca_api_key,
         secret_key=settings.alpaca_secret_key,
-        paper=settings.alpaca_paper,
+        paper=settings.effective_alpaca_paper,
         base_url=settings.alpaca_base_url or None,
     )

@@ -1,12 +1,22 @@
-"""Execute stock orders via Alpaca Trading API."""
+"""Execute stock orders via Alpaca Trading API.
+
+Patterns aligned with https://github.com/alpacahq/cli:
+- client_order_id on every submit (idempotent retries)
+- clock / doctor diagnostics
+- cancel-all / close-position ops
+"""
 
 from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+from uuid import uuid4
 
+from config.settings import get_settings
 from domain.broker import (
     BrokerAccount,
+    BrokerClock,
+    BrokerDoctorReport,
     BrokerOrderRequest,
     BrokerOrderResult,
     BrokerPosition,
@@ -62,26 +72,40 @@ class AlpacaOrderService:
                 paper=self._broker.paper,
                 connected=False,
                 message=(
-                    "Alpaca no configurada. En FastAPI Cloud / .env define "
-                    "ALPACA_API_KEY + ALPACA_SECRET_KEY (keys de cuenta brokerage LIVE) "
-                    "y ALPACA_PAPER=false."
+                    "Alpaca no configurada. Define ALPACA_API_KEY + ALPACA_SECRET_KEY "
+                    "(compatible con alpacahq/cli). LIVE: ALPACA_PAPER=false o ALPACA_LIVE_TRADE=true."
                 ),
                 base_url=self._broker.base_url,
             )
         try:
             raw = await self._broker.get_account()
             account = self._map_account(raw)
+            clock = None
+            market_open = None
+            try:
+                clock = await self.get_clock()
+                market_open = clock.is_open
+            except Exception:
+                pass
+            mode = "Paper" if self._broker.paper else "LIVE"
+            open_txt = (
+                " · mercado abierto"
+                if market_open
+                else (" · mercado cerrado" if market_open is False else "")
+            )
             return BrokerStatus(
                 configured=True,
                 paper=self._broker.paper,
                 connected=True,
                 message=(
-                    f"Conectado a Alpaca {'Paper' if self._broker.paper else 'LIVE'} · "
-                    f"cash ${account.cash:.2f} · equity ${account.equity:.2f}"
+                    f"Conectado a Alpaca {mode} · cash ${account.cash:.2f} · "
+                    f"equity ${account.equity:.2f}{open_txt}"
                 ),
                 account=account,
                 base_url=self._broker.base_url,
                 last_request_id=raw.get("_request_id") or self._broker.last_request_id,
+                clock=clock,
+                market_open=market_open,
             )
         except Exception as exc:
             return BrokerStatus(
@@ -92,6 +116,76 @@ class AlpacaOrderService:
                 base_url=self._broker.base_url,
                 last_request_id=self._broker.last_request_id,
             )
+
+    async def doctor(self) -> BrokerDoctorReport:
+        """Connectivity check inspired by `alpaca doctor`."""
+        settings = get_settings()
+        report = BrokerDoctorReport(
+            paper=self._broker.paper,
+            configured=self._broker.is_configured(),
+            base_url=self._broker.base_url,
+            data_base_url=settings.alpaca_data_base_url or "https://data.alpaca.markets",
+        )
+        if not report.configured:
+            report.warnings.append("Faltan ALPACA_API_KEY / ALPACA_SECRET_KEY")
+            report.checks.append("credentials: missing")
+            return report
+
+        report.checks.append("credentials: present")
+        try:
+            account = await self.get_account()
+            report.trading_reachable = True
+            report.account_status = account.status
+            report.cash = account.cash
+            report.equity = account.equity
+            report.checks.append(f"trading account: {account.status}")
+            report.last_request_id = self._broker.last_request_id
+            if account.trading_blocked or account.account_blocked:
+                report.warnings.append("Cuenta bloqueada para trading")
+        except Exception as exc:
+            report.checks.append(f"trading account: FAIL ({exc})")
+            report.warnings.append(str(exc))
+            return report
+
+        try:
+            clock = await self.get_clock()
+            report.market_open = clock.is_open
+            report.checks.append(f"clock: {'open' if clock.is_open else 'closed'}")
+        except Exception as exc:
+            report.checks.append(f"clock: FAIL ({exc})")
+            report.warnings.append(str(exc))
+
+        try:
+            from providers.market.alpaca_provider import AlpacaMarketDataProvider
+
+            data = AlpacaMarketDataProvider()
+            quote = await data.get_quote("AAPL")
+            report.data_reachable = quote.get("current_price") is not None
+            report.checks.append(
+                f"market data: ok (AAPL=${quote.get('current_price')}, "
+                f"feed={settings.alpaca_data_feed})"
+            )
+            report.last_request_id = data.last_request_id or report.last_request_id
+        except Exception as exc:
+            report.data_reachable = False
+            report.checks.append(f"market data: FAIL ({exc})")
+            report.warnings.append(str(exc))
+
+        if not self._broker.paper:
+            report.warnings.append("Modo LIVE — las órdenes usan dinero real")
+
+        report.ok = report.trading_reachable
+        return report
+
+    async def get_clock(self) -> BrokerClock:
+        raw = await self._broker.get_clock()
+        return BrokerClock(
+            is_open=bool(raw.get("is_open")),
+            timestamp=_parse_dt(raw.get("timestamp")),
+            next_open=_parse_dt(raw.get("next_open")),
+            next_close=_parse_dt(raw.get("next_close")),
+            raw={k: v for k, v in raw.items() if not str(k).startswith("_")},
+        )
 
     async def get_account(self) -> BrokerAccount:
         raw = await self._broker.get_account()
@@ -105,6 +199,18 @@ class AlpacaOrderService:
         raw_list = await self._broker.list_orders(status=status, limit=limit)
         return [self._map_order(o) for o in raw_list]
 
+    async def cancel_order(self, order_id: str) -> dict[str, Any]:
+        return await self._broker.cancel_order(order_id)
+
+    async def cancel_all_orders(self) -> list[dict[str, Any]]:
+        return await self._broker.cancel_all_orders()
+
+    async def close_position(self, symbol: str) -> dict[str, Any]:
+        return await self._broker.close_position(symbol)
+
+    async def close_all_positions(self, *, cancel_orders: bool = True) -> list[dict[str, Any]]:
+        return await self._broker.close_all_positions(cancel_orders=cancel_orders)
+
     async def submit_one(self, req: BrokerOrderRequest) -> BrokerOrderResult:
         payload = self._build_order_payload(req)
         try:
@@ -117,6 +223,7 @@ class AlpacaOrderService:
                 side=req.side,
                 type=req.order_type,
                 status="failed",
+                client_order_id=str(payload.get("client_order_id") or ""),
                 request_id=self._broker.last_request_id,
                 error=str(exc),
             )
@@ -137,13 +244,23 @@ class AlpacaOrderService:
                 paper=False,
                 dry_run=request.dry_run,
                 warnings=[
-                    "Cuenta LIVE detectada (ALPACA_PAPER=false). "
-                    "Para enviar órdenes reales envía confirm_live=true."
+                    "Cuenta LIVE detectada. Para enviar órdenes reales envía "
+                    "confirm_live=true (o ALPACA_LIVE_TRADE=true + confirmación)."
                 ],
             )
 
         if not self._broker.paper:
             warnings.append("ATENCIÓN: órdenes en cuenta LIVE con dinero real.")
+
+        try:
+            clock = await self.get_clock()
+            if not clock.is_open and not request.dry_run:
+                warnings.append(
+                    "Mercado cerrado ahora — la orden puede quedar pending hasta la apertura "
+                    f"(next_open={clock.next_open})."
+                )
+        except Exception:
+            pass
 
         submitted: list[BrokerOrderResult] = []
         failed: list[BrokerOrderResult] = []
@@ -158,6 +275,7 @@ class AlpacaOrderService:
                 limit_price=line.limit_price,
                 take_profit=line.take_profit,
                 stop_loss=line.stop_loss,
+                client_order_id=line.client_order_id,
             )
             if request.dry_run:
                 payload = self._build_order_payload(order_req)
@@ -168,6 +286,7 @@ class AlpacaOrderService:
                         side=order_req.side,
                         type=order_req.order_type,
                         status="dry_run",
+                        client_order_id=str(payload.get("client_order_id") or ""),
                         raw={"payload": payload},
                     )
                 )
@@ -223,17 +342,17 @@ class AlpacaOrderService:
 
     def _build_order_payload(self, req: BrokerOrderRequest) -> dict[str, Any]:
         qty = req.qty
-        # Whole shares preferred for micro capital; Alpaca accepts fractional as string
         qty_str = str(int(qty)) if float(qty).is_integer() else str(qty)
+        # Idempotency — same idea as alpaca CLI --client-order-id
+        client_id = (req.client_order_id or "").strip() or f"nexbuy-{uuid4()}"
         payload: dict[str, Any] = {
             "symbol": req.symbol.upper(),
             "qty": qty_str,
             "side": req.side,
             "type": req.order_type,
             "time_in_force": req.time_in_force,
+            "client_order_id": client_id[:48],
         }
-        if req.client_order_id:
-            payload["client_order_id"] = req.client_order_id
         if req.extended_hours:
             payload["extended_hours"] = True
         if req.order_type in ("limit", "stop_limit") and req.limit_price is not None:
@@ -241,7 +360,6 @@ class AlpacaOrderService:
         if req.order_type in ("stop", "stop_limit") and req.stop_price is not None:
             payload["stop_price"] = str(req.stop_price)
 
-        # Bracket (entry + take profit + stop) when both levels provided on a buy
         if (
             req.side == "buy"
             and req.take_profit

@@ -93,7 +93,7 @@ class AlpacaBrokerProvider(BrokerProvider):
         if not self.is_configured():
             raise ValueError(
                 "Alpaca no configurada. Define ALPACA_API_KEY y ALPACA_SECRET_KEY "
-                "(paper keys desde app.alpaca.markets)."
+                "(mismas vars que https://github.com/alpacahq/cli)."
             )
 
         url = f"{self._base_url}{path}"
@@ -144,6 +144,28 @@ class AlpacaBrokerProvider(BrokerProvider):
 
     async def cancel_order(self, order_id: str) -> dict[str, Any]:
         return await self._request("DELETE", f"/v2/orders/{order_id}")
+
+    async def cancel_all_orders(self) -> list[dict[str, Any]]:
+        """DELETE /v2/orders — cancels every open order (CLI: alpaca order cancel-all)."""
+        data = await self._request("DELETE", "/v2/orders")
+        if isinstance(data, list):
+            return data
+        return [data] if data else []
+
+    async def close_position(self, symbol: str) -> dict[str, Any]:
+        """DELETE /v2/positions/{symbol} — liquidate one position."""
+        return await self._request("DELETE", f"/v2/positions/{symbol.upper()}")
+
+    async def close_all_positions(self, *, cancel_orders: bool = True) -> list[dict[str, Any]]:
+        """DELETE /v2/positions — liquidate entire portfolio (CLI: alpaca position close-all)."""
+        data = await self._request(
+            "DELETE",
+            "/v2/positions",
+            params={"cancel_orders": str(cancel_orders).lower()},
+        )
+        if isinstance(data, list):
+            return data
+        return [data] if data else []
 
     async def get_clock(self) -> dict[str, Any]:
         return await self._request("GET", "/v2/clock")

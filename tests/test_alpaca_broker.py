@@ -136,6 +136,50 @@ async def test_order_service_dry_run_builds_bracket():
     assert payload["take_profit"]["limit_price"] == "2.2"
     assert payload["stop_loss"]["stop_price"] == "1.5"
     assert payload["qty"] == "10"
+    assert payload["client_order_id"].startswith("nexbuy-")
+
+
+@pytest.mark.asyncio
+async def test_effective_live_trade_env():
+    from config.settings import Settings
+
+    s = Settings(alpaca_paper=True, alpaca_live_trade=True)
+    assert s.effective_alpaca_paper is False
+    s2 = Settings(alpaca_paper=False, alpaca_live_trade=False)
+    assert s2.effective_alpaca_paper is True
+    s3 = Settings(alpaca_paper=False, alpaca_live_trade=None)
+    assert s3.effective_alpaca_paper is False
+
+
+@pytest.mark.asyncio
+async def test_cancel_all_and_clock_provider():
+    broker = AlpacaBrokerProvider(api_key="k", secret_key="s", paper=False)
+    mock_client = AsyncMock()
+    mock_client.request = AsyncMock(
+        side_effect=[
+            _mock_response(200, {"is_open": True, "next_open": "2024-01-02T14:30:00Z", "next_close": "2024-01-02T21:00:00Z", "timestamp": "2024-01-02T15:00:00Z"}),
+            _mock_response(200, [{"id": "o1", "status": 200}]),
+        ]
+    )
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("providers.broker.alpaca_provider.httpx.AsyncClient", return_value=mock_client):
+        clock = await broker.get_clock()
+        cancelled = await broker.cancel_all_orders()
+
+    assert clock["is_open"] is True
+    assert isinstance(cancelled, list)
+    assert mock_client.request.call_args_list[1][0][0] == "DELETE"
+    assert mock_client.request.call_args_list[1][0][1].endswith("/v2/orders")
+
+
+@pytest.mark.asyncio
+async def test_doctor_unconfigured():
+    broker = AlpacaBrokerProvider(api_key="", secret_key="")
+    report = await AlpacaOrderService(broker=broker).doctor()
+    assert report.ok is False
+    assert report.configured is False
 
 
 @pytest.mark.asyncio

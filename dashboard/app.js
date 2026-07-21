@@ -459,12 +459,13 @@ function renderAlpacaStatus(st) {
   }
   const mode = st.paper ? "Paper" : "LIVE";
   const cash = st.account?.cash != null ? ` · cash $${Number(st.account.cash).toFixed(2)}` : "";
+  const mkt = st.market_open === true ? " · mercado abierto" : (st.market_open === false ? " · mercado cerrado" : "");
   if (st.paper) {
     el.classList.add("ok");
-    el.textContent = `Alpaca Paper conectado${cash}`;
+    el.textContent = `Alpaca Paper conectado${cash}${mkt}`;
   } else {
     el.classList.add("err");
-    el.textContent = `Alpaca LIVE · dinero real${cash} — las órdenes usan capital real`;
+    el.textContent = `Alpaca LIVE · dinero real${cash}${mkt}`;
   }
 }
 
@@ -488,6 +489,34 @@ function confirmAlpacaLive() {
     );
   }
   return true;
+}
+
+async function runAlpacaDoctor() {
+  await withLoading("Diagnóstico Alpaca…", async () => {
+    try {
+      const d = await api(`${API}/broker/doctor`);
+      const lines = (d.checks || []).join(" · ");
+      const warn = (d.warnings || [])[0];
+      toast(d.ok ? `Doctor OK · ${lines}` : `Doctor · ${warn || lines || "fallo"}`);
+      await loadAlpacaStatus();
+    } catch (e) { toast("Doctor: " + e.message); }
+  });
+}
+
+async function cancelAllAlpacaOrders() {
+  if (!window.confirm("¿Cancelar TODAS las órdenes abiertas en Alpaca?")) return;
+  if (!confirmAlpacaLive()) return;
+  const q = new URLSearchParams({
+    confirm_cancel_all: "true",
+    confirm_live: lastAlpacaStatus?.paper === false ? "true" : "false",
+  });
+  await withLoading("Cancelando órdenes Alpaca…", async () => {
+    try {
+      const r = await api(`${API}/broker/orders?${q}`, { method: "DELETE" });
+      toast(`Canceladas: ${Array.isArray(r) ? r.length : 1}`);
+      await loadAlpacaStatus();
+    } catch (e) { toast("Cancelar: " + e.message); }
+  });
 }
 
 async function executeAlpacaPick(ticker, opts = {}) {
@@ -1827,6 +1856,8 @@ $("#btn-simulate-proposal").onclick = simulateDemoProposal;
 $("#btn-scan").onclick = scanWatchlist;
 $("#btn-generate-trades").onclick = generateDailyTrades;
 $("#btn-manage-capital").onclick = managePortfolioCapital;
+$("#btn-alpaca-doctor") && ($("#btn-alpaca-doctor").onclick = runAlpacaDoctor);
+$("#btn-alpaca-cancel-all") && ($("#btn-alpaca-cancel-all").onclick = cancelAllAlpacaOrders);
 $("#tech-period").onchange = () => { const t = ticker(); if (t) loadTechnicalChart(t); };
 $("#tech-chart-tf").onchange = () => {
   syncChartTimeframe($("#tech-chart-tf").value);

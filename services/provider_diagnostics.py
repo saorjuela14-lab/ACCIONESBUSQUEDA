@@ -74,9 +74,14 @@ async def get_providers_status() -> dict[str, Any]:
             "yfinance": {"enabled": settings.yfinance_enabled},
             "alpaca": {
                 "configured": bool(settings.alpaca_api_key and settings.alpaca_secret_key),
-                "paper": settings.alpaca_paper,
+                "paper": settings.effective_alpaca_paper,
+                "live_trade_env": settings.alpaca_live_trade,
                 "trading_base_url": settings.alpaca_base_url
-                or ("https://paper-api.alpaca.markets" if settings.alpaca_paper else "https://api.alpaca.markets"),
+                or (
+                    "https://paper-api.alpaca.markets"
+                    if settings.effective_alpaca_paper
+                    else "https://api.alpaca.markets"
+                ),
                 "data_base_url": settings.alpaca_data_base_url or "https://data.alpaca.markets",
                 "data_feed": settings.alpaca_data_feed,
             },
