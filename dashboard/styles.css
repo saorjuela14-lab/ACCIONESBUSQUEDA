@@ -282,6 +282,12 @@ body.modal-open { overflow: hidden; }
 .alpaca-status.warn { color: var(--amber, #f59e0b); }
 .alpaca-status.err { color: var(--red, #ef4444); }
 .alpaca-actions { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 0.5rem; }
+.alpaca-book {
+  font-size: 11px; margin: 0 0 0.65rem; padding: 6px 8px;
+  border: 1px dashed var(--border); border-radius: 4px; line-height: 1.45;
+  max-height: 140px; overflow: auto;
+}
+.alpaca-book b { color: var(--text); }
 .trade-rec-card {
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
   padding: 0.65rem; font-size: 12px;

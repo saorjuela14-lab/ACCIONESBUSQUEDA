@@ -307,6 +307,31 @@ class AlpacaOrderService:
                 stop_loss=line.stop_loss,
                 client_order_id=line.client_order_id,
             )
+            if not request.dry_run:
+                try:
+                    asset = await self._broker.get_asset(order_req.symbol)
+                    tradable = asset.get("tradable", True)
+                    status = str(asset.get("status") or "")
+                    if not tradable or status.lower() not in ("", "active"):
+                        failed.append(
+                            BrokerOrderResult(
+                                symbol=order_req.symbol,
+                                qty=order_req.qty,
+                                side=order_req.side,
+                                type=order_req.order_type,
+                                status="failed",
+                                error=(
+                                    f"Activo no operable en Alpaca "
+                                    f"(tradable={tradable}, status={status or 'n/a'}). "
+                                    "Elige otro ticker de la lista US."
+                                ),
+                            )
+                        )
+                        continue
+                except Exception as exc:
+                    # If asset lookup fails, still try the order — Alpaca will reject clearly
+                    warnings.append(f"{order_req.symbol}: no se pudo verificar asset ({exc})")
+
             if request.dry_run:
                 payload = self._build_order_payload(order_req)
                 submitted.append(

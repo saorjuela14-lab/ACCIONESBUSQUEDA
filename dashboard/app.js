@@ -479,6 +479,7 @@ async function loadAlpacaStatus() {
   try {
     const st = await api(`${API}/broker/status`);
     renderAlpacaStatus(st);
+    if (st?.connected) await loadAlpacaBook();
   } catch {
     const el = $("#alpaca-status");
     if (el) {
@@ -488,10 +489,44 @@ async function loadAlpacaStatus() {
   }
 }
 
+async function loadAlpacaBook() {
+  const el = $("#alpaca-book");
+  if (!el || !lastAlpacaStatus?.connected) return;
+  try {
+    const [positions, openOrders, recent] = await Promise.all([
+      api(`${API}/broker/positions`),
+      api(`${API}/broker/orders?status=open&limit=20`),
+      api(`${API}/broker/orders?status=all&limit=10`),
+    ]);
+    const posLines = (positions || []).length
+      ? (positions || []).map((p) =>
+          `<div><b>${p.symbol}</b> ${p.qty} @ $${Number(p.avg_entry_price || 0).toFixed(2)} · P/L $${Number(p.unrealized_pl || 0).toFixed(2)}</div>`
+        ).join("")
+      : "<div>Sin posiciones abiertas</div>";
+    const orderLines = (openOrders || []).length
+      ? (openOrders || []).map((o) =>
+          `<div>OPEN <b>${o.symbol}</b> ${o.side} ${o.qty} · ${o.status}${o.id ? ` · #${String(o.id).slice(0, 8)}` : ""}</div>`
+        ).join("")
+      : "<div>Sin órdenes abiertas (pending)</div>";
+    const recentLines = (recent || []).slice(0, 5).map((o) =>
+      `<div>HIST <b>${o.symbol}</b> ${o.side} ${o.qty} · <b>${o.status}</b>${o.id ? ` · #${String(o.id).slice(0, 8)}` : ""}</div>`
+    ).join("") || "<div>Sin historial reciente</div>";
+    const mkt = lastAlpacaStatus.market_open === false
+      ? "<div><b>Mercado US cerrado</b> — las market orders quedan pending hasta ~9:30 ET. Las posiciones aparecen al ejecutarse.</div>"
+      : "";
+    el.innerHTML = `${mkt}<div><b>Posiciones</b></div>${posLines}<div style="margin-top:4px"><b>Órdenes abiertas</b></div>${orderLines}<div style="margin-top:4px"><b>Últimas órdenes</b></div>${recentLines}`;
+  } catch (e) {
+    el.textContent = `No se pudo leer libro Alpaca: ${e.message}`;
+  }
+}
+
 function confirmAlpacaLive() {
   if (!lastAlpacaStatus || lastAlpacaStatus.paper === false) {
+    const closed = lastAlpacaStatus?.market_open === false
+      ? "\n\nNOTA: el mercado US está CERRADO. La orden puede quedar pending hasta mañana 9:30 ET (no verás posición hasta que se ejecute)."
+      : "";
     return window.confirm(
-      "ATENCIÓN: vas a enviar órdenes LIVE a Alpaca con dinero REAL.\n\n¿Confirmas la ejecución?"
+      "ATENCIÓN: vas a enviar órdenes LIVE a Alpaca con dinero REAL." + closed + "\n\n¿Confirmas la ejecución?"
     );
   }
   return true;
@@ -527,23 +562,33 @@ async function cancelAllAlpacaOrders() {
 
 async function executeAlpacaPick(ticker, opts = {}) {
   if (!confirmAlpacaLive()) return;
-  const cash = lastAlpacaStatus?.account?.cash;
-  if (cash != null && Number(cash) <= 0) {
-    toast("Alpaca tiene $0 de cash. Fondea en app.alpaca.markets antes de comprar.", 8000);
+  const cash = Number(lastAlpacaStatus?.account?.cash ?? 0);
+  const bp = Number(lastAlpacaStatus?.account?.buying_power ?? cash);
+  if (cash <= 0 && bp <= 0) {
+    toast("Alpaca tiene $0 de cash/buying power. Si acabas de fondear, espera a que el depósito esté disponible.", 9000);
     return;
   }
   const price = opts.price || 0;
-  const capital = currentPortfolioCapital() || 22;
+  const capital = Math.min(currentPortfolioCapital() || 22, bp > 0 ? bp : cash);
   let shares = 1;
-  if (price > 0) shares = Math.max(1, Math.floor((capital * 0.35) / price));
+  if (price > 0) {
+    shares = Math.max(1, Math.floor((capital * 0.35) / price));
+    const cost = shares * price;
+    if (cost > bp && bp > 0) {
+      shares = Math.max(1, Math.floor(bp / price));
+    }
+    if (shares * price > bp + 0.01) {
+      toast(`No alcanza buying power ($${bp.toFixed(2)}) para 1× ${ticker} @ $${price}`, 9000);
+      return;
+    }
+  }
   const body = {
     ticker,
     shares,
     dry_run: false,
-    confirm_live: lastAlpacaStatus?.paper === false,
+    // Usuario ya confirmó en el diálogo — siempre true en LIVE
+    confirm_live: true,
   };
-  // Market order simple (sin bracket) evita rechazos extra en cuentas pequeñas
-  // stop/target se pueden poner luego en Alpaca
   await withLoading(`Enviando ${shares}× ${ticker} a Alpaca…`, async () => {
     try {
       const r = await api(`${API}/broker/execute/pick`, {
@@ -552,6 +597,7 @@ async function executeAlpacaPick(ticker, opts = {}) {
       });
       showAlpacaExecuteResult(r);
       await loadAlpacaStatus();
+      await loadAlpacaBook();
     } catch (e) { toast("Alpaca: " + e.message, 8000); }
   });
 }
@@ -601,10 +647,9 @@ async function executeAlpacaMicroPlan(dryRun = false) {
     lines: lastMicroPlan.lines.map((l) => ({
       ticker: l.ticker,
       shares: l.shares,
-      // sin stop/target en el envío → market simple (más fiable con poco capital)
     })),
     dry_run: dryRun,
-    confirm_live: lastAlpacaStatus?.paper === false,
+    confirm_live: true,
   };
   await withLoading(dryRun ? "Simulando órdenes Alpaca…" : "Ejecutando plan en Alpaca…", async () => {
     try {
@@ -617,7 +662,10 @@ async function executeAlpacaMicroPlan(dryRun = false) {
       } else {
         showAlpacaExecuteResult(r);
       }
-      if (!dryRun) await loadAlpacaStatus();
+      if (!dryRun) {
+        await loadAlpacaStatus();
+        await loadAlpacaBook();
+      }
     } catch (e) { toast("Alpaca plan: " + e.message, 8000); }
   });
 }
@@ -1897,6 +1945,7 @@ $("#btn-scan").onclick = scanWatchlist;
 $("#btn-generate-trades").onclick = generateDailyTrades;
 $("#btn-manage-capital").onclick = managePortfolioCapital;
 $("#btn-alpaca-doctor") && ($("#btn-alpaca-doctor").onclick = runAlpacaDoctor);
+$("#btn-alpaca-refresh-book") && ($("#btn-alpaca-refresh-book").onclick = loadAlpacaBook);
 $("#btn-alpaca-cancel-all") && ($("#btn-alpaca-cancel-all").onclick = cancelAllAlpacaOrders);
 $("#tech-period").onchange = () => { const t = ticker(); if (t) loadTechnicalChart(t); };
 $("#tech-chart-tf").onchange = () => {
