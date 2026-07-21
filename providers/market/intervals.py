@@ -4,17 +4,17 @@ from datetime import datetime, timedelta, timezone
 
 # yfinance interval -> (polygon multiplier, polygon timespan) | alpha_vantage interval
 INTERVAL_MAP: dict[str, dict[str, str | tuple[int, str]]] = {
-    "1m": {"polygon": (1, "minute"), "alpha_vantage": "1min"},
-    "2m": {"polygon": (2, "minute"), "alpha_vantage": "1min"},
-    "5m": {"polygon": (5, "minute"), "alpha_vantage": "5min"},
-    "15m": {"polygon": (15, "minute"), "alpha_vantage": "15min"},
-    "30m": {"polygon": (30, "minute"), "alpha_vantage": "30min"},
-    "60m": {"polygon": (1, "hour"), "alpha_vantage": "60min"},
-    "1h": {"polygon": (1, "hour"), "alpha_vantage": "60min"},
-    "4h": {"polygon": (4, "hour"), "alpha_vantage": "60min"},
-    "1d": {"polygon": (1, "day"), "alpha_vantage": "daily"},
-    "1wk": {"polygon": (1, "week"), "alpha_vantage": "weekly"},
-    "1mo": {"polygon": (1, "month"), "alpha_vantage": "monthly"},
+    "1m": {"polygon": (1, "minute"), "alpha_vantage": "1min", "alpaca": "1Min"},
+    "2m": {"polygon": (2, "minute"), "alpha_vantage": "1min", "alpaca": "1Min"},
+    "5m": {"polygon": (5, "minute"), "alpha_vantage": "5min", "alpaca": "5Min"},
+    "15m": {"polygon": (15, "minute"), "alpha_vantage": "15min", "alpaca": "15Min"},
+    "30m": {"polygon": (30, "minute"), "alpha_vantage": "30min", "alpaca": "30Min"},
+    "60m": {"polygon": (1, "hour"), "alpha_vantage": "60min", "alpaca": "1Hour"},
+    "1h": {"polygon": (1, "hour"), "alpha_vantage": "60min", "alpaca": "1Hour"},
+    "4h": {"polygon": (4, "hour"), "alpha_vantage": "60min", "alpaca": "1Hour"},
+    "1d": {"polygon": (1, "day"), "alpha_vantage": "daily", "alpaca": "1Day"},
+    "1wk": {"polygon": (1, "week"), "alpha_vantage": "weekly", "alpaca": "1Week"},
+    "1mo": {"polygon": (1, "month"), "alpha_vantage": "monthly", "alpaca": "1Month"},
 }
 
 PERIOD_DAYS: dict[str, int] = {

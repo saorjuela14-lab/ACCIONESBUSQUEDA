@@ -7,6 +7,7 @@ import pandas as pd
 from config.settings import get_settings
 from providers.interfaces import MarketDataProvider
 from providers.market.alpha_vantage_provider import AlphaVantageProvider
+from providers.market.alpaca_provider import AlpacaMarketDataProvider
 from providers.market.polygon_provider import PolygonProvider
 from providers.market.rate_limit_tracker import get_rate_limit_tracker
 from providers.market.yfinance_provider import YFinanceProvider
@@ -19,20 +20,21 @@ ProviderCall = Callable[[], Coroutine[Any, Any, Any]]
 
 class CompositeMarketDataProvider(MarketDataProvider):
     """
-    Tries Polygon → Alpha Vantage → YFinance for each request.
+    Tries Alpaca → Polygon → Alpha Vantage → YFinance for each request.
     Skips providers that exhausted their rate limit or fail.
     """
 
     name = "composite"
 
     # Priority order for price/history data
-    HISTORY_CHAIN = ("polygon", "alpha_vantage", "yfinance")
-    QUOTE_CHAIN = ("polygon", "alpha_vantage", "yfinance")
+    HISTORY_CHAIN = ("alpaca", "polygon", "alpha_vantage", "yfinance")
+    QUOTE_CHAIN = ("alpaca", "polygon", "alpha_vantage", "yfinance")
     # Fundamentals: YFinance first (richest free data), then Alpha Vantage overview
     FINANCIALS_CHAIN = ("yfinance", "alpha_vantage")
 
     def __init__(
         self,
+        alpaca: AlpacaMarketDataProvider | None = None,
         polygon: PolygonProvider | None = None,
         alpha_vantage: AlphaVantageProvider | None = None,
         yfinance: YFinanceProvider | None = None,
@@ -46,6 +48,14 @@ class CompositeMarketDataProvider(MarketDataProvider):
         self._providers: dict[str, MarketDataProvider] = {
             "yfinance": yfinance or YFinanceProvider(),
         }
+
+        if alpaca:
+            self._providers["alpaca"] = alpaca
+        elif settings.alpaca_api_key and settings.alpaca_secret_key:
+            try:
+                self._providers["alpaca"] = AlpacaMarketDataProvider()
+            except ValueError:
+                pass
 
         if polygon:
             self._providers["polygon"] = polygon

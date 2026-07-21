@@ -67,6 +67,27 @@ GET  /api/v1/reports/daily/latest
 
 Redeploy. En el panel → Alertas → **Probar push**.
 
+#### Trading con Alpaca (LIVE / dinero real)
+
+1. Crea/verifica cuenta brokerage en [Alpaca](https://app.alpaca.markets/brokerage/dashboard/overview) → **API Keys** → Generate New Keys
+2. En FastAPI Cloud → Environment Variables (márcalas como Secret):
+
+| Variable | Valor |
+|----------|--------|
+| `ALPACA_API_KEY` | Key ID de cuenta **LIVE** |
+| `ALPACA_SECRET_KEY` | Secret Key LIVE |
+| `ALPACA_PAPER` | `false` (default) |
+| `ALPACA_LIVE_TRADE` | `true` (compatible con [alpacahq/cli](https://github.com/alpacahq/cli)) |
+| `ALPACA_DATA_FEED` | `iex` (gratis) o `sip` si tienes suscripción |
+
+3. Redeploy. El panel mostrará **Alpaca LIVE · dinero real** (+ mercado abierto/cerrado).
+4. **Doctor** verifica trading + market data; **Gestionar capital** → **Ejecutar en Alpaca**.
+
+Misma key alimenta **Trading API** y **Market Data**. Cada orden lleva `client_order_id` (idempotencia, como el CLI).
+
+API: `GET /broker/status|doctor|clock`, `POST /broker/execute/*`, `DELETE /broker/orders` (cancel-all).
+Opcional en tu máquina: `brew install alpacahq/tap/cli` para `alpaca account get` / `alpaca doctor`.
+
 #### Asistente de voz (Chrome / Edge)
 
 Botón **🎙 Voz** en el header del panel. Ejemplos:
@@ -78,16 +99,19 @@ Botón **🎙 Voz** en el header del panel. Ejemplos:
 API: `POST /api/v1/voice/command` con `{ "text": "..." }`.
 
 ### Fase 2.2 — Market Data (implementado)
-Cadena de fallback automática: **Polygon → Alpha Vantage → YFinance**
+Cadena de fallback automática: **Alpaca → Polygon → Alpha Vantage → YFinance**
 
 ```bash
+ALPACA_API_KEY=your_key
+ALPACA_SECRET_KEY=your_secret
+ALPACA_DATA_FEED=iex
 POLYGON_API_KEY=your_key
 ALPHA_VANTAGE_API_KEY=your_key
 POLYGON_PER_MINUTE_LIMIT=5
 ALPHA_VANTAGE_DAILY_LIMIT=25
 ```
 
-Si Polygon agota su cuota por minuto o falla, Alpha Vantage toma el relevo. Si Alpha Vantage agota sus 25 req/día, YFinance complementa.
+Con keys de Alpaca, cotizaciones e histórico salen de `data.alpaca.markets`. Si Alpaca falla o no está configurada, Polygon / Alpha Vantage / YFinance toman el relevo.
 
 ### FRED (implementado)
 Con `FRED_API_KEY` en `.env`, el `macro_agent` consume datos verificados:
@@ -182,6 +206,11 @@ En el dashboard de tu app → **Environment Variables** → añade:
 | `SCHEDULER_ENABLED` | `true` |
 | `TELEGRAM_BOT_TOKEN` | *(opcional)* Token del bot Telegram |
 | `TELEGRAM_CHAT_ID` | *(opcional)* Chat ID para alertas push |
+| `ALPACA_API_KEY` | *(recomendado)* Key brokerage LIVE |
+| `ALPACA_SECRET_KEY` | *(recomendado)* Secret brokerage LIVE |
+| `ALPACA_PAPER` | `false` (LIVE / dinero real) |
+| `ALPACA_LIVE_TRADE` | `true` (alias CLI; gana sobre PAPER) |
+| `ALPACA_DATA_FEED` | `iex` (default) |
 
 Marca `DASHBOARD_ACCESS_TOKEN` como **Secret** si la opción existe. Pulsa **Redeploy** tras guardar.
 

@@ -409,6 +409,9 @@ function renderTradeRecommendations(r) {
       <div class="tr-btns">
         <button class="btn tr-analyze-btn" data-t="${p.ticker}">Analizar</button>
         <button class="btn tr-add-btn" data-t="${p.ticker}">+ WL</button>
+        <button class="btn primary tr-alpaca-btn" data-t="${p.ticker}"
+          data-stop="${p.stop_loss ?? ""}" data-target="${p.target_price ?? ""}"
+          data-price="${p.current_price ?? ""}">Alpaca</button>
       </div>
     </div>`).join("");
 
@@ -427,11 +430,162 @@ function renderTradeRecommendations(r) {
       } catch (e) { toast("Watchlist: " + e.message); }
     };
   });
+  $$(".tr-alpaca-btn").forEach((btn) => {
+    btn.onclick = () => executeAlpacaPick(btn.dataset.t, {
+      stop_loss: btn.dataset.stop ? parseFloat(btn.dataset.stop) : null,
+      take_profit: btn.dataset.target ? parseFloat(btn.dataset.target) : null,
+      price: btn.dataset.price ? parseFloat(btn.dataset.price) : null,
+    });
+  });
+}
+
+let lastMicroPlan = null;
+let lastAlpacaStatus = null;
+
+function renderAlpacaStatus(st) {
+  lastAlpacaStatus = st;
+  const el = $("#alpaca-status");
+  if (!el) return;
+  el.classList.remove("ok", "warn", "err");
+  if (!st?.configured) {
+    el.classList.add("warn");
+    el.textContent = "Alpaca LIVE: sin keys — añade ALPACA_API_KEY + ALPACA_SECRET_KEY (brokerage) en el entorno";
+    return;
+  }
+  if (!st.connected) {
+    el.classList.add("err");
+    el.textContent = `Alpaca: ${st.message || "error de conexión"}`;
+    return;
+  }
+  const mode = st.paper ? "Paper" : "LIVE";
+  const cash = st.account?.cash != null ? ` · cash $${Number(st.account.cash).toFixed(2)}` : "";
+  const mkt = st.market_open === true ? " · mercado abierto" : (st.market_open === false ? " · mercado cerrado" : "");
+  if (st.paper) {
+    el.classList.add("ok");
+    el.textContent = `Alpaca Paper conectado${cash}${mkt}`;
+  } else {
+    el.classList.add("err");
+    el.textContent = `Alpaca LIVE · dinero real${cash}${mkt}`;
+  }
+}
+
+async function loadAlpacaStatus() {
+  try {
+    const st = await api(`${API}/broker/status`);
+    renderAlpacaStatus(st);
+  } catch {
+    const el = $("#alpaca-status");
+    if (el) {
+      el.classList.add("warn");
+      el.textContent = "Alpaca: estado no disponible";
+    }
+  }
+}
+
+function confirmAlpacaLive() {
+  if (!lastAlpacaStatus || lastAlpacaStatus.paper === false) {
+    return window.confirm(
+      "ATENCIÓN: vas a enviar órdenes LIVE a Alpaca con dinero REAL.\n\n¿Confirmas la ejecución?"
+    );
+  }
+  return true;
+}
+
+async function runAlpacaDoctor() {
+  await withLoading("Diagnóstico Alpaca…", async () => {
+    try {
+      const d = await api(`${API}/broker/doctor`);
+      const lines = (d.checks || []).join(" · ");
+      const warn = (d.warnings || [])[0];
+      toast(d.ok ? `Doctor OK · ${lines}` : `Doctor · ${warn || lines || "fallo"}`);
+      await loadAlpacaStatus();
+    } catch (e) { toast("Doctor: " + e.message); }
+  });
+}
+
+async function cancelAllAlpacaOrders() {
+  if (!window.confirm("¿Cancelar TODAS las órdenes abiertas en Alpaca?")) return;
+  if (!confirmAlpacaLive()) return;
+  const q = new URLSearchParams({
+    confirm_cancel_all: "true",
+    confirm_live: lastAlpacaStatus?.paper === false ? "true" : "false",
+  });
+  await withLoading("Cancelando órdenes Alpaca…", async () => {
+    try {
+      const r = await api(`${API}/broker/orders?${q}`, { method: "DELETE" });
+      toast(`Canceladas: ${Array.isArray(r) ? r.length : 1}`);
+      await loadAlpacaStatus();
+    } catch (e) { toast("Cancelar: " + e.message); }
+  });
+}
+
+async function executeAlpacaPick(ticker, opts = {}) {
+  if (!confirmAlpacaLive()) return;
+  const price = opts.price || 0;
+  const capital = currentPortfolioCapital() || 22;
+  let shares = 1;
+  if (price > 0) shares = Math.max(1, Math.floor((capital * 0.35) / price));
+  const body = {
+    ticker,
+    shares,
+    dry_run: false,
+    confirm_live: lastAlpacaStatus?.paper === false,
+  };
+  if (opts.stop_loss) body.stop_loss = opts.stop_loss;
+  if (opts.take_profit) body.take_profit = opts.take_profit;
+  await withLoading(`Enviando ${shares}× ${ticker} a Alpaca…`, async () => {
+    try {
+      const r = await api(`${API}/broker/execute/pick`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      if (r.warnings?.length && !r.submitted?.length) {
+        toast(r.warnings[0]);
+        return;
+      }
+      const ok = (r.submitted || []).map((o) => `${o.symbol}:${o.status}`).join(", ");
+      const fail = (r.failed || []).map((o) => o.error || o.symbol).join("; ");
+      toast(ok ? `Alpaca OK · ${ok}` : `Alpaca fallo · ${fail || "sin órdenes"}`);
+      await loadAlpacaStatus();
+    } catch (e) { toast("Alpaca: " + e.message); }
+  });
+}
+
+async function executeAlpacaMicroPlan(dryRun = false) {
+  if (!lastMicroPlan?.lines?.length) {
+    toast("Genera primero un plan con Gestionar capital");
+    return;
+  }
+  if (!dryRun && !confirmAlpacaLive()) return;
+  const body = {
+    lines: lastMicroPlan.lines,
+    dry_run: dryRun,
+    confirm_live: lastAlpacaStatus?.paper === false,
+  };
+  await withLoading(dryRun ? "Simulando órdenes Alpaca…" : "Ejecutando plan en Alpaca…", async () => {
+    try {
+      const r = await api(`${API}/broker/execute/micro-plan`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      if (r.warnings?.length && !(r.submitted || []).length) {
+        toast(r.warnings[0]);
+        return;
+      }
+      const n = (r.submitted || []).length;
+      const f = (r.failed || []).length;
+      toast(dryRun
+        ? `Dry-run: ${n} órdenes listas (no enviadas)`
+        : `Alpaca: ${n} enviadas${f ? `, ${f} fallidas` : ""}`);
+      if (!dryRun) await loadAlpacaStatus();
+    } catch (e) { toast("Alpaca plan: " + e.message); }
+  });
 }
 
 function renderMicroPlan(plan) {
   const el = $("#micro-plan-panel");
   if (!el) return;
+  lastMicroPlan = plan;
   if (!plan?.lines?.length) {
     el.classList.add("hidden");
     el.innerHTML = "";
@@ -456,7 +610,13 @@ function renderMicroPlan(plan) {
       </tbody>
     </table>
     ${(plan.warnings || []).length ? `<p class="muted" style="font-size:10px">${plan.warnings.join(" · ")}</p>` : ""}
+    <div class="micro-plan-actions">
+      <button type="button" class="btn" id="btn-alpaca-dry">Simular Alpaca</button>
+      <button type="button" class="btn primary" id="btn-alpaca-exec">Ejecutar en Alpaca</button>
+    </div>
   `;
+  $("#btn-alpaca-dry").onclick = () => executeAlpacaMicroPlan(true);
+  $("#btn-alpaca-exec").onclick = () => executeAlpacaMicroPlan(false);
 }
 
 function currentPortfolioCapital() {
@@ -759,6 +919,7 @@ async function loadDashboard() {
       loadDailyTradeRecommendations(),
       loadWatchlistMatrix(),
       loadPushStatus(),
+      loadAlpacaStatus(),
     ]);
   } catch (e) { toast("Panel: " + e.message); }
 }
@@ -1695,6 +1856,8 @@ $("#btn-simulate-proposal").onclick = simulateDemoProposal;
 $("#btn-scan").onclick = scanWatchlist;
 $("#btn-generate-trades").onclick = generateDailyTrades;
 $("#btn-manage-capital").onclick = managePortfolioCapital;
+$("#btn-alpaca-doctor") && ($("#btn-alpaca-doctor").onclick = runAlpacaDoctor);
+$("#btn-alpaca-cancel-all") && ($("#btn-alpaca-cancel-all").onclick = cancelAllAlpacaOrders);
 $("#tech-period").onchange = () => { const t = ticker(); if (t) loadTechnicalChart(t); };
 $("#tech-chart-tf").onchange = () => {
   syncChartTimeframe($("#tech-chart-tf").value);
