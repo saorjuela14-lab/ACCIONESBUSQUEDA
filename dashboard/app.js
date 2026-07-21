@@ -949,7 +949,7 @@ function renderDashboard(d) {
     <div>P&amp;L no realizado: $${p.unrealized_pnl?.toFixed(2)}</div>
     <div>Países: ${Object.entries(p.country_weights || {}).map(([k,v]) => `${k} ${v}%`).join(", ") || "—"}</div>
     <button type="button" id="btn-sync-alpaca-pf" class="btn" style="margin-top:6px;width:100%;font-size:11px">Sincronizar desde Alpaca</button>
-    <p class="muted" style="font-size:10px;margin-top:6px">Nota: en FastAPI Cloud el SQLite se reinicia en cada redeploy. Usa «Sincronizar» o Postgres en DATABASE_URL.</p>
+    <p class="muted" style="font-size:10px;margin-top:6px">Persistencia: configura <code>DATABASE_URL</code> de Neon Postgres en FastAPI Cloud para no perder datos en redeploy. Mientras, usa «Sincronizar desde Alpaca».</p>
   ` : "Sin portafolio — créalo con el botón de arriba o sincroniza Alpaca";
   renderPortfolioPies(p);
   lastPortfolioId = p?.portfolio_id || null;
