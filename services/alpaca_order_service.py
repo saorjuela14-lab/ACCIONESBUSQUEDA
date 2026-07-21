@@ -260,6 +260,25 @@ class AlpacaOrderService:
         if not self._broker.paper:
             warnings.append("ATENCIÓN: órdenes en cuenta LIVE con dinero real.")
 
+        # --- Kill switch (panic flat) ---
+        try:
+            from database.engine import get_session
+            from services.kill_switch_service import KillSwitchService
+
+            async for session in get_session():
+                if await KillSwitchService(session, self).is_active():
+                    return ExecuteOrdersResponse(
+                        paper=self._broker.paper,
+                        dry_run=request.dry_run,
+                        warnings=[
+                            "KILL SWITCH ACTIVO — nuevas órdenes bloqueadas. "
+                            "Desactiva en Ops / kill-switch o POST /api/v1/ops/kill-switch/off."
+                        ],
+                    )
+                break
+        except Exception as exc:
+            warnings.append(f"Kill switch check falló ({exc})")
+
         account = None
         positions: list[BrokerPosition] = []
         try:
@@ -323,6 +342,58 @@ class AlpacaOrderService:
         except Exception as exc:
             warnings.append(f"Risk/macro desk no disponible ({exc}); se continúa con checks básicos.")
             macro = None
+
+        # --- VaR / beta / sector hard gates ---
+        risk_metrics = None
+        settings = get_settings()
+        if account and positions and any(ln.side == "buy" for ln in request.lines):
+            try:
+                from services.portfolio_risk_metrics_service import PortfolioRiskMetricsService
+
+                risk_metrics = await PortfolioRiskMetricsService().compute(
+                    positions,
+                    equity=account.equity or account.portfolio_value or 0.0,
+                )
+                if risk_metrics.warnings:
+                    warnings.extend(risk_metrics.warnings[:3])
+                if (
+                    settings.risk_enforce_var_beta
+                    and risk_metrics.var_1d_95_pct is not None
+                    and risk_metrics.var_1d_95_pct > settings.risk_max_var_pct
+                ):
+                    buy_lines = [ln for ln in request.lines if ln.side == "buy"]
+                    if buy_lines and not request.dry_run:
+                        return ExecuteOrdersResponse(
+                            paper=self._broker.paper,
+                            dry_run=request.dry_run,
+                            warnings=[
+                                f"VaR 1d 95% {risk_metrics.var_1d_95_pct:.1f}% > "
+                                f"límite {settings.risk_max_var_pct:.1f}% — compras bloqueadas.",
+                                *warnings,
+                            ],
+                            failed=[
+                                BrokerOrderResult(
+                                    symbol=ln.ticker.upper(),
+                                    qty=ln.shares,
+                                    side=ln.side,
+                                    type=ln.order_type,
+                                    status="failed",
+                                    error="Bloqueado por VaR del portafolio",
+                                )
+                                for ln in buy_lines
+                            ],
+                        )
+                if (
+                    settings.risk_enforce_var_beta
+                    and risk_metrics.portfolio_beta is not None
+                    and risk_metrics.portfolio_beta > settings.risk_max_portfolio_beta
+                ):
+                    warnings.append(
+                        f"Beta portafolio {risk_metrics.portfolio_beta:.2f} > "
+                        f"{settings.risk_max_portfolio_beta:.2f} — selectividad alta."
+                    )
+            except Exception as exc:
+                warnings.append(f"VaR/beta metrics falló ({exc})")
 
         try:
             clock = await self.get_clock()
@@ -410,6 +481,45 @@ class AlpacaOrderService:
                     if updates:
                         line = line.model_copy(update=updates)
 
+                # Sector concentration hard gate
+                if settings.risk_enforce_sector_cap and risk_metrics is not None:
+                    try:
+                        from providers.market.factory import get_market_provider
+                        from services.portfolio_risk_metrics_service import PortfolioRiskMetricsService
+
+                        quote = await get_market_provider().get_quote(line.ticker.upper())
+                        sector = quote.get("sector") or "Unknown"
+                        est = line.limit_price
+                        if not est and line.stop_loss and line.take_profit:
+                            est = (line.stop_loss + line.take_profit) / 2
+                        notional = float(line.shares) * float(est or 0)
+                        ok, reasons = PortfolioRiskMetricsService().gate_buy(
+                            metrics=risk_metrics,
+                            symbol=line.ticker,
+                            notional=notional,
+                            sector=sector,
+                            beta=float(quote["beta"]) if quote.get("beta") is not None else None,
+                            max_var_pct=settings.risk_max_var_pct,
+                            max_beta=settings.risk_max_portfolio_beta,
+                            max_sector_pct=settings.risk_max_sector_pct,
+                        )
+                        # Only enforce sector here (VaR already gated book-wide)
+                        sector_reasons = [r for r in reasons if "Sector" in r]
+                        if sector_reasons:
+                            failed.append(
+                                BrokerOrderResult(
+                                    symbol=line.ticker.upper(),
+                                    qty=line.shares,
+                                    side=line.side,
+                                    type=line.order_type,
+                                    status="failed",
+                                    error="; ".join(sector_reasons),
+                                )
+                            )
+                            continue
+                    except Exception as exc:
+                        warnings.append(f"{line.ticker}: sector gate skip ({exc})")
+
             order_req = BrokerOrderRequest(
                 symbol=line.ticker.upper().strip(),
                 qty=line.shares,
@@ -467,6 +577,61 @@ class AlpacaOrderService:
                 failed.append(result)
             else:
                 submitted.append(result)
+                # Audit + lifecycle mandate for buys
+                try:
+                    from database.engine import get_session
+                    from services.audit_service import AuditService
+                    from services.position_lifecycle_service import PositionLifecycleService
+
+                    async for session in get_session():
+                        await AuditService(session).record(
+                            "buy_submit" if order_req.side == "buy" else "sell_submit",
+                            actor="broker_execute",
+                            symbol=order_req.symbol,
+                            paper=self._broker.paper,
+                            success=True,
+                            message=f"{order_req.side} {order_req.qty} {order_req.symbol}",
+                            payload={
+                                "qty": order_req.qty,
+                                "stop": order_req.stop_loss,
+                                "tp": order_req.take_profit,
+                                "order_id": result.id,
+                            },
+                        )
+                        if order_req.side == "buy":
+                            px = float(
+                                result.filled_avg_price
+                                or order_req.limit_price
+                                or order_req.stop_loss
+                                or 0
+                            )
+                            if px <= 0 and order_req.stop_loss and order_req.take_profit:
+                                px = (order_req.stop_loss + order_req.take_profit) / 2
+                            if px > 0:
+                                await PositionLifecycleService(session, self).register_from_fill(
+                                    symbol=order_req.symbol,
+                                    qty=float(order_req.qty),
+                                    entry_price=px,
+                                    stop_loss=order_req.stop_loss,
+                                    take_profit=order_req.take_profit,
+                                )
+                        break
+                except Exception as exc:
+                    warnings.append(f"audit/lifecycle: {exc}")
+
+        # Optional sync of NexBuy book after fills
+        if request.sync_portfolio_id and submitted and not request.dry_run:
+            try:
+                from database.engine import get_session
+                from services.reconcile_service import ReconcileService
+
+                async for session in get_session():
+                    await ReconcileService(session, self).reconcile(
+                        sync=True, portfolio_id=request.sync_portfolio_id
+                    )
+                    break
+            except Exception as exc:
+                warnings.append(f"sync_portfolio falló: {exc}")
 
         logger.info(
             "alpaca.execute.done",

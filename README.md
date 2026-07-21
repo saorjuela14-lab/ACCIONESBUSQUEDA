@@ -65,11 +65,20 @@ Sin esas flags el sistema recomienda y alerta; **tú** confirmas cada orden LIVE
 
 ### Roadmap hacia autonomía tipo firma de capital
 
-1. ~~Risk Desk + macro en picks y órdenes~~ (este release)
-2. Ciclo de vida de posiciones (trailing stops, time-stops, invalidación de tesis)
-3. Reconciliación continua Alpaca ↔ DB + audit log de decisiones
-4. Auto-execute solo en paper → promoción a LIVE con límites
-5. Cumplimiento / kill switch operativo / VaR formal
+1. ~~Risk Desk + macro en picks y órdenes~~
+2. ~~Ciclo de vida (trailing / time-stop / invalidar tesis → vender)~~
+3. ~~Reconciliación continua Alpaca ↔ DB + audit log~~
+4. ~~Auto-execute paper-first → LIVE con límites~~
+5. ~~VaR / beta / sectores duros + kill switch (pánico → flat)~~
+
+```
+GET  /api/v1/ops/status
+POST /api/v1/ops/kill-switch/on  {"confirm":true,"flatten":true}
+POST /api/v1/ops/reconcile
+POST /api/v1/ops/lifecycle/scan
+GET  /api/v1/ops/audit
+GET  /api/v1/ops/risk-metrics
+```
 
 ```bash
 python main.py serve      # API + scheduler integrado
@@ -79,6 +88,7 @@ GET  /api/v1/alerts
 POST /api/v1/alerts/test-push
 GET  /api/v1/reports/daily/latest
 GET  /api/v1/risk/status
+GET  /api/v1/ops/status
 ```
 
 #### Alertas push (Telegram)

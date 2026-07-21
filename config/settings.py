@@ -95,6 +95,26 @@ class Settings(BaseSettings):
     auto_execute_live: bool = False  # second gate for LIVE auto-submit
     auto_execute_max_notional: float = 25.0
     auto_execute_require_market_open: bool = True
+    auto_execute_paper_first: bool = True  # block LIVE auto unless promoted
+
+    # Lifecycle desk
+    lifecycle_enabled: bool = True
+    lifecycle_scan_interval_minutes: int = 15
+    lifecycle_trailing_pct: float = 0.08
+    lifecycle_time_stop_days: int = 10
+    lifecycle_default_stop_pct: float = 0.08
+    lifecycle_default_target_pct: float = 0.12
+    lifecycle_auto_exit: bool = True
+
+    # Continuous reconcile
+    reconcile_interval_minutes: int = 20
+    reconcile_auto_sync: bool = True
+
+    # Hard portfolio risk gates
+    risk_max_var_pct: float = 8.0
+    risk_max_portfolio_beta: float = 1.8
+    risk_enforce_sector_cap: bool = True
+    risk_enforce_var_beta: bool = True
 
     @field_validator("database_url", mode="before")
     @classmethod

@@ -559,6 +559,72 @@ async function loadRiskDesk() {
   }
 }
 
+async function loadOpsDesk() {
+  const el = $("#ops-desk-status");
+  if (!el) return;
+  try {
+    const [st, metrics] = await Promise.all([
+      api(`${API}/ops/status`),
+      api(`${API}/ops/risk-metrics`).catch(() => null),
+    ]);
+    el.classList.remove("ok", "warn", "err");
+    const ks = st.kill_switch?.active;
+    if (ks) el.classList.add("err");
+    else el.classList.add("ok");
+    const varTxt = metrics?.var_1d_95_pct != null ? `VaR ${metrics.var_1d_95_pct}%` : "VaR —";
+    const betaTxt = metrics?.portfolio_beta != null ? `β ${metrics.portfolio_beta}` : "β —";
+    const sec = metrics?.max_sector
+      ? `${metrics.max_sector} ${metrics.max_sector_pct}%`
+      : "sector —";
+    el.textContent =
+      `Ops: kill ${ks ? "ON ⚠" : "off"} · auto ${st.auto_execute?.allowed ? "READY" : "blocked"}` +
+      ` · ${varTxt} · ${betaTxt} · ${sec}`;
+    el.title = st.auto_execute?.reason || "";
+  } catch {
+    el.classList.add("warn");
+    el.textContent = "Ops: no disponible";
+  }
+}
+
+async function runKillSwitch() {
+  if (!confirm("KILL SWITCH: cancela órdenes y cierra TODAS las posiciones. ¿Continuar?")) return;
+  if (!confirm("Confirmación final: esto vende todo en Alpaca.")) return;
+  await withLoading("Activando kill switch…", async () => {
+    try {
+      const r = await api(`${API}/ops/kill-switch/on`, {
+        method: "POST",
+        body: JSON.stringify({ confirm: true, flatten: true, reason: "panic flat UI" }),
+      });
+      toast(r.active ? `KILL ON · ${r.flat_result || ""}` : "Kill switch", 10000);
+      await loadOpsDesk();
+      await loadAlpacaBook();
+    } catch (e) { toast("Kill switch: " + e.message, 8000); }
+  });
+}
+
+async function runReconcile() {
+  await withLoading("Reconciliando Alpaca ↔ DB…", async () => {
+    try {
+      const r = await api(`${API}/ops/reconcile?sync=true`, { method: "POST", body: "{}" });
+      toast(r.message || `Diffs: ${(r.diffs || []).length}`, 8000);
+      await loadOpsDesk();
+      await loadDashboard();
+    } catch (e) { toast("Reconcile: " + e.message); }
+  });
+}
+
+async function runLifecycleScan() {
+  await withLoading("Escaneando lifecycle…", async () => {
+    try {
+      const r = await api(`${API}/ops/lifecycle/scan`, { method: "POST", body: "{}" });
+      const exits = (r.exits || []).join(", ") || "ninguna";
+      toast(`Lifecycle: ${r.positions} pos · exits: ${exits}`, 8000);
+      await loadOpsDesk();
+      await loadAlpacaBook();
+    } catch (e) { toast("Lifecycle: " + e.message); }
+  });
+}
+
 async function loadAlpacaBook() {
   const el = $("#alpaca-book");
   if (!el || !lastAlpacaStatus?.connected) return;
@@ -1115,6 +1181,7 @@ async function loadDashboard() {
       loadPushStatus(),
       loadAlpacaStatus(),
       loadRiskDesk(),
+      loadOpsDesk(),
     ]);
   } catch (e) { toast("Panel: " + e.message); }
 }
@@ -2074,7 +2141,10 @@ $("#btn-manage-capital").onclick = managePortfolioCapital;
 $("#btn-alpaca-doctor") && ($("#btn-alpaca-doctor").onclick = runAlpacaDoctor);
 $("#btn-alpaca-refresh-book") && ($("#btn-alpaca-refresh-book").onclick = loadAlpacaBook);
 $("#btn-alpaca-cancel-all") && ($("#btn-alpaca-cancel-all").onclick = cancelAllAlpacaOrders);
-$("#btn-risk-refresh") && ($("#btn-risk-refresh").onclick = loadRiskDesk);
+$("#btn-risk-refresh") && ($("#btn-risk-refresh").onclick = () => { loadRiskDesk(); loadOpsDesk(); });
+$("#btn-kill-switch") && ($("#btn-kill-switch").onclick = runKillSwitch);
+$("#btn-ops-reconcile") && ($("#btn-ops-reconcile").onclick = runReconcile);
+$("#btn-ops-lifecycle") && ($("#btn-ops-lifecycle").onclick = runLifecycleScan);
 $("#tech-period").onchange = () => { const t = ticker(); if (t) loadTechnicalChart(t); };
 $("#tech-chart-tf").onchange = () => {
   syncChartTimeframe($("#tech-chart-tf").value);

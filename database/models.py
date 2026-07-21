@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, String, Text
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -139,3 +139,52 @@ class PortfolioSnapshotORM(Base):
     return_pct: Mapped[float] = mapped_column(Float, default=0.0)
     cash: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+
+
+class AuditEventORM(Base):
+    __tablename__ = "audit_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    actor: Mapped[str] = mapped_column(String(64), default="system")
+    symbol: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    paper: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    success: Mapped[bool] = mapped_column(Boolean, default=True)
+    message: Mapped[str] = mapped_column(Text, default="")
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+
+
+class OpsFlagORM(Base):
+    """Key/value ops flags (kill switch, etc.)."""
+
+    __tablename__ = "ops_flags"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value_json: Mapped[str] = mapped_column(Text, default="{}")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class PositionMandateORM(Base):
+    __tablename__ = "position_mandates"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(16), index=True)
+    qty: Mapped[float] = mapped_column(Float, default=0.0)
+    entry_price: Mapped[float] = mapped_column(Float, default=0.0)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    take_profit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    trailing_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    peak_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    time_stop_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    thesis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    thesis_invalidated: Mapped[bool] = mapped_column(Boolean, default=False)
+    invalidate_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sector: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    beta: Mapped[float | None] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    exit_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    mandate_json: Mapped[str] = mapped_column(Text, default="{}")

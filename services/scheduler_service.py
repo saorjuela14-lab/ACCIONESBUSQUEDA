@@ -145,81 +145,65 @@ class SchedulerService:
                     await push.notify_message("Recomendaciones corto plazo", body)
 
             if self._settings.auto_execute_trades and report.picks:
-                await self._maybe_auto_execute(report)
+                await self._maybe_auto_execute(report, session)
             break
 
-    async def _maybe_auto_execute(self, report) -> None:
-        """Optional closed-loop execution — gated by AUTO_EXECUTE_* + Risk Desk."""
-        from domain.broker import ExecuteLine, ExecuteOrdersRequest
-        from services.alpaca_order_service import AlpacaOrderService
+    async def _maybe_auto_execute(self, report, session) -> None:
+        from services.auto_execute_service import AutoExecuteService
 
-        settings = self._settings
-        broker = AlpacaOrderService()
-        if not broker.is_configured():
-            logger.info("scheduler.auto_execute.skip", reason="alpaca_not_configured")
-            return
-        if not broker.paper and not settings.auto_execute_live:
-            logger.warning(
-                "scheduler.auto_execute.blocked",
-                reason="LIVE requires AUTO_EXECUTE_LIVE=true (second safety gate)",
-            )
-            return
-
-        try:
-            clock = await broker.get_clock()
-            if settings.auto_execute_require_market_open and not clock.is_open:
-                logger.info("scheduler.auto_execute.skip", reason="market_closed")
-                return
-        except Exception as exc:
-            logger.warning("scheduler.auto_execute.clock_failed", error=str(exc))
-            return
-
-        lines: list[ExecuteLine] = []
-        max_n = float(settings.auto_execute_max_notional)
-        for pick in report.picks[:3]:
-            if pick.action == "vigilar":
-                continue
-            price = pick.current_price or pick.entry_price
-            if not price or price <= 0:
-                continue
-            shares = int(max_n // price)
-            if shares < 1:
-                continue
-            lines.append(
-                ExecuteLine(
-                    ticker=pick.ticker,
-                    shares=float(shares),
-                    side="buy",
-                    order_type="market",
-                    stop_loss=pick.stop_loss,
-                    take_profit=pick.target_price,
-                )
-            )
-        if not lines:
-            logger.info("scheduler.auto_execute.skip", reason="no_affordable_lines")
-            return
-
-        req = ExecuteOrdersRequest(
-            lines=lines,
-            dry_run=False,
-            confirm_live=not broker.paper,
-        )
-        result = await broker.execute(req)
-        logger.info(
-            "scheduler.auto_execute.done",
-            submitted=len(result.submitted),
-            failed=len(result.failed),
-            warnings=result.warnings[:3],
-            paper=result.paper,
-        )
-        if settings.push_daily_trades:
+        result = await AutoExecuteService(session).run_from_picks(report.picks, actor="scheduler")
+        logger.info("scheduler.auto_execute", **{k: v for k, v in result.items() if k != "warnings"})
+        if self._settings.push_daily_trades and not result.get("skipped"):
             push = PushNotificationService()
             if push.any_channel_configured:
                 await push.notify_message(
-                    "Auto-execute Risk Desk",
-                    f"OK={len(result.submitted)} FAIL={len(result.failed)} "
-                    f"paper={result.paper}\n" + "; ".join(result.warnings[:4]),
+                    "Auto-execute",
+                    f"paper={result.get('paper')} OK={result.get('submitted')} "
+                    f"FAIL={result.get('failed')} · {result.get('mode_reason')}",
                 )
+
+    async def _run_lifecycle_scan(self) -> None:
+        if not self._settings.lifecycle_enabled:
+            return
+        if not should_run_automation():
+            return
+        async for session in get_session():
+            from services.position_lifecycle_service import PositionLifecycleService
+
+            report = await PositionLifecycleService(session).scan(
+                execute_exits=self._settings.lifecycle_auto_exit
+            )
+            logger.info(
+                "scheduler.lifecycle",
+                positions=report.positions,
+                exits=report.exits,
+                warnings=len(report.warnings),
+            )
+            if report.exits and self._settings.push_daily_trades:
+                push = PushNotificationService()
+                if push.any_channel_configured:
+                    await push.notify_message(
+                        "Lifecycle exits",
+                        "Cerradas: " + ", ".join(report.exits),
+                    )
+            break
+
+    async def _run_reconcile(self) -> None:
+        if not should_run_automation():
+            return
+        async for session in get_session():
+            from services.reconcile_service import ReconcileService
+
+            report = await ReconcileService(session).reconcile(
+                sync=self._settings.reconcile_auto_sync
+            )
+            logger.info(
+                "scheduler.reconcile",
+                diffs=len(report.diffs),
+                synced=report.synced,
+                portfolio_id=report.portfolio_id,
+            )
+            break
 
     async def _run_daily_report(self) -> None:
         async for session in get_session():
@@ -279,12 +263,31 @@ class SchedulerService:
             replace_existing=True,
         )
 
+        # Position lifecycle (trailing / time-stop / thesis exit)
+        if self._settings.lifecycle_enabled:
+            self._scheduler.add_job(
+                self._run_lifecycle_scan,
+                IntervalTrigger(minutes=self._settings.lifecycle_scan_interval_minutes),
+                id="lifecycle_scan",
+                replace_existing=True,
+            )
+
+        # Continuous Alpaca ↔ DB reconcile
+        self._scheduler.add_job(
+            self._run_reconcile,
+            IntervalTrigger(minutes=self._settings.reconcile_interval_minutes),
+            id="reconcile_books",
+            replace_existing=True,
+        )
+
         self._scheduler.start()
         logger.info(
             "scheduler.started",
             report_times=self._settings.report_schedule,
             trade_times=self._settings.daily_trade_schedule,
             watchlist_interval=self._settings.watchlist_scan_interval_minutes,
+            lifecycle_interval=self._settings.lifecycle_scan_interval_minutes,
+            reconcile_interval=self._settings.reconcile_interval_minutes,
         )
 
     def stop(self) -> None:
