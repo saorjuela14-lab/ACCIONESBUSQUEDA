@@ -125,3 +125,19 @@ class MicroManageRequest(BaseModel):
         default=True,
         description="Guardar también como recomendaciones diarias",
     )
+
+
+class MicroPlanExecuteRequest(BaseModel):
+    lines: list[dict] = Field(min_length=1, description="Líneas del plan micro (ticker, shares, stop/target)")
+    dry_run: bool = False
+    confirm_live: bool = False
+    sync_portfolio_id: str | None = None
+
+
+class TradePickExecuteRequest(BaseModel):
+    ticker: str = Field(min_length=1, max_length=12)
+    shares: int = Field(default=1, ge=1, le=10_000)
+    stop_loss: float | None = None
+    take_profit: float | None = None
+    dry_run: bool = False
+    confirm_live: bool = False

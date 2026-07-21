@@ -72,6 +72,12 @@ async def get_providers_status() -> dict[str, Any]:
             },
             "fred": {"configured": bool(settings.fred_api_key)},
             "yfinance": {"enabled": settings.yfinance_enabled},
+            "alpaca": {
+                "configured": bool(settings.alpaca_api_key and settings.alpaca_secret_key),
+                "paper": settings.alpaca_paper,
+                "base_url": settings.alpaca_base_url
+                or ("https://paper-api.alpaca.markets" if settings.alpaca_paper else "https://api.alpaca.markets"),
+            },
         },
         "fallback_chain": ["polygon", "alpha_vantage", "yfinance"],
         "usage": _safe_usage_stats(),

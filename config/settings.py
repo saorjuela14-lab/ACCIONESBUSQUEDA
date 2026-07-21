@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     alert_webhook_url: str = ""
     push_daily_trades: bool = True
 
+    # Alpaca Trading API (paper by default — https://docs.alpaca.markets/)
+    alpaca_api_key: str = ""
+    alpaca_secret_key: str = ""
+    alpaca_paper: bool = True
+    alpaca_base_url: str = ""  # override; empty → paper-api or api.alpaca.markets
+
     http_max_retries: int = 3
     http_retry_backoff: float = 1.5
 

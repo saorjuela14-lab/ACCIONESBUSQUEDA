@@ -55,3 +55,31 @@ class SentimentProvider(ABC):
     @abstractmethod
     async def get_sentiment(self, ticker: str, company_name: str | None = None) -> SentimentSnapshot:
         raise NotImplementedError
+
+
+class BrokerProvider(ABC):
+    """Broker execution interface (Alpaca Trading API)."""
+
+    @abstractmethod
+    def is_configured(self) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_account(self) -> dict[str, Any]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_positions(self) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def list_orders(self, status: str = "open", limit: int = 50) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def submit_order(self, order: dict[str, Any]) -> dict[str, Any]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def cancel_order(self, order_id: str) -> dict[str, Any]:
+        raise NotImplementedError

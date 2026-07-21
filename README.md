@@ -67,6 +67,23 @@ GET  /api/v1/reports/daily/latest
 
 Redeploy. En el panel → Alertas → **Probar push**.
 
+#### Trading con Alpaca (Paper / Live)
+
+1. Crea cuenta en [Alpaca](https://app.alpaca.markets/) → **Paper Trading** → genera API Key + Secret
+2. En FastAPI Cloud → Environment Variables (márcalas como Secret):
+
+| Variable | Valor |
+|----------|--------|
+| `ALPACA_API_KEY` | Key ID de Paper |
+| `ALPACA_SECRET_KEY` | Secret Key de Paper |
+| `ALPACA_PAPER` | `true` (default; `false` solo para cuenta real) |
+
+3. Redeploy. En el panel verás el estado **Alpaca Paper conectado**.
+4. **Gestionar capital** → **Ejecutar en Alpaca**, o botón **Alpaca** en cada recomendación.
+
+API: `GET /api/v1/broker/status`, `POST /api/v1/broker/execute/micro-plan`, `POST /api/v1/broker/execute/pick`.
+Los errores incluyen `X-Request-ID` para soporte de Alpaca.
+
 #### Asistente de voz (Chrome / Edge)
 
 Botón **🎙 Voz** en el header del panel. Ejemplos:
@@ -182,6 +199,9 @@ En el dashboard de tu app → **Environment Variables** → añade:
 | `SCHEDULER_ENABLED` | `true` |
 | `TELEGRAM_BOT_TOKEN` | *(opcional)* Token del bot Telegram |
 | `TELEGRAM_CHAT_ID` | *(opcional)* Chat ID para alertas push |
+| `ALPACA_API_KEY` | *(opcional)* Key Paper Trading |
+| `ALPACA_SECRET_KEY` | *(opcional)* Secret Paper Trading |
+| `ALPACA_PAPER` | `true` (recomendado) |
 
 Marca `DASHBOARD_ACCESS_TOKEN` como **Secret** si la opción existe. Pulsa **Redeploy** tras guardar.
 
