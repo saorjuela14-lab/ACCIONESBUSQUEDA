@@ -14,6 +14,12 @@ def test_normalize_postgres_urls():
         normalize_database_url("postgresql+asyncpg://u:p@h/db")
         == "postgresql+asyncpg://u:p@h/db"
     )
+    neon = normalize_database_url(
+        "postgresql://u:p@ep-x.neon.tech/neondb?sslmode=require"
+    )
+    assert neon.startswith("postgresql+asyncpg://")
+    assert "sslmode=" not in neon
+    assert "ssl=require" in neon
 
 
 def test_normalize_sqlite_unchanged():
