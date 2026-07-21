@@ -68,6 +68,57 @@ async def create_default_portfolio(
     )
 
 
+@router.post("/portfolios/sync-alpaca", response_model=Portfolio)
+async def sync_portfolio_from_alpaca(
+    session: AsyncSession = Depends(get_session),
+) -> Portfolio:
+    """Recrea/actualiza el portafolio NexBuy desde la cuenta Alpaca (tras redeploy)."""
+    from services.alpaca_order_service import AlpacaOrderService
+    from services.portfolio_bootstrap_service import PortfolioBootstrapService
+
+    svc = _build_service(session)
+    alpaca = AlpacaOrderService()
+    if not alpaca.is_configured():
+        raise HTTPException(status_code=503, detail="Alpaca no configurada")
+    boot = PortfolioBootstrapService(svc, alpaca)
+    existing = await svc.list_all()
+    if existing:
+        # Refresh cash/positions from Alpaca onto newest portfolio
+        account = await alpaca.get_account()
+        broker_positions = await alpaca.get_positions()
+        from domain.entities import PortfolioPosition
+
+        cash = float(account.cash or 0)
+        equity = float(account.equity or account.portfolio_value or cash)
+        positions = []
+        for pos in broker_positions:
+            qty = float(pos.qty or 0)
+            if qty <= 0:
+                continue
+            avg = float(pos.avg_entry_price or pos.current_price or 0)
+            if avg <= 0:
+                continue
+            positions.append(
+                PortfolioPosition(
+                    ticker=pos.symbol.upper(),
+                    shares=qty,
+                    average_cost=avg,
+                    current_price=float(pos.current_price or avg),
+                )
+            )
+        p = sorted(existing, key=lambda x: x.updated_at, reverse=True)[0]
+        return await svc.mirror_positions(
+            p.id,
+            positions=positions,
+            cash=round(cash, 2),
+            initial_capital=round(max(equity, cash, p.initial_capital), 2),
+        )
+    synced = await boot.sync_from_alpaca()
+    if not synced:
+        raise HTTPException(status_code=502, detail="No se pudo sincronizar desde Alpaca")
+    return synced
+
+
 @router.get("/portfolios/{portfolio_id}/projections", response_model=PortfolioProjectionReport)
 async def portfolio_projections(
     portfolio_id: str,

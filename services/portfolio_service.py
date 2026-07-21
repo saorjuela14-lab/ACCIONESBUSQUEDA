@@ -59,6 +59,24 @@ class PortfolioService:
         portfolio.updated_at = datetime.now(timezone.utc)
         return await self._repo.update(portfolio)
 
+    async def mirror_positions(
+        self,
+        portfolio_id: str,
+        positions: list[PortfolioPosition],
+        cash: float,
+        initial_capital: float | None = None,
+    ) -> Portfolio:
+        """Replace positions and cash without debiting (broker sync)."""
+        portfolio = await self._repo.get_by_id(portfolio_id)
+        if not portfolio:
+            raise ValueError(f"Portfolio {portfolio_id} not found")
+        portfolio.positions = list(positions)
+        portfolio.cash = cash
+        if initial_capital is not None:
+            portfolio.initial_capital = initial_capital
+        portfolio.updated_at = datetime.now(timezone.utc)
+        return await self._repo.update(portfolio)
+
     async def refresh_prices(self, portfolio_id: str) -> Portfolio:
         portfolio = await self._repo.get_by_id(portfolio_id)
         if not portfolio:
