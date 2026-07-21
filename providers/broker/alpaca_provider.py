@@ -167,5 +167,8 @@ class AlpacaBrokerProvider(BrokerProvider):
             return data
         return [data] if data else []
 
+    async def get_asset(self, symbol: str) -> dict[str, Any]:
+        return await self._request("GET", f"/v2/assets/{symbol.upper()}")
+
     async def get_clock(self) -> dict[str, Any]:
         return await self._request("GET", "/v2/clock")

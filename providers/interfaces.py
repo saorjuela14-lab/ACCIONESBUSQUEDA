@@ -99,3 +99,6 @@ class BrokerProvider(ABC):
     @abstractmethod
     async def get_clock(self) -> dict[str, Any]:
         raise NotImplementedError
+
+    async def get_asset(self, symbol: str) -> dict[str, Any]:
+        raise NotImplementedError
