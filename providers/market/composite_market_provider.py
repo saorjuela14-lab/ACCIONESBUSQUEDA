@@ -8,6 +8,7 @@ from config.settings import get_settings
 from providers.interfaces import MarketDataProvider
 from providers.market.alpha_vantage_provider import AlphaVantageProvider
 from providers.market.alpaca_provider import AlpacaMarketDataProvider
+from providers.market.intervals import is_history_stale, last_bar_timestamp
 from providers.market.polygon_provider import PolygonProvider
 from providers.market.rate_limit_tracker import get_rate_limit_tracker
 from providers.market.yfinance_provider import YFinanceProvider
@@ -176,11 +177,83 @@ class CompositeMarketDataProvider(MarketDataProvider):
     async def get_history(
         self, ticker: str, period: str = "1y", interval: str = "1d"
     ) -> pd.DataFrame:
-        fetchers = {
-            name: (lambda p=name: self._providers[p].get_history(ticker, period, interval))
-            for name in self._providers
-        }
-        return await self._try_chain(self.HISTORY_CHAIN, "get_history", ticker, fetchers)
+        """Fetch history, preferring a fresh series when the first provider is stale.
+
+        Delisted symbols often still return old bars from one vendor; we keep
+        trying the chain for a newer last bar, then return the freshest series.
+        """
+        errors: list[str] = []
+        best: pd.DataFrame | None = None
+        best_ts = None
+
+        for provider_name in self.HISTORY_CHAIN:
+            if provider_name not in self._providers:
+                continue
+
+            daily_limit, per_minute_limit = self._limits(provider_name)
+            if not self._tracker.can_request(provider_name, daily_limit, per_minute_limit):
+                errors.append(f"{provider_name}: rate limit exhausted")
+                continue
+
+            try:
+                result = await self._providers[provider_name].get_history(ticker, period, interval)
+                self._tracker.record(provider_name)
+
+                if not isinstance(result, pd.DataFrame) or result.empty:
+                    errors.append(f"{provider_name}: empty dataframe")
+                    continue
+
+                ts = last_bar_timestamp(result)
+                if best is None or (ts is not None and (best_ts is None or ts > best_ts)):
+                    best = result
+                    best_ts = ts
+
+                if not is_history_stale(result, interval):
+                    logger.info(
+                        "market.provider.success",
+                        operation="get_history",
+                        ticker=ticker,
+                        provider=provider_name,
+                        fresh=True,
+                    )
+                    return result
+
+                errors.append(f"{provider_name}: stale last bar {ts}")
+                logger.info(
+                    "market.provider.stale",
+                    operation="get_history",
+                    ticker=ticker,
+                    provider=provider_name,
+                    last_bar=str(ts),
+                )
+
+            except NotImplementedError:
+                errors.append(f"{provider_name}: not implemented for get_history")
+            except Exception as exc:
+                errors.append(f"{provider_name}: {exc}")
+                if "429" in str(exc):
+                    for _ in range(per_minute_limit or 5):
+                        self._tracker.record(provider_name)
+                logger.warning(
+                    "market.provider.failed",
+                    operation="get_history",
+                    ticker=ticker,
+                    provider=provider_name,
+                    error=str(exc),
+                )
+
+        if best is not None:
+            logger.info(
+                "market.provider.success",
+                operation="get_history",
+                ticker=ticker,
+                provider="freshest_stale",
+                last_bar=str(best_ts),
+            )
+            return best
+
+        logger.error("market.provider.all_failed", operation="get_history", ticker=ticker, errors=errors)
+        return pd.DataFrame()
 
     async def get_financials(self, ticker: str) -> dict[str, Any]:
         fetchers = {
