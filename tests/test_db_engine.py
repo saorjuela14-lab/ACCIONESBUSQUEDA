@@ -7,6 +7,26 @@ import pytest
 from database.url import is_postgres, is_sqlite, normalize_database_url
 
 
+def test_normalize_strips_quotes_and_prefix():
+    quoted = normalize_database_url(
+        '"postgresql://u:p@ep-x.neon.tech/neondb?sslmode=require"'
+    )
+    assert quoted.startswith("postgresql+asyncpg://")
+    assert "sslmode=" not in quoted
+    assert "ssl=require" in quoted
+
+    curly = normalize_database_url(
+        "“postgresql://u:p@ep-x.neon.tech/neondb?sslmode=require”"
+    )
+    assert curly.startswith("postgresql+asyncpg://")
+
+    prefixed = normalize_database_url(
+        "DATABASE_URL=postgresql://u:p@ep-x.neon.tech/neondb?sslmode=require"
+    )
+    assert prefixed.startswith("postgresql+asyncpg://")
+    assert "@ep-x.neon.tech" in prefixed
+
+
 def test_normalize_postgres_urls():
     assert normalize_database_url("postgres://u:p@h/db").startswith("postgresql+asyncpg://")
     assert normalize_database_url("postgresql://u:p@h/db").startswith("postgresql+asyncpg://")

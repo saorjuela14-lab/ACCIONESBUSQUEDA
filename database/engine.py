@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from config.settings import get_settings
 from database.models import Base
-from database.url import is_sqlite, normalize_database_url
+from database.url import is_sqlite, normalize_database_url, redact_database_url
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -67,14 +67,30 @@ def _engine_kwargs(url: str) -> dict:
 async def init_db() -> None:
     global _engine, _session_factory
     settings = get_settings()
-    url = normalize_database_url(settings.database_url)
+    try:
+        url = normalize_database_url(settings.database_url)
+    except Exception as exc:
+        raise RuntimeError(
+            f"DATABASE_URL inválida: {exc}. "
+            "En FastAPI Cloud el valor debe ser solo la URL de Neon, "
+            "sin comillas. Ejemplo: postgresql://user:pass@ep-xxx.neon.tech/neondb?sslmode=require"
+        ) from exc
+
     _ensure_data_dir(url)
     logger.info(
         "db.init",
         dialect="sqlite" if is_sqlite(url) else "postgresql",
         persistent=not is_sqlite(url),
+        url=redact_database_url(url),
     )
-    _engine = create_async_engine(url, **_engine_kwargs(url))
+    try:
+        _engine = create_async_engine(url, **_engine_kwargs(url))
+    except Exception as exc:
+        raise RuntimeError(
+            "No se pudo crear el engine de DB. Revisa DATABASE_URL en FastAPI Cloud: "
+            "quita comillas (\") alrededor de la URL y no incluyas el texto DATABASE_URL=. "
+            f"URL vista (redactada): {redact_database_url(url)}. Error: {exc}"
+        ) from exc
     _session_factory = async_sessionmaker(_engine, expire_on_commit=False)
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
