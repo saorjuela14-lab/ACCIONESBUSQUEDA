@@ -71,11 +71,20 @@
         </div>
       </div>
       <p id="alpaca-status" class="alpaca-status muted">Alpaca: comprobando…</p>
+      <div id="risk-desk-status" class="risk-desk muted">Risk Desk: cargando…</div>
+      <div id="ops-desk-status" class="risk-desk muted">Ops: cargando…</div>
       <div class="alpaca-actions">
         <button type="button" id="btn-alpaca-doctor" class="btn" style="font-size:11px">Doctor</button>
         <button type="button" id="btn-alpaca-refresh-book" class="btn" style="font-size:11px">Ver órdenes</button>
         <button type="button" id="btn-alpaca-cancel-all" class="btn" style="font-size:11px">Cancelar órdenes</button>
+        <button type="button" id="btn-risk-refresh" class="btn" style="font-size:11px">Risk Desk</button>
+        <button type="button" id="btn-ops-reconcile" class="btn" style="font-size:11px">Reconciliar</button>
+        <button type="button" id="btn-ops-lifecycle" class="btn" style="font-size:11px">Lifecycle</button>
+        <button type="button" id="btn-ops-autopilot" class="btn primary" style="font-size:11px">Autopilot</button>
+        <button type="button" id="btn-ops-audit" class="btn" style="font-size:11px">Audit</button>
+        <button type="button" id="btn-kill-switch" class="btn" style="font-size:11px;color:#b91c1c">KILL SWITCH</button>
       </div>
+      <div id="ops-audit-log" class="alpaca-book muted hidden"></div>
       <div id="alpaca-book" class="alpaca-book muted">Órdenes/posiciones Alpaca: pulsa «Ver órdenes»</div>
       <p id="trade-recs-summary" class="prose" style="font-size:12px;margin:0 0 0.5rem"></p>
       <div id="micro-plan-panel" class="micro-plan-panel hidden"></div>
@@ -221,7 +230,7 @@
               </div>
               <div class="form-inline">
                 <input id="disc-themes" placeholder="Temas: biotech, IA, semiconductores" style="flex:1;min-width:180px" />
-                <input id="disc-budget" type="number" value="1000" min="1" step="1" title="Capital para propuesta automática" style="width:90px" /> USD
+                <input id="disc-budget" type="number" value="" min="1" step="0.01" placeholder="Alpaca" title="Capital para propuesta automática (se rellena desde Alpaca)" style="width:90px" /> USD
                 <select id="disc-analyze-top">
                   <option value="1">Analizar top 1</option>
                   <option value="2">Analizar top 2</option>
@@ -252,7 +261,7 @@
                 <span class="muted">% sugeridos por el comité según régimen y emergentes</span>
               </div>
               <div class="form-inline">
-                <input id="alloc-capital" type="number" value="1000" min="1" step="1" /> USD
+                <input id="alloc-capital" type="number" value="" min="1" step="0.01" placeholder="Alpaca" title="Se rellena desde Alpaca / portafolio" /> USD
                 <select id="alloc-style">
                   <option value="emerging_focused">Enfoque emergentes</option>
                   <option value="balanced" selected>Balanceada</option>
@@ -382,8 +391,8 @@
         </div>
         <p class="muted pf-mode-hint">Real: seguimiento con precios de mercado. Demo: incluye simulaciones y proyecciones.</p>
         <label for="pf-capital">Capital a gestionar (USD)</label>
-        <input id="pf-capital" type="number" value="1000" min="1" step="1" />
-        <p id="pf-capital-hint" class="muted pf-mode-hint">Con capital bajo (p. ej. $50) el comité buscará penny stocks asequibles manteniendo los %.</p>
+        <input id="pf-capital" type="number" value="" min="1" step="0.01" placeholder="ej. 22" />
+        <p id="pf-capital-hint" class="muted pf-mode-hint">Usa el cash real de Alpaca. Con capital bajo (p. ej. $22) el comité busca penny stocks asequibles.</p>
         <button id="btn-pf-submit" class="btn primary" style="width:100%;margin-top:0.75rem">Crear portafolio</button>
       </div>
     </div>

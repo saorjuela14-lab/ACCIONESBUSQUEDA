@@ -37,9 +37,14 @@ class DailyTradeReport(BaseModel):
     generated_at: datetime = Field(default_factory=utc_now)
     session: str = "pre_market"
     market_regime: str | None = None
+    macro_mode: str | None = None
+    macro_bias: str | None = None
+    macro_thesis: str | None = None
+    size_multiplier: float | None = None
+    risk_notes: list[str] = Field(default_factory=list)
     summary: str = ""
     picks: list[TradePick] = Field(default_factory=list)
     disclaimer: str = (
-        "Recomendaciones orientativas de corto plazo basadas en tendencias y momentum. "
+        "Recomendaciones orientativas de corto plazo con filtros de riesgo y macro. "
         "No constituyen asesoría financiera. Opera con stop-loss y gestión de riesgo."
     )

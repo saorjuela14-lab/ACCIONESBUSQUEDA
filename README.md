@@ -44,6 +44,48 @@ Cuando Reddit apruebe tu app OAuth, se conecta sin rehacer el agente.
 - **Daily Investment Report**: generado a las 17:30 ET
 - **Investment Memory**: evaluación automática a los 90 días + recalibración de pesos
 
+### Risk Desk + macro (gestión de riesgo)
+
+El escritorio de riesgo aplica **límites duros** a compras (concentración, cash mínimo, pérdida diaria, stops) y un **régimen macro** (Fed, CPI, curva, VIX) que cambia tamaño y puede bloquear compras en crisis.
+
+| Endpoint | Uso |
+|----------|-----|
+| `GET /api/v1/risk/status` | Política + macro + libro Alpaca |
+| `GET /api/v1/risk/macro` | Solo régimen macro |
+
+Autonomía opcional (OFF por defecto):
+
+```
+AUTO_EXECUTE_TRADES=false
+AUTO_EXECUTE_LIVE=false   # segunda llave para LIVE
+AUTO_EXECUTE_MAX_NOTIONAL=25
+```
+
+Sin esas flags el sistema recomienda y alerta; **tú** confirmas cada orden LIVE.
+
+### Roadmap hacia autonomía tipo firma de capital
+
+1. ~~Risk Desk + macro en picks y órdenes~~
+2. ~~Ciclo de vida (trailing / time-stop / invalidar tesis → vender)~~
+3. ~~Reconciliación continua Alpaca ↔ DB + audit log~~
+4. ~~Auto-execute paper-first → LIVE con límites~~
+5. ~~VaR / beta / sectores duros + kill switch (pánico → flat)~~
+6. ~~Comité completo: memoria como evidencia + SELL → exit~~
+7. ~~Autopilot unificado + promoción paper→LIVE~~
+
+```
+GET  /api/v1/ops/status
+POST /api/v1/ops/autopilot/run
+POST /api/v1/ops/autopilot/promote-live
+POST /api/v1/ops/kill-switch/on  {"confirm":true,"flatten":true}
+POST /api/v1/ops/reconcile
+POST /api/v1/ops/lifecycle/scan
+GET  /api/v1/ops/audit
+GET  /api/v1/ops/risk-metrics
+```
+
+**Cierre del prompt fundacional + broker autónomo:** el comité genera tesis auditables con memoria; el CEO Terminal opera el ciclo; el escritorio de capital reconcilia, gestiona riesgo/macro, cierra posiciones y puede auto-ejecutar en paper (LIVE solo tras promoción + flags).
+
 ```bash
 python main.py serve      # API + scheduler integrado
 python main.py scheduler  # Solo scheduler (standalone)
@@ -51,6 +93,8 @@ POST /api/v1/watchlist/scan  # Scan manual
 GET  /api/v1/alerts
 POST /api/v1/alerts/test-push
 GET  /api/v1/reports/daily/latest
+GET  /api/v1/risk/status
+GET  /api/v1/ops/status
 ```
 
 #### Alertas push (Telegram)

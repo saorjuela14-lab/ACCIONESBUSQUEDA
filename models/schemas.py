@@ -119,7 +119,11 @@ class VoiceCommandRequest(BaseModel):
 
 
 class MicroManageRequest(BaseModel):
-    capital: float = Field(gt=0, description="Capital del portafolio a gestionar")
+    capital: float | None = Field(
+        default=None,
+        gt=0,
+        description="Capital a gestionar. Si se omite, usa Alpaca equity/cash o el portafolio NexBuy.",
+    )
     exclude_tickers: list[str] | None = None
     persist_as_daily: bool = Field(
         default=True,
@@ -141,3 +145,4 @@ class TradePickExecuteRequest(BaseModel):
     take_profit: float | None = None
     dry_run: bool = False
     confirm_live: bool = False
+    sync_portfolio_id: str | None = None

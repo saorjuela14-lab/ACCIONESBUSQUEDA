@@ -79,6 +79,44 @@ class Settings(BaseSettings):
     http_max_retries: int = 3
     http_retry_backoff: float = 1.5
 
+    # Risk desk (hard gates on buys + recommendation sizing)
+    risk_max_position_pct: float = 35.0
+    risk_max_sector_pct: float = 40.0
+    risk_max_gross_exposure_pct: float = 90.0
+    risk_cash_reserve_pct: float = 10.0
+    risk_max_daily_loss_pct: float = 5.0
+    risk_max_open_positions: int = 8
+    risk_require_stop_loss: bool = True
+    risk_min_reward_risk: float = 1.2
+    risk_off_size_mult: float = 0.35
+    risk_crisis_block_buys: bool = True
+    # Autonomy — OFF by default (real capital). Paper first.
+    auto_execute_trades: bool = False
+    auto_execute_live: bool = False  # second gate for LIVE auto-submit
+    auto_execute_max_notional: float = 25.0
+    auto_execute_require_market_open: bool = True
+    auto_execute_paper_first: bool = True  # block LIVE auto unless promoted
+    autopilot_interval_minutes: int = 0  # 0 = disabled scheduled autopilot; use POST /ops/autopilot/run
+
+    # Lifecycle desk
+    lifecycle_enabled: bool = True
+    lifecycle_scan_interval_minutes: int = 15
+    lifecycle_trailing_pct: float = 0.08
+    lifecycle_time_stop_days: int = 10
+    lifecycle_default_stop_pct: float = 0.08
+    lifecycle_default_target_pct: float = 0.12
+    lifecycle_auto_exit: bool = True
+
+    # Continuous reconcile
+    reconcile_interval_minutes: int = 20
+    reconcile_auto_sync: bool = True
+
+    # Hard portfolio risk gates
+    risk_max_var_pct: float = 8.0
+    risk_max_portfolio_beta: float = 1.8
+    risk_enforce_sector_cap: bool = True
+    risk_enforce_var_beta: bool = True
+
     @field_validator("database_url", mode="before")
     @classmethod
     def normalize_db_url(cls, value: str) -> str:

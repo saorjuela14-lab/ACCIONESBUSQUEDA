@@ -228,5 +228,6 @@ async def execute_trade_pick(request: TradePickExecuteRequest) -> ExecuteOrdersR
             lines=[line],
             dry_run=request.dry_run,
             confirm_live=request.confirm_live,
+            sync_portfolio_id=request.sync_portfolio_id,
         )
     )

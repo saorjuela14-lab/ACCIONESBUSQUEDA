@@ -24,6 +24,7 @@ class InvestmentDirector(BaseAgent):
         "corporate_actions_agent": 0.7,
         "market_dependency_agent": 0.85,
         "portfolio_agent": 1.0,
+        "investment_memory": 0.85,
     }
 
     def __init__(self, strategy_lab: StrategyLab | None = None) -> None:
@@ -72,6 +73,14 @@ class InvestmentDirector(BaseAgent):
     ) -> InvestmentThesis:
         weighted_score = self._weighted_score(reports, weights)
         avg_confidence = self._avg_confidence(reports)
+
+        # Macro stress → more conservative recommendation mapping
+        macro_report = next((r for r in reports if r.agent_name == "macro_agent"), None)
+        if macro_report and macro_report.score is not None and macro_report.score <= -8:
+            weighted_score -= 8
+        elif macro_report and macro_report.score is not None and macro_report.score <= -4:
+            weighted_score -= 4
+
         recommendation = self._map_recommendation(weighted_score)
 
         all_risks = []

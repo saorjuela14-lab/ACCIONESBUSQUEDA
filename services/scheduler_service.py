@@ -127,8 +127,9 @@ class SchedulerService:
                 session=session_label,
                 picks=len(report.picks),
                 regime=report.market_regime,
+                macro_mode=report.macro_mode,
             )
-            if self._settings.push_daily_trades and report.picks:
+            if self._settings.push_daily_trades and (report.picks or report.macro_mode == "crisis"):
                 push = PushNotificationService()
                 if push.any_channel_configured:
                     lines = [
@@ -137,10 +138,86 @@ class SchedulerService:
                     ]
                     body = (
                         f"Sesión: {session_label}\n"
-                        f"Régimen: {report.market_regime}\n\n"
-                        + "\n".join(lines)
+                        f"Régimen: {report.market_regime} | Macro: {report.macro_mode}\n"
+                        f"{(report.macro_thesis or '')[:200]}\n\n"
+                        + ("\n".join(lines) if lines else "Sin compras (filtro riesgo/macro).")
                     )
                     await push.notify_message("Recomendaciones corto plazo", body)
+
+            if self._settings.auto_execute_trades and report.picks:
+                await self._maybe_auto_execute(report, session)
+            break
+
+    async def _maybe_auto_execute(self, report, session) -> None:
+        from services.auto_execute_service import AutoExecuteService
+
+        result = await AutoExecuteService(session).run_from_picks(report.picks, actor="scheduler")
+        logger.info("scheduler.auto_execute", **{k: v for k, v in result.items() if k != "warnings"})
+        if self._settings.push_daily_trades and not result.get("skipped"):
+            push = PushNotificationService()
+            if push.any_channel_configured:
+                await push.notify_message(
+                    "Auto-execute",
+                    f"paper={result.get('paper')} OK={result.get('submitted')} "
+                    f"FAIL={result.get('failed')} · {result.get('mode_reason')}",
+                )
+
+    async def _run_lifecycle_scan(self) -> None:
+        if not self._settings.lifecycle_enabled:
+            return
+        if not should_run_automation():
+            return
+        async for session in get_session():
+            from services.position_lifecycle_service import PositionLifecycleService
+
+            report = await PositionLifecycleService(session).scan(
+                execute_exits=self._settings.lifecycle_auto_exit
+            )
+            logger.info(
+                "scheduler.lifecycle",
+                positions=report.positions,
+                exits=report.exits,
+                warnings=len(report.warnings),
+            )
+            if report.exits and self._settings.push_daily_trades:
+                push = PushNotificationService()
+                if push.any_channel_configured:
+                    await push.notify_message(
+                        "Lifecycle exits",
+                        "Cerradas: " + ", ".join(report.exits),
+                    )
+            break
+
+    async def _run_reconcile(self) -> None:
+        if not should_run_automation():
+            return
+        async for session in get_session():
+            from services.reconcile_service import ReconcileService
+
+            report = await ReconcileService(session).reconcile(
+                sync=self._settings.reconcile_auto_sync
+            )
+            logger.info(
+                "scheduler.reconcile",
+                diffs=len(report.diffs),
+                synced=report.synced,
+                portfolio_id=report.portfolio_id,
+            )
+            break
+
+    async def _run_autopilot(self) -> None:
+        if not should_run_automation():
+            return
+        async for session in get_session():
+            from services.autopilot_service import AutopilotService
+
+            result = await AutopilotService(session).run(actor="scheduler_autopilot")
+            logger.info(
+                "scheduler.autopilot",
+                aborted=result.get("aborted"),
+                picks=(result.get("recommendations") or {}).get("picks"),
+                exits=(result.get("lifecycle") or {}).get("exits"),
+            )
             break
 
     async def _run_daily_report(self) -> None:
@@ -201,12 +278,41 @@ class SchedulerService:
             replace_existing=True,
         )
 
+        # Position lifecycle (trailing / time-stop / thesis exit)
+        if self._settings.lifecycle_enabled:
+            self._scheduler.add_job(
+                self._run_lifecycle_scan,
+                IntervalTrigger(minutes=self._settings.lifecycle_scan_interval_minutes),
+                id="lifecycle_scan",
+                replace_existing=True,
+            )
+
+        # Continuous Alpaca ↔ DB reconcile
+        self._scheduler.add_job(
+            self._run_reconcile,
+            IntervalTrigger(minutes=self._settings.reconcile_interval_minutes),
+            id="reconcile_books",
+            replace_existing=True,
+        )
+
+        # Full firm autopilot (optional; 0 disables)
+        if self._settings.autopilot_interval_minutes and self._settings.autopilot_interval_minutes > 0:
+            self._scheduler.add_job(
+                self._run_autopilot,
+                IntervalTrigger(minutes=self._settings.autopilot_interval_minutes),
+                id="firm_autopilot",
+                replace_existing=True,
+            )
+
         self._scheduler.start()
         logger.info(
             "scheduler.started",
             report_times=self._settings.report_schedule,
             trade_times=self._settings.daily_trade_schedule,
             watchlist_interval=self._settings.watchlist_scan_interval_minutes,
+            lifecycle_interval=self._settings.lifecycle_scan_interval_minutes,
+            reconcile_interval=self._settings.reconcile_interval_minutes,
+            autopilot_interval=self._settings.autopilot_interval_minutes,
         )
 
     def stop(self) -> None:
