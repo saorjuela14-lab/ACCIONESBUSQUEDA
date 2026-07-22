@@ -135,6 +135,10 @@ class TechnicalChartData(BaseModel):
     gaps: list[PriceGap] = Field(default_factory=list)
     gaps_by_timeframe: dict[str, list[PriceGap]] = Field(default_factory=dict)
     unfilled_gaps: list[PriceGap] = Field(default_factory=list)
+    # Freshness relative to "today" — delisted/stale tickers must not look like live analysis
+    as_of: str | None = None
+    stale_days: int | None = None
+    market_status: str = "unavailable"  # live | stale | delisted | unavailable
 
 
 class PortfolioHistoryPoint(BaseModel):

@@ -1388,6 +1388,35 @@ function renderGapsPanel(data) {
     </div>`).join("");
 }
 
+function renderTechDataStatus(data) {
+  const el = $("#tech-data-status");
+  if (!el) return;
+  const status = data?.market_status || "unavailable";
+  const asOf = data?.as_of;
+  const staleDays = data?.stale_days;
+  el.hidden = false;
+  el.className = "tech-data-status " + status;
+  if (status === "live" && asOf) {
+    el.textContent = `Mercado al día — última vela ${asOf}.`;
+    return;
+  }
+  if (status === "delisted") {
+    el.textContent = asOf
+      ? `Sin cotización actual (deslistado/suspendido). Último dato: ${asOf}${staleDays != null ? ` · ${staleDays} días` : ""}. No hay serie completa a día de hoy.`
+      : "Sin cotización actual (deslistado/suspendido). No hay datos de mercado a día de hoy.";
+    return;
+  }
+  if (status === "stale") {
+    el.textContent = asOf
+      ? `Datos desactualizados — última vela ${asOf}${staleDays != null ? ` · hace ${staleDays} días` : ""}.`
+      : "Datos de mercado desactualizados.";
+    return;
+  }
+  el.textContent = asOf
+    ? `Sin datos suficientes a día de hoy. Última sesión conocida: ${asOf}.`
+    : "Sin datos de mercado a día de hoy para este ticker.";
+}
+
 async function loadTechnicalChart(t, techAgentReport) {
   const period = $("#tech-period")?.value || "6mo";
   const chartTf = $("#tech-chart-tf")?.value || activeGapTf || "1D";
@@ -1396,6 +1425,7 @@ async function loadTechnicalChart(t, techAgentReport) {
   try {
     const data = await api(`${API}/market/${t}/technical?period=${period}&timeframe=${encodeURIComponent(chartTf)}`);
     const pts = data.points || [];
+    renderTechDataStatus(data);
     if (!pts.length) {
       destroyAllLwCharts();
       $("#tech-summary").textContent = data.summary || "Sin datos técnicos.";
@@ -1491,6 +1521,12 @@ async function loadTechnicalChart(t, techAgentReport) {
     lwCharts.macd.timeScale().fitContent();
   } catch (e) {
     destroyAllLwCharts();
+    const statusEl = $("#tech-data-status");
+    if (statusEl) {
+      statusEl.hidden = false;
+      statusEl.className = "tech-data-status delisted";
+      statusEl.textContent = "No se pudo cargar el gráfico técnico.";
+    }
     $("#tech-summary").textContent = "Error cargando gráfico técnico: " + e.message;
   }
 }

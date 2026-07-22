@@ -1,5 +1,6 @@
 """Tests for composite market data provider fallback chain."""
 
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pandas as pd
@@ -75,6 +76,50 @@ async def test_composite_skips_exhausted_provider(sample_df):
     assert not df.empty
     alpha.get_history.assert_not_called()
     yfinance.get_history.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_composite_prefers_fresher_history_when_first_is_stale(sample_df):
+    """Alpaca may return residual delisted bars; prefer a fresher vendor when available."""
+    stale = pd.DataFrame(
+        {"Open": [1], "High": [1.1], "Low": [0.9], "Close": [1.0], "Volume": [100]},
+        index=pd.to_datetime(["2025-02-24"]),
+    )
+    fresh = pd.DataFrame(
+        {"Open": [10], "High": [11], "Low": [9], "Close": [10.5], "Volume": [1000]},
+        index=pd.to_datetime([datetime.now(timezone.utc).date().isoformat()]),
+    )
+
+    alpaca = AsyncMock()
+    alpaca.get_history = AsyncMock(return_value=stale)
+
+    yfinance = AsyncMock()
+    yfinance.get_history = AsyncMock(return_value=fresh)
+
+    provider = CompositeMarketDataProvider(alpaca=alpaca, yfinance=yfinance)
+    df = await provider.get_history("AAPL", period="6mo", interval="1d")
+
+    assert float(df["Close"].iloc[-1]) == 10.5
+    alpaca.get_history.assert_called_once()
+    yfinance.get_history.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_composite_keeps_stale_when_no_fresher_available():
+    stale = pd.DataFrame(
+        {"Open": [0.2], "High": [0.3], "Low": [0.1], "Close": [0.18], "Volume": [100]},
+        index=pd.to_datetime(["2025-02-24"]),
+    )
+    alpaca = AsyncMock()
+    alpaca.get_history = AsyncMock(return_value=stale)
+    yfinance = AsyncMock()
+    yfinance.get_history = AsyncMock(return_value=pd.DataFrame())
+
+    provider = CompositeMarketDataProvider(alpaca=alpaca, yfinance=yfinance)
+    df = await provider.get_history("NKLA", period="5y", interval="1wk")
+
+    assert not df.empty
+    assert str(df.index[-1].date()) == "2025-02-24"
 
 
 @pytest.mark.asyncio
