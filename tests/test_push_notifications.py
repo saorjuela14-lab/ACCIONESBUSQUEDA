@@ -15,6 +15,20 @@ def _settings(**kwargs):
         "telegram_bot_token": "",
         "telegram_chat_id": "",
         "alert_webhook_url": "",
+        "whatsapp_enabled": True,
+        "whatsapp_provider": "auto",
+        "whatsapp_phone": "",
+        "whatsapp_api_key": "",
+        "whatsapp_token": "",
+        "whatsapp_phone_number_id": "",
+        "whatsapp_to": "",
+        "whatsapp_api_version": "v21.0",
+        "whatsapp_template_name": "",
+        "whatsapp_template_lang": "es",
+        "twilio_account_sid": "",
+        "twilio_auth_token": "",
+        "twilio_whatsapp_from": "",
+        "whatsapp_briefing_enabled": True,
     }
     defaults.update(kwargs)
     return MagicMock(**defaults)
@@ -32,7 +46,7 @@ async def test_push_not_configured():
             title="Test",
             description="Body",
         ))
-        assert result == {"telegram": False, "webhook": False}
+        assert result == {"telegram": False, "whatsapp": False, "webhook": False}
 
 
 @pytest.mark.asyncio
@@ -63,6 +77,53 @@ async def test_push_telegram_success():
 
 
 @pytest.mark.asyncio
+async def test_push_whatsapp_callmebot():
+    with patch("services.push_notification_service.get_settings", return_value=_settings(
+        whatsapp_phone="573001112233",
+        whatsapp_api_key="key99",
+    )):
+        svc = PushNotificationService()
+        assert svc.whatsapp_configured
+        assert svc.status()["whatsapp_provider"] == "callmebot"
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("services.push_notification_service.httpx.AsyncClient", return_value=mock_client):
+            ok = await svc.notify_whatsapp_plain("Hola NexBuy")
+        assert ok is True
+        mock_client.get.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_push_whatsapp_meta():
+    with patch("services.push_notification_service.get_settings", return_value=_settings(
+        whatsapp_token="EAAxxx",
+        whatsapp_phone_number_id="123456",
+        whatsapp_to="573001112233",
+        whatsapp_provider="meta",
+    )):
+        svc = PushNotificationService()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("services.push_notification_service.httpx.AsyncClient", return_value=mock_client):
+            ok = await svc.notify_whatsapp_plain("Status apertura")
+        assert ok is True
+        args, kwargs = mock_client.post.call_args
+        assert "graph.facebook.com" in args[0]
+        assert kwargs["json"]["type"] == "text"
+
+
+@pytest.mark.asyncio
 async def test_alert_service_triggers_push_on_emit():
     from services.alert_service import AlertService
 
@@ -84,7 +145,7 @@ async def test_alert_service_triggers_push_on_emit():
 
     push = AsyncMock()
     push.any_channel_configured = True
-    push.notify_alert = AsyncMock(return_value={"telegram": True, "webhook": False})
+    push.notify_alert = AsyncMock(return_value={"telegram": True, "whatsapp": False, "webhook": False})
 
     service = AlertService(repo, cooldown_hours=24, push=push)
     result = await service.emit(saved_alert)

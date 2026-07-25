@@ -65,6 +65,24 @@ class Settings(BaseSettings):
     alert_webhook_url: str = ""
     push_daily_trades: bool = True
 
+    # WhatsApp status / briefing (CallMeBot | Meta Cloud API | Twilio)
+    whatsapp_enabled: bool = True
+    whatsapp_provider: str = "auto"  # auto | callmebot | meta | twilio
+    whatsapp_phone: str = ""  # CallMeBot: digits e.g. 573001234567
+    whatsapp_api_key: str = ""  # CallMeBot apikey
+    whatsapp_token: str = ""  # Meta permanent access token
+    whatsapp_phone_number_id: str = ""  # Meta phone number id
+    whatsapp_to: str = ""  # Recipient E.164 for Meta/Twilio e.g. 573001234567
+    whatsapp_api_version: str = "v21.0"
+    whatsapp_template_name: str = ""  # optional Meta template for proactive msgs
+    whatsapp_template_lang: str = "es"
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_whatsapp_from: str = ""  # e.g. whatsapp:+14155238886
+    whatsapp_briefing_enabled: bool = True
+    # ET times for open/close portfolio status (comma-separated HH:MM)
+    whatsapp_briefing_times: str = "09:35,16:05"
+
     # Alpaca Trading API — LIVE by default (https://docs.alpaca.markets/)
     # Compatible with https://github.com/alpacahq/cli env vars
     alpaca_api_key: str = ""
@@ -140,6 +158,10 @@ class Settings(BaseSettings):
     @property
     def daily_trade_schedule(self) -> list[str]:
         return [t.strip() for t in self.daily_trade_sessions.split(",") if t.strip()]
+
+    @property
+    def whatsapp_briefing_schedule(self) -> list[str]:
+        return [t.strip() for t in self.whatsapp_briefing_times.split(",") if t.strip()]
 
     @property
     def effective_autopilot_interval_minutes(self) -> int:

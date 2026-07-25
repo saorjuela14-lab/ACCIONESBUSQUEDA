@@ -100,19 +100,38 @@ GET  /api/v1/risk/status
 GET  /api/v1/ops/status
 ```
 
-#### Alertas push (Telegram)
+#### Alertas push (Telegram + WhatsApp)
 
-1. Crea un bot con [@BotFather](https://t.me/BotFather) → copia el token
-2. Envía un mensaje al bot y obtén tu `chat_id` (p. ej. con `@userinfobot`)
-3. En FastAPI Cloud → Environment Variables:
+**Telegram (alertas):**
+1. Crea un bot con [@BotFather](https://t.me/BotFather) → token
+2. Obtén tu `chat_id` (p. ej. `@userinfobot`)
+3. Variables: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
+
+**WhatsApp (status apertura/cierre del portafolio):**  
+Se envía a las **09:35 y 16:05 ET** (días hábiles) con equity, posiciones, órdenes abiertas y cerradas del día.
+
+Opción más simple — [CallMeBot](https://www.callmebot.com/blog/free-api-whatsapp-messages/):
+1. Envía al WhatsApp **+34 644 54 90 86** el texto: `I allow callmebot to send me messages`
+2. El bot responde con tu `apikey`
+3. Variables en FastAPI Cloud:
 
 | Variable | Valor |
 |----------|--------|
-| `TELEGRAM_BOT_TOKEN` | Token del bot (Secret) |
-| `TELEGRAM_CHAT_ID` | Tu chat ID numérico |
-| `ALERT_WEBHOOK_URL` | *(opcional)* URL POST JSON |
+| `WHATSAPP_PHONE` | Tu número internacional sin `+` (ej. `573001234567`) |
+| `WHATSAPP_API_KEY` | Apikey de CallMeBot |
+| `WHATSAPP_BRIEFING_TIMES` | `09:35,16:05` (default) |
 
-Redeploy. En el panel → Alertas → **Probar push**.
+Alternativas Business: Meta Cloud API (`WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_TO`) o Twilio (`TWILIO_*` + `WHATSAPP_TO`).
+
+Endpoints:
+```
+GET  /api/v1/alerts/push-status
+POST /api/v1/alerts/test-push
+GET  /api/v1/alerts/briefing/preview
+POST /api/v1/alerts/briefing/send?session_kind=open|close|manual
+```
+
+Redeploy. En el panel → **Probar push** (también dispara un status manual).
 
 #### Trading con Alpaca (LIVE / dinero real)
 

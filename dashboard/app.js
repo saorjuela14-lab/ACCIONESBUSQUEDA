@@ -1331,14 +1331,17 @@ async function loadPushStatus() {
     if (s.enabled) {
       const parts = [];
       if (s.telegram) parts.push("TG");
+      if (s.whatsapp) parts.push("WA");
       if (s.webhook) parts.push("WH");
       badge.textContent = `push ${parts.join("+")}`;
       badge.className = "push-badge on";
-      badge.title = "Notificaciones push activas";
+      badge.title = s.whatsapp_provider
+        ? `Push activo · WhatsApp=${s.whatsapp_provider}`
+        : "Notificaciones push activas";
     } else {
       badge.textContent = "push off";
       badge.className = "push-badge off";
-      badge.title = "Configura TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID en el servidor";
+      badge.title = "Configura Telegram y/o WhatsApp (CallMeBot/Meta/Twilio) en el servidor";
     }
   } catch {
     /* ignore */
@@ -1351,6 +1354,13 @@ async function testPushNotification() {
     const r = await api(`${API}/alerts/test-push`, { method: "POST" });
     toast(r.ok ? "Push de prueba enviado" : "Push no entregado — revisa configuración");
   } catch (e) { toast("Push: " + e.message); }
+  // Also try a portfolio status briefing (WhatsApp/Telegram)
+  try {
+    const b = await api(`${API}/alerts/briefing/send?session_kind=manual`, { method: "POST" });
+    if (b.ok) toast("Status de portafolio enviado (WA/TG)", 5000);
+  } catch {
+    /* briefing optional if channels missing */
+  }
 }
 
 async function loadDashboard() {
