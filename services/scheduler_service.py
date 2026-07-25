@@ -237,6 +237,25 @@ class SchedulerService:
             await memory_svc.evaluate_pending()
             break
 
+    async def _run_status_briefing(self, session_kind: str) -> None:
+        """WhatsApp/Telegram portfolio status at market open or close."""
+        if not self._settings.whatsapp_briefing_enabled:
+            return
+        if not should_run_automation() and session_kind != "manual":
+            # Still allow open/close cron on trading days only
+            from utils.market_hours import is_trading_day
+
+            if not is_trading_day():
+                logger.info("scheduler.skipped", job="status_briefing", reason="non_trading_day")
+                return
+        from services.daily_status_briefing_service import DailyStatusBriefingService
+
+        kind = session_kind if session_kind in ("open", "close") else "manual"
+        result = await DailyStatusBriefingService().send(kind)  # type: ignore[arg-type]
+        logger.info("scheduler.status_briefing", session=kind, **{
+            k: v for k, v in result.items() if k != "title"
+        })
+
     def start(self) -> None:
         for time_str in self._settings.report_schedule:
             session = SESSION_MAP.get(time_str, MarketSession.MID_SESSION)
@@ -272,6 +291,24 @@ class SchedulerService:
             id="daily_investment_report",
             replace_existing=True,
         )
+
+        # WhatsApp/Telegram portfolio status at open + close (ET)
+        briefing_kind = {
+            "09:35": "open",
+            "09:30": "open",
+            "16:05": "close",
+            "16:00": "close",
+        }
+        for time_str in self._settings.whatsapp_briefing_schedule:
+            hour, minute = time_str.split(":")
+            kind = briefing_kind.get(time_str, "open" if int(hour) < 12 else "close")
+            self._scheduler.add_job(
+                self._run_status_briefing,
+                CronTrigger(hour=int(hour), minute=int(minute)),
+                args=[kind],
+                id=f"status_briefing_{time_str}",
+                replace_existing=True,
+            )
 
         # Watchlist scan every N minutes during market hours
         self._scheduler.add_job(
@@ -318,6 +355,7 @@ class SchedulerService:
             reconcile_interval=self._settings.reconcile_interval_minutes,
             autopilot_interval=autopilot_every,
             firm_autonomy=self._settings.firm_autonomy,
+            whatsapp_briefing=self._settings.whatsapp_briefing_schedule,
         )
 
     def stop(self) -> None:
