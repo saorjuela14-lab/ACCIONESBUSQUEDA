@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#060a0f" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -92,7 +92,7 @@
       <p id="trade-recs-disclaimer" class="muted" style="font-size:10px;margin-top:0.5rem"></p>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="watchlist-matrix-panel">
       <div class="panel-head">
         <h3>Matriz Watchlist</h3>
         <span class="muted">Clic en fila para analizar</span>
@@ -149,45 +149,53 @@
               <div class="metric-card"><label>Precio Objetivo</label><div id="m-target">—</div></div>
               <div class="metric-card"><label>Sent. Mercado</label><div id="m-msent">—</div></div>
             </div>
-            <div class="tech-toolbar">
-              <h4 class="subhead" style="margin:0">Vista del Analista Técnico</h4>
-              <div class="tech-toolbar-controls">
-                <select id="tech-chart-tf" title="Timeframe del gráfico y gaps">
-                  <option value="1D" selected>1D</option>
-                  <option value="1W">1W</option>
-                  <option value="4H">4H</option>
-                  <option value="1H">1H</option>
-                  <option value="30m">30m</option>
-                  <option value="15m">15m</option>
-                </select>
-                <select id="tech-period">
-                  <option value="3mo">3 meses</option>
-                  <option value="6mo" selected>6 meses</option>
-                  <option value="1y">1 año</option>
-                </select>
+            <section id="tech-view" class="tech-view">
+              <div class="tech-toolbar">
+                <h4 class="subhead" style="margin:0">Vista del Analista Técnico</h4>
+                <div class="tech-toolbar-controls">
+                  <select id="tech-chart-tf" title="Timeframe del gráfico y gaps">
+                    <option value="1D" selected>1D</option>
+                    <option value="1W">1W</option>
+                    <option value="4H">4H</option>
+                    <option value="1H">1H</option>
+                    <option value="30m">30m</option>
+                    <option value="15m">15m</option>
+                  </select>
+                  <select id="tech-period">
+                    <option value="3mo">3 meses</option>
+                    <option value="6mo" selected>6 meses</option>
+                    <option value="1y">1 año</option>
+                  </select>
+                  <button type="button" id="btn-tech-expand" class="btn tech-expand-btn" title="Ampliar gráfico">⛶</button>
+                </div>
               </div>
-            </div>
-            <div class="tech-kpi-row" id="tech-kpi-row">
-              <div class="tech-kpi"><label>RSI</label><div id="tk-rsi">—</div></div>
-              <div class="tech-kpi"><label>MACD</label><div id="tk-macd">—</div></div>
-              <div class="tech-kpi"><label>Sesgo</label><div id="tk-bias">—</div></div>
-              <div class="tech-kpi"><label>Soporte</label><div id="tk-support">—</div></div>
-              <div class="tech-kpi"><label>Resistencia</label><div id="tk-resistance">—</div></div>
-              <div class="tech-kpi"><label>Stop / Objetivo</label><div id="tk-levels">—</div></div>
-            </div>
-            <div id="tech-data-status" class="tech-data-status" hidden></div>
-            <p id="tech-summary" class="prose tech-summary">Selecciona un ticker y pulsa Analizar para ver velas e indicadores.</p>
-            <div class="chart-box tech-chart-box"><div id="candle-chart" class="lw-chart"></div></div>
-            <div class="gap-panel" id="gap-panel">
-              <div class="gap-panel-head">
-                <h4 class="subhead" style="margin:0">Gaps de Precio (fill pendiente)</h4>
-                <span class="muted" style="font-size:10px">El mercado suele cubrir gaps — resaltados en ámbar</span>
+              <div class="tech-kpi-row" id="tech-kpi-row">
+                <div class="tech-kpi"><label>RSI</label><div id="tk-rsi">—</div></div>
+                <div class="tech-kpi"><label>MACD</label><div id="tk-macd">—</div></div>
+                <div class="tech-kpi"><label>Sesgo</label><div id="tk-bias">—</div></div>
+                <div class="tech-kpi"><label>Soporte</label><div id="tk-support">—</div></div>
+                <div class="tech-kpi"><label>Resistencia</label><div id="tk-resistance">—</div></div>
+                <div class="tech-kpi"><label>Stop / Objetivo</label><div id="tk-levels">—</div></div>
               </div>
-              <div id="gap-tf-tabs" class="gap-tf-tabs"></div>
-              <div id="gap-list" class="gap-list"></div>
-            </div>
-            <div class="chart-box small tech-chart-box"><div id="rsi-chart" class="lw-chart"></div></div>
-            <div class="chart-box small tech-chart-box"><div id="macd-chart" class="lw-chart"></div></div>
+              <div id="tech-data-status" class="tech-data-status" hidden></div>
+              <div class="tech-summary-wrap">
+                <p id="tech-summary" class="prose tech-summary">Selecciona un ticker y pulsa Analizar para ver velas e indicadores.</p>
+                <button type="button" id="btn-tech-summary-more" class="tech-summary-more hidden">Ver más</button>
+              </div>
+              <div class="chart-box tech-chart-box" id="candle-chart-box">
+                <div id="candle-chart" class="lw-chart"></div>
+              </div>
+              <div class="gap-panel" id="gap-panel">
+                <div class="gap-panel-head">
+                  <h4 class="subhead" style="margin:0">Gaps de Precio (fill pendiente)</h4>
+                  <span class="muted" style="font-size:10px">El mercado suele cubrir gaps — resaltados en ámbar</span>
+                </div>
+                <div id="gap-tf-tabs" class="gap-tf-tabs"></div>
+                <div id="gap-list" class="gap-list"></div>
+              </div>
+              <div class="chart-box small tech-chart-box"><div id="rsi-chart" class="lw-chart"></div></div>
+              <div class="chart-box small tech-chart-box"><div id="macd-chart" class="lw-chart"></div></div>
+            </section>
             <div class="scenarios-row" id="scenarios-row"></div>
             <h4 class="subhead">Correlaciones Técnicas (contexto comité)</h4>
             <ul id="tech-correlations" class="corr-list"></ul>
@@ -348,10 +356,9 @@
 
     <nav class="mobile-nav" id="mobile-nav" aria-label="Navegación móvil">
       <button type="button" data-scroll="ceo-bar" class="mob-nav-btn active">Inicio</button>
-      <button type="button" data-scroll="trade-recs-panel" class="mob-nav-btn">Trades</button>
+      <button type="button" id="mob-tech" class="mob-nav-btn">Técnico</button>
       <button type="button" id="mob-analyze" class="mob-nav-btn primary">Analizar</button>
-      <button type="button" data-tab="discovery" class="mob-nav-btn">Descubrir</button>
-      <button type="button" data-tab="proposal" class="mob-nav-btn">Propuesta</button>
+      <button type="button" data-scroll="trade-recs-panel" class="mob-nav-btn">Trades</button>
       <button type="button" data-scroll="portfolio-panel" class="mob-nav-btn">Portafolio</button>
     </nav>
   </div>

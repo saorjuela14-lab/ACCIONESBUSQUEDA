@@ -273,26 +273,135 @@ function setupBudgetSync() {
 }
 
 function setupMobileNav() {
+  const markActive = (btn) => {
+    $$(".mob-nav-btn").forEach((b) => b.classList.remove("active"));
+    btn?.classList.add("active");
+  };
+
   $$(".mob-nav-btn[data-scroll]").forEach((btn) => {
     btn.onclick = () => {
       const id = btn.dataset.scroll;
-      const el = id === "watchlist-matrix" ? document.querySelector(".matrix-table")?.closest(".panel") : document.getElementById(id);
+      if (id === "ceo-bar") clearMobileTechFocus();
+      else clearMobileTechFocus(false);
+      const el = id === "watchlist-matrix"
+        ? document.querySelector("#watchlist-matrix-panel")
+        : document.getElementById(id);
       el?.scrollIntoView({ behavior: "smooth", block: "start" });
-      $$(".mob-nav-btn").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
+      markActive(btn);
     };
   });
+
+  $("#mob-tech")?.addEventListener("click", () => {
+    focusTechView({ force: true });
+    markActive($("#mob-tech"));
+  });
+
   $("#mob-analyze")?.addEventListener("click", () => {
     $("#global-ticker")?.focus();
     runAnalyze();
+    markActive($("#mob-analyze"));
   });
+
   $$(".mob-nav-btn[data-tab]").forEach((btn) => {
     btn.onclick = () => {
+      clearMobileTechFocus(false);
       const tab = btn.dataset.tab;
       const tabBtn = document.querySelector(`.tab[data-tab="${tab}"]`);
       tabBtn?.click();
       tabBtn?.closest(".panel")?.scrollIntoView({ behavior: "smooth" });
+      markActive(btn);
     };
+  });
+}
+
+function isMobileViewport() {
+  return window.matchMedia("(max-width: 900px)").matches;
+}
+
+function clearMobileTechFocus(exitFullscreen = true) {
+  document.body.classList.remove("mobile-tech-focus");
+  if (exitFullscreen) setTechChartFullscreen(false);
+}
+
+function focusTechView({ force = false } = {}) {
+  if (!isMobileViewport() && !force) return;
+  switchToTab("overview");
+  document.body.classList.add("mobile-tech-focus");
+  requestAnimationFrame(() => {
+    const el = $("#tech-view") || document.querySelector(".col-center .panel.tabs");
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    resizeLwCharts();
+  });
+}
+
+function resizeLwCharts() {
+  Object.entries(lwCharts).forEach(([key, chart]) => {
+    if (!chart) return;
+    const el = key === "candle" ? $("#candle-chart")
+      : key === "rsi" ? $("#rsi-chart")
+        : $("#macd-chart");
+    if (!el) return;
+    const width = el.clientWidth || el.parentElement?.clientWidth || 0;
+    const height = el.clientHeight || el.parentElement?.clientHeight || 0;
+    if (width > 0 && height > 0) {
+      chart.applyOptions({ width, height });
+      chart.timeScale().fitContent();
+    }
+  });
+}
+
+function setTechChartFullscreen(on) {
+  const box = $("#candle-chart-box");
+  const btn = $("#btn-tech-expand");
+  if (!box) return;
+  box.classList.toggle("fullscreen", !!on);
+  document.body.classList.toggle("tech-chart-fs", !!on);
+  if (btn) btn.textContent = on ? "✕" : "⛶";
+  requestAnimationFrame(() => resizeLwCharts());
+}
+
+function syncTechSummaryCollapse() {
+  const summary = $("#tech-summary");
+  const more = $("#btn-tech-summary-more");
+  if (!summary || !more) return;
+  summary.classList.remove("is-collapsed");
+  more.classList.add("hidden");
+  more.textContent = "Ver más";
+  // Only clamp on mobile when text is long
+  if (!isMobileViewport()) return;
+  const long = (summary.textContent || "").length > 220;
+  if (!long) return;
+  summary.classList.add("is-collapsed");
+  more.classList.remove("hidden");
+}
+
+function setupTechMobileControls() {
+  $("#btn-tech-expand")?.addEventListener("click", () => {
+    const box = $("#candle-chart-box");
+    setTechChartFullscreen(!box?.classList.contains("fullscreen"));
+  });
+  $("#btn-tech-summary-more")?.addEventListener("click", () => {
+    const summary = $("#tech-summary");
+    const more = $("#btn-tech-summary-more");
+    if (!summary || !more) return;
+    const collapsed = summary.classList.toggle("is-collapsed");
+    more.textContent = collapsed ? "Ver más" : "Ver menos";
+  });
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (!isMobileViewport()) clearMobileTechFocus();
+      resizeLwCharts();
+    }, 120);
+  });
+  window.addEventListener("orientationchange", () => {
+    setTimeout(resizeLwCharts, 250);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && $("#candle-chart-box")?.classList.contains("fullscreen")) {
+      setTechChartFullscreen(false);
+    }
   });
 }
 
@@ -1429,6 +1538,7 @@ async function loadTechnicalChart(t, techAgentReport) {
     if (!pts.length) {
       destroyAllLwCharts();
       $("#tech-summary").textContent = data.summary || "Sin datos técnicos.";
+      syncTechSummaryCollapse();
       if (data.gaps_by_timeframe) renderGapsPanel(data);
       return;
     }
@@ -1440,6 +1550,7 @@ async function loadTechnicalChart(t, techAgentReport) {
       summary = techAgentReport.summary + (summary ? `\n\n${summary}` : "");
     }
     $("#tech-summary").textContent = summary;
+    syncTechSummaryCollapse();
 
     const chartOpts = {
       layout: { background: { color: "transparent" }, textColor: "#7d8fa3" },
@@ -1447,13 +1558,20 @@ async function loadTechnicalChart(t, techAgentReport) {
       rightPriceScale: { borderColor: "#1e2a38" },
       timeScale: { borderColor: "#1e2a38", timeVisible: intraday, secondsVisible: false },
       crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+      handleScroll: { vertTouchDrag: false },
+      handleScale: { axisPressedMouseMove: true },
     };
 
     const mapTime = (p) => lwTime(p.date, chartTf);
 
     destroyLwChart("candle");
     const candleEl = $("#candle-chart");
-    lwCharts.candle = LightweightCharts.createChart(candleEl, { ...chartOpts, height: candleEl.clientHeight || 260 });
+    const candleH = candleEl.clientHeight || candleEl.parentElement?.clientHeight || (isMobileViewport() ? 300 : 260);
+    lwCharts.candle = LightweightCharts.createChart(candleEl, {
+      ...chartOpts,
+      width: candleEl.clientWidth || undefined,
+      height: candleH,
+    });
     const candleSeries = lwCharts.candle.addCandlestickSeries({
       upColor: "#22c55e", downColor: "#ef4444",
       borderUpColor: "#22c55e", borderDownColor: "#ef4444",
@@ -1499,7 +1617,12 @@ async function loadTechnicalChart(t, techAgentReport) {
 
     destroyLwChart("rsi");
     const rsiEl = $("#rsi-chart");
-    lwCharts.rsi = LightweightCharts.createChart(rsiEl, { ...chartOpts, height: rsiEl.clientHeight || 120 });
+    const rsiH = rsiEl.clientHeight || rsiEl.parentElement?.clientHeight || 140;
+    lwCharts.rsi = LightweightCharts.createChart(rsiEl, {
+      ...chartOpts,
+      width: rsiEl.clientWidth || undefined,
+      height: rsiH,
+    });
     const rsiSeries = lwCharts.rsi.addLineSeries({ color: "#3b82f6", lineWidth: 2, title: "RSI" });
     rsiSeries.setData(pts.filter((p) => p.rsi != null).map((p) => ({ time: mapTime(p), value: p.rsi })));
     rsiSeries.createPriceLine({ price: 70, color: "rgba(239,68,68,0.6)", lineWidth: 1, lineStyle: 2 });
@@ -1508,7 +1631,12 @@ async function loadTechnicalChart(t, techAgentReport) {
 
     destroyLwChart("macd");
     const macdEl = $("#macd-chart");
-    lwCharts.macd = LightweightCharts.createChart(macdEl, { ...chartOpts, height: macdEl.clientHeight || 120 });
+    const macdH = macdEl.clientHeight || macdEl.parentElement?.clientHeight || 140;
+    lwCharts.macd = LightweightCharts.createChart(macdEl, {
+      ...chartOpts,
+      width: macdEl.clientWidth || undefined,
+      height: macdH,
+    });
     const macdLine = lwCharts.macd.addLineSeries({ color: "#06b6d4", lineWidth: 1, title: "MACD" });
     macdLine.setData(pts.filter((p) => p.macd != null).map((p) => ({ time: mapTime(p), value: p.macd })));
     const sigLine = lwCharts.macd.addLineSeries({ color: "#f59e0b", lineWidth: 1, title: "Señal" });
@@ -1519,6 +1647,7 @@ async function loadTechnicalChart(t, techAgentReport) {
       color: p.macd_hist >= 0 ? "rgba(34,197,94,0.6)" : "rgba(239,68,68,0.6)",
     })));
     lwCharts.macd.timeScale().fitContent();
+    requestAnimationFrame(resizeLwCharts);
   } catch (e) {
     destroyAllLwCharts();
     const statusEl = $("#tech-data-status");
@@ -1657,6 +1786,9 @@ async function runAnalyze() {
     renderScenarios(thesis);
     renderTechCorrelations(thesis);
     await loadTechnicalChart(t, techReport);
+    focusTechView();
+    $$(".mob-nav-btn").forEach((b) => b.classList.remove("active"));
+    $("#mob-tech")?.classList.add("active");
 
     const news = (thesis.agent_reports || []).find((r) => r.agent_name === "news_agent");
     const mem = (thesis.agent_reports || []).find((r) => r.agent_name === "investment_memory");
@@ -2276,6 +2408,7 @@ document.addEventListener("keydown", (e) => {
 (async () => {
   await ensureAuth();
   setupMobileNav();
+  setupTechMobileControls();
   setupBudgetSync();
   syncBudgetFields("#disc-budget", "#prop-budget");
   const t = localStorage.getItem("nexbuy_token");

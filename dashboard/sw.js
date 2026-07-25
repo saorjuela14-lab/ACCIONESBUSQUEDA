@@ -1,4 +1,4 @@
-const CACHE = "nexbuy-v10";
+const CACHE = "nexbuy-v11";
 const ASSETS = [
   "/dashboard/static/styles.css",
   "/dashboard/static/voice.js",
