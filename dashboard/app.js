@@ -216,7 +216,7 @@ function capitalFitHint(capital) {
   const c = parseFloat(capital) || 0;
   if (c <= 0) return "";
   if (c <= 100) {
-    return `Capital micro ($${c}): se buscarán penny stocks ≤ ~$5 para comprar acciones enteras manteniendo los %.`;
+    return `Capital micro ($${c}): penny stocks ≤ ~$5 con cotización viva; reserva cash ≥20% y tope ~35%/posición (no 100% del portafolio).`;
   }
   if (c <= 500) {
     return `Capital pequeño ($${c}): preferencia por acciones ≤ ~$25 que quepan en cada línea de asignación.`;
