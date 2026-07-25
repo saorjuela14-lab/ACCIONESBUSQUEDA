@@ -17,6 +17,7 @@ from agents.technical.indicators import (
     detect_support_resistance,
     enrich_indicators,
 )
+from agents.technical.market_opinion import build_market_opinion_from_prior
 from agents.technical.playbook import build_playbook
 from agents.technical.structure import classify_structure
 from agents.technical.volume_analysis import analyze_volume
@@ -215,6 +216,18 @@ class TechnicalAgent(BaseAgent):
             )
 
         committee_notes = context_result.correlation_notes if context_result else []
+        sentiment_raw = None
+        news_raw = None
+        for rep in prior_reports:
+            if rep.agent_name == "sentiment_agent" and isinstance(rep.raw_data, dict):
+                sentiment_raw = rep.raw_data
+            if rep.agent_name == "news_agent" and isinstance(rep.raw_data, dict):
+                news_raw = rep.raw_data
+        market_opinion = build_market_opinion_from_prior(
+            prior_ctx,
+            sentiment_raw=sentiment_raw,
+            news_raw=news_raw,
+        )
         playbook = build_playbook(
             ticker=ticker.upper(),
             price=price or float(daily.get("close") or 0),
@@ -226,6 +239,7 @@ class TechnicalAgent(BaseAgent):
             trade_levels=trade_levels,
             unfilled_gaps=unfilled_gap_count,
             committee_notes=committee_notes,
+            market_opinion=market_opinion,
         )
 
         if playbook["opinion"] == "constructive":
@@ -288,6 +302,7 @@ class TechnicalAgent(BaseAgent):
                 "volume": volume,
                 "historical_setups": historical,
                 "playbook": playbook,
+                "market_opinion": market_opinion,
                 "unfilled_gap_count": unfilled_gap_count,
             },
             summary=summary,

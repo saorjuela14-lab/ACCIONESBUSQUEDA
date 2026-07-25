@@ -151,6 +151,7 @@ class TechnicalChartData(BaseModel):
     volume_context: dict = Field(default_factory=dict)
     historical_setups: dict = Field(default_factory=dict)
     playbook: dict = Field(default_factory=dict)
+    market_opinion: dict = Field(default_factory=dict)
 
 
 class PortfolioHistoryPoint(BaseModel):

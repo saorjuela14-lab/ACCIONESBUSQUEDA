@@ -61,7 +61,14 @@ def build_prior_context(prior_reports: list[AgentReport]) -> PriorContext:
 
         if report.agent_name == "news_agent":
             raw = report.raw_data or {}
-            ctx.news_sentiment_score = raw.get("sentiment_score") or report.score
+            # News agent stores sentiment_avg_recent (±1) or legacy sentiment_score
+            raw_sent = raw.get("sentiment_score")
+            if raw_sent is None and raw.get("sentiment_avg_recent") is not None:
+                try:
+                    raw_sent = float(raw["sentiment_avg_recent"]) * 50.0
+                except (TypeError, ValueError):
+                    raw_sent = None
+            ctx.news_sentiment_score = raw_sent if raw_sent is not None else report.score
 
     return ctx
 

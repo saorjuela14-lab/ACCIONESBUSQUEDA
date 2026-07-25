@@ -1419,6 +1419,7 @@ function renderTechPlaybook(data, techAgentReport) {
   const confluence = data?.confluence || techAgentReport?.raw_data?.confluence;
   const structure = data?.structure || techAgentReport?.raw_data?.structure;
   const historical = data?.historical_setups || techAgentReport?.raw_data?.historical_setups;
+  const mkt = pb?.market_opinion || data?.market_opinion || techAgentReport?.raw_data?.market_opinion;
   if (!pb || !pb.strategy_es) {
     el.className = "tech-playbook hidden";
     el.innerHTML = "";
@@ -1426,7 +1427,7 @@ function renderTechPlaybook(data, techAgentReport) {
   }
   const opinion = pb.opinion || "neutral";
   el.className = `tech-playbook ${opinion}`;
-  const checklist = (pb.checklist || []).slice(0, 6).map((c) => `<li>${c}</li>`).join("");
+  const checklist = (pb.checklist || []).slice(0, 8).map((c) => `<li>${c}</li>`).join("");
   const invalid = (pb.invalidation || []).slice(0, 3).map((c) => `<li>${c}</li>`).join("");
   const hist = pb.historical_note
     || (historical?.best
@@ -1436,6 +1437,30 @@ function renderTechPlaybook(data, techAgentReport) {
     ? `${confluence.label_es || "—"} · acuerdo ${confluence.agreement_pct ?? "—"}%`
     : "—";
   const structLine = structure?.label_es || data?.snapshot?.structure_label || "—";
+  let mktHtml = "";
+  if (mkt?.available) {
+    const ch = mkt.channels || {};
+    const chBits = ["news", "social", "retail", "analyst"]
+      .map((k) => {
+        const sc = ch[k]?.score;
+        if (sc == null) return null;
+        const names = { news: "Noticias", social: "Social", retail: "Minorista", analyst: "Analistas" };
+        return `${names[k]} ${Number(sc) >= 0 ? "+" : ""}${Number(sc).toFixed(0)}`;
+      })
+      .filter(Boolean)
+      .join(" · ");
+    const align = pb.tech_market_alignment;
+    mktHtml = `
+      <div class="pb-market">
+        <div class="pb-market-head">Opinión de mercado: <b>${mkt.label_es || "—"}</b>
+          <span class="muted">(${mkt.aggregated_score != null ? (mkt.aggregated_score >= 0 ? "+" : "") + Number(mkt.aggregated_score).toFixed(1) : "—"})</span>
+        </div>
+        ${chBits ? `<div class="pb-market-ch">${chBits}</div>` : ""}
+        ${mkt.summary ? `<p class="pb-market-sum">${mkt.summary}</p>` : ""}
+        ${align ? `<p class="pb-market-align">Técnico vs mercado: <b>${align.status_es || align.status}</b> — ${align.note || ""}</p>` : ""}
+        ${(mkt.top_factors || []).slice(0, 2).map((f) => `<div class="pb-market-factor">• ${f}</div>`).join("")}
+      </div>`;
+  }
   el.innerHTML = `
     <h4>Playbook técnico</h4>
     <div class="pb-meta">
@@ -1445,6 +1470,7 @@ function renderTechPlaybook(data, techAgentReport) {
       <span>Confluencia: <b>${confLine}</b></span>
     </div>
     <p class="pb-thesis">${pb.thesis || ""}</p>
+    ${mktHtml}
     ${checklist ? `<ul>${checklist}</ul>` : ""}
     ${invalid ? `<p class="muted" style="margin:0.25rem 0 0;font-size:11px">Invalidación</p><ul>${invalid}</ul>` : ""}
     ${hist ? `<p class="pb-hist">${hist}</p>` : ""}
