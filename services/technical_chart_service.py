@@ -308,14 +308,18 @@ class TechnicalChartService:
         try:
             from services.sentiment_engine_service import SentimentEngineService
 
+            # Engine often needs 8–15s (StockTwits/Reddit/news); keep under chart UX budget.
             report = await asyncio.wait_for(
                 SentimentEngineService().analyze(ticker),
-                timeout=6.0,
+                timeout=18.0,
             )
             return build_market_opinion_from_engine(report)
+        except asyncio.TimeoutError:
+            logger.info("market_opinion.timeout", ticker=ticker)
+            return {"available": False, "error": "timeout_18s"}
         except Exception as exc:
-            logger.info("market_opinion.unavailable", ticker=ticker, error=str(exc))
-            return {"available": False, "error": str(exc)[:160]}
+            logger.info("market_opinion.unavailable", ticker=ticker, error=str(exc) or type(exc).__name__)
+            return {"available": False, "error": (str(exc) or type(exc).__name__)[:160]}
 
     async def _bias_snapshot_multi(
         self,
