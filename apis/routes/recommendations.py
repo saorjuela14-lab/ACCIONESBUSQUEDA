@@ -113,6 +113,30 @@ async def generate_daily_trades(
     )
 
 
+async def _held_alpaca_tickers() -> list[str]:
+    """Open Alpaca positions — do not re-recommend names already on the book."""
+    try:
+        from services.alpaca_order_service import AlpacaOrderService
+
+        alpaca = AlpacaOrderService()
+        if not alpaca.is_configured():
+            return []
+        positions = await alpaca.get_positions()
+        out: list[str] = []
+        for p in positions or []:
+            if hasattr(p, "symbol"):
+                sym = getattr(p, "symbol", None)
+            elif isinstance(p, dict):
+                sym = p.get("symbol") or p.get("ticker")
+            else:
+                sym = None
+            if sym:
+                out.append(str(sym).upper())
+        return out
+    except Exception:
+        return []
+
+
 @router.post("/recommendations/manage-capital", response_model=MicroPortfolioPlanOut)
 async def manage_micro_capital(
     request: MicroManageRequest,
@@ -122,6 +146,7 @@ async def manage_micro_capital(
     watchlist = await WatchlistRepository(session).list_active()
     exclude = list(request.exclude_tickers or [])
     exclude.extend(w.ticker for w in watchlist)
+    exclude.extend(await _held_alpaca_tickers())
 
     capital = await _resolve_manage_capital(session, request.capital)
 
