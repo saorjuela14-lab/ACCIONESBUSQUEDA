@@ -15,7 +15,12 @@ from agents.technical.gaps import (
     detect_gaps,
     resample_ohlc,
 )
+from agents.technical.confluence import score_confluence
+from agents.technical.historical_setups import evaluate_historical_setups
 from agents.technical.indicators import build_trade_levels, detect_support_resistance, enrich_indicators
+from agents.technical.playbook import build_playbook
+from agents.technical.structure import classify_structure
+from agents.technical.volume_analysis import analyze_volume
 from domain.dashboard import PriceGap, TechnicalChartData, TechnicalChartPoint, TechnicalSnapshot
 from providers.interfaces import MarketDataProvider
 from providers.market.intervals import (
@@ -108,6 +113,10 @@ class TechnicalChartService:
             atr,
         )
 
+        structure = classify_structure(enriched)
+        volume = analyze_volume(enriched)
+        historical = evaluate_historical_setups(enriched)
+
         points: list[TechnicalChartPoint] = []
         for idx, row in display.iterrows():
             date_str = _format_point_time(idx, interval)
@@ -137,6 +146,8 @@ class TechnicalChartService:
         macd_sig = self._f(last.get("MACD_Signal"))
         sma20 = self._f(last.get("SMA20"))
         sma50 = self._f(last.get("SMA50"))
+        sma200 = self._f(last.get("SMA200"))
+        adx = self._f(last.get("ADX"))
 
         bias = "neutral"
         score = 0.0
@@ -151,7 +162,17 @@ class TechnicalChartService:
             score += 1 if price > sma20 else -1
         if sma50 is not None:
             score += 1 if price > sma50 else -1
+        if sma200 is not None:
+            score += 1.2 if price > sma200 else -1.2
+        if structure.get("structure") == "uptrend":
+            score += 0.8
+        elif structure.get("structure") == "downtrend":
+            score -= 0.8
         bias = "bullish" if score >= 1 else "bearish" if score <= -1 else "neutral"
+
+        # Mini multi-TF confluence (HTF anchors) for chart playbook
+        tf_map = await self._bias_snapshot_multi(ticker, current_tf=tf, current_bias=bias, current_score=score)
+        confluence = score_confluence(tf_map)
 
         snapshot = TechnicalSnapshot(
             price=round(price, 2),
@@ -161,22 +182,48 @@ class TechnicalChartService:
             macd_hist=self._f(last.get("MACD_Hist")),
             sma20=sma20,
             sma50=sma50,
+            sma200=sma200,
             ema20=self._f(last.get("EMA20")),
             atr=round(atr, 2),
+            adx=adx,
             bias=bias,
             support=round(levels["support"], 2),
             resistance=round(levels["resistance"], 2),
             stop_loss=round(trade_levels.get("stop_loss", 0), 2) if trade_levels.get("stop_loss") else None,
             take_profit_1=round(trade_levels.get("take_profit_1", 0), 2) if trade_levels.get("take_profit_1") else None,
             risk_reward=trade_levels.get("risk_reward_ratio"),
+            structure=structure.get("structure"),
+            structure_label=structure.get("label_es"),
+            volume_ratio=volume.get("volume_ratio"),
+            volume_confirm=volume.get("volume_confirm"),
+            above_vwap=volume.get("above_vwap"),
         )
 
         gaps_by_tf = await self._scan_gaps_all_timeframes(ticker)
         chart_gaps = gaps_by_tf.get(tf, detect_gaps(df, timeframe=tf, min_gap_pct=GAP_TIMEFRAME_BY_LABEL[tf][3], interval=interval))
         unfilled = [g for gaps in gaps_by_tf.values() for g in gaps if not g.filled]
 
+        playbook = build_playbook(
+            ticker=ticker,
+            price=price,
+            daily={
+                "rsi": rsi,
+                "adx": adx,
+                "bias": bias,
+                "close": price,
+            },
+            structure=structure,
+            confluence=confluence,
+            volume=volume,
+            historical=historical,
+            trade_levels=trade_levels,
+            unfilled_gaps=len([g for g in unfilled if not g.filled]),
+        )
+
         tf_label = {"1D": "diario", "1W": "semanal", "4H": "4 horas", "1H": "1 hora", "30m": "30 min", "15m": "15 min"}.get(tf, tf)
-        summary = self._build_summary(ticker, snapshot, bias, unfilled, tf_label, status, as_of, stale_days)
+        summary = self._build_summary(
+            ticker, snapshot, bias, unfilled, tf_label, status, as_of, stale_days, playbook
+        )
 
         return TechnicalChartData(
             ticker=ticker,
@@ -192,6 +239,11 @@ class TechnicalChartService:
             as_of=as_of,
             stale_days=stale_days,
             market_status=status,
+            structure=structure,
+            confluence=confluence,
+            volume_context=volume,
+            historical_setups=historical,
+            playbook=playbook,
         )
 
     async def _load_ohlc(self, ticker: str, chart_timeframe: str, period: str) -> tuple[pd.DataFrame, str]:
@@ -238,6 +290,63 @@ class TechnicalChartService:
             *[_scan_one(*cfg) for cfg in GAP_TIMEFRAME_CONFIG]
         )
         return {label: gaps for label, gaps in results}
+
+    async def _bias_snapshot_multi(
+        self,
+        ticker: str,
+        *,
+        current_tf: str,
+        current_bias: str,
+        current_score: float,
+    ) -> dict[str, dict]:
+        """Quick HTF bias map for confluence without full agent scan."""
+        result: dict[str, dict] = {
+            current_tf: {"bias": current_bias, "score": current_score},
+        }
+
+        async def _one(label: str, period: str, interval: str, resample: str | None):
+            if label == current_tf:
+                return label, None
+            try:
+                df = await self._market.get_history(ticker, period=period, interval=interval)
+                if resample and not df.empty:
+                    df = resample_ohlc(df, resample)
+                if df.empty or len(df) < 30:
+                    return label, None
+                enriched = enrich_indicators(df)
+                last = enriched.iloc[-1]
+                score = 0.0
+                rsi = float(last["RSI"]) if pd.notna(last.get("RSI")) else None
+                if rsi is not None:
+                    if rsi < 30:
+                        score += 2
+                    elif rsi > 70:
+                        score -= 2
+                macd = last.get("MACD")
+                macd_sig = last.get("MACD_Signal")
+                if pd.notna(macd) and pd.notna(macd_sig):
+                    score += 1.5 if macd > macd_sig else -1.5
+                close = float(last["Close"])
+                for col, w in (("SMA20", 1), ("SMA50", 1), ("SMA200", 1.2)):
+                    v = last.get(col)
+                    if pd.notna(v):
+                        score += w if close > float(v) else -w
+                bias = "bullish" if score >= 1 else "bearish" if score <= -1 else "neutral"
+                return label, {"bias": bias, "score": score}
+            except Exception as exc:
+                logger.warning("confluence.tf_failed", ticker=ticker, tf=label, error=str(exc))
+                return label, None
+
+        probes = [
+            ("1D", "1y", "1d", None),
+            ("1W", "5y", "1wk", None),
+            ("4H", "3mo", "1h", "4h"),
+        ]
+        pairs = await asyncio.gather(*[_one(*p) for p in probes])
+        for label, data in pairs:
+            if data:
+                result[label] = data
+        return result
 
     def _f(self, val) -> float | None:
         if val is None or (isinstance(val, float) and np.isnan(val)):
@@ -300,6 +409,7 @@ class TechnicalChartService:
         status: str,
         as_of: str | None,
         stale_days: int | None,
+        playbook: dict | None = None,
     ) -> str:
         parts: list[str] = []
         prefix = self._freshness_prefix(ticker, status, as_of, stale_days)
@@ -308,11 +418,18 @@ class TechnicalChartService:
         elif as_of:
             parts.append(f"Datos a {as_of} (mercado al día).")
 
+        if playbook and playbook.get("summary"):
+            parts.append(playbook["summary"])
+
         parts.extend(
             [
                 f"Análisis técnico {tf_label} de {ticker}: sesgo {bias_label(bias)}.",
-                f"Precio ${snap.price}, RSI {snap.rsi or 'N/D'}, MACD {'alcista' if snap.macd and snap.macd_signal and snap.macd > snap.macd_signal else 'bajista' if snap.macd and snap.macd_signal else 'N/D'}.",
-                f"SMA20 ${snap.sma20 or '—'}, SMA50 ${snap.sma50 or '—'}.",
+                f"Precio ${snap.price}, RSI {snap.rsi or 'N/D'}, ADX {snap.adx or 'N/D'}, "
+                f"MACD {'alcista' if snap.macd and snap.macd_signal and snap.macd > snap.macd_signal else 'bajista' if snap.macd and snap.macd_signal else 'N/D'}.",
+                f"SMA20 ${snap.sma20 or '—'}, SMA50 ${snap.sma50 or '—'}, SMA200 ${snap.sma200 or '—'}.",
+                f"Estructura: {snap.structure_label or '—'}. Volumen: {snap.volume_confirm or '—'}"
+                + (f" ({snap.volume_ratio}x)" if snap.volume_ratio is not None else "")
+                + ".",
                 f"Soporte ${snap.support}, resistencia ${snap.resistance}.",
             ]
         )

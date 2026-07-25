@@ -114,14 +114,21 @@ class TechnicalSnapshot(BaseModel):
     macd_hist: float | None = None
     sma20: float | None = None
     sma50: float | None = None
+    sma200: float | None = None
     ema20: float | None = None
     atr: float | None = None
+    adx: float | None = None
     bias: str = "neutral"
     support: float | None = None
     resistance: float | None = None
     stop_loss: float | None = None
     take_profit_1: float | None = None
     risk_reward: float | None = None
+    structure: str | None = None
+    structure_label: str | None = None
+    volume_ratio: float | None = None
+    volume_confirm: str | None = None
+    above_vwap: bool | None = None
 
 
 class TechnicalChartData(BaseModel):
@@ -139,6 +146,11 @@ class TechnicalChartData(BaseModel):
     as_of: str | None = None
     stale_days: int | None = None
     market_status: str = "unavailable"  # live | stale | delisted | unavailable
+    structure: dict = Field(default_factory=dict)
+    confluence: dict = Field(default_factory=dict)
+    volume_context: dict = Field(default_factory=dict)
+    historical_setups: dict = Field(default_factory=dict)
+    playbook: dict = Field(default_factory=dict)
 
 
 class PortfolioHistoryPoint(BaseModel):

@@ -1412,6 +1412,46 @@ function renderTechnicalKpis(snap) {
     : "—";
 }
 
+function renderTechPlaybook(data, techAgentReport) {
+  const el = $("#tech-playbook");
+  if (!el) return;
+  const pb = data?.playbook || techAgentReport?.raw_data?.playbook;
+  const confluence = data?.confluence || techAgentReport?.raw_data?.confluence;
+  const structure = data?.structure || techAgentReport?.raw_data?.structure;
+  const historical = data?.historical_setups || techAgentReport?.raw_data?.historical_setups;
+  if (!pb || !pb.strategy_es) {
+    el.className = "tech-playbook hidden";
+    el.innerHTML = "";
+    return;
+  }
+  const opinion = pb.opinion || "neutral";
+  el.className = `tech-playbook ${opinion}`;
+  const checklist = (pb.checklist || []).slice(0, 6).map((c) => `<li>${c}</li>`).join("");
+  const invalid = (pb.invalidation || []).slice(0, 3).map((c) => `<li>${c}</li>`).join("");
+  const hist = pb.historical_note
+    || (historical?.best
+      ? `Edge histórico: ${historical.best.label_es} · ${historical.best.hit_rate}% acierto (${historical.best.samples} señales)`
+      : "");
+  const confLine = confluence
+    ? `${confluence.label_es || "—"} · acuerdo ${confluence.agreement_pct ?? "—"}%`
+    : "—";
+  const structLine = structure?.label_es || data?.snapshot?.structure_label || "—";
+  el.innerHTML = `
+    <h4>Playbook técnico</h4>
+    <div class="pb-meta">
+      <span>Estrategia: <b>${pb.strategy_es}</b></span>
+      <span>Opinión: <b>${pb.opinion_es || "—"}</b></span>
+      <span>Estructura: <b>${structLine}</b></span>
+      <span>Confluencia: <b>${confLine}</b></span>
+    </div>
+    <p class="pb-thesis">${pb.thesis || ""}</p>
+    ${checklist ? `<ul>${checklist}</ul>` : ""}
+    ${invalid ? `<p class="muted" style="margin:0.25rem 0 0;font-size:11px">Invalidación</p><ul>${invalid}</ul>` : ""}
+    ${hist ? `<p class="pb-hist">${hist}</p>` : ""}
+    <p class="muted" style="margin:0.35rem 0 0;font-size:10px">${pb.framework || ""}</p>
+  `;
+}
+
 function renderGapHighlights(candleSeries, gaps, chartTf) {
   if (!gaps?.length) return;
   const tf = chartTf || activeGapTf;
@@ -1539,11 +1579,13 @@ async function loadTechnicalChart(t, techAgentReport) {
       destroyAllLwCharts();
       $("#tech-summary").textContent = data.summary || "Sin datos técnicos.";
       syncTechSummaryCollapse();
+      renderTechPlaybook(data, techAgentReport);
       if (data.gaps_by_timeframe) renderGapsPanel(data);
       return;
     }
 
     renderTechnicalKpis(data.snapshot);
+    renderTechPlaybook(data, techAgentReport);
 
     let summary = data.summary || "";
     if (techAgentReport?.summary) {
@@ -1807,6 +1849,12 @@ async function runAnalyze() {
     const tech = (thesis.agent_reports || []).find((r) => r.agent_name === "technical_agent");
     if (tech?.raw_data?.cross_agent_correlations?.length) {
       txt += `\n\nCONTEXTO TÉCNICO:\n` + tech.raw_data.cross_agent_correlations.join("\n");
+    }
+    if (tech?.raw_data?.playbook) {
+      const pb = tech.raw_data.playbook;
+      txt += `\n\nPLAYBOOK TÉCNICO: ${pb.strategy_es || ""} (${pb.opinion_es || ""})\n${pb.thesis || ""}`;
+      if (pb.checklist?.length) txt += "\n- " + pb.checklist.slice(0, 5).join("\n- ");
+      if (pb.historical_note) txt += `\n${pb.historical_note}`;
     }
     if (["sell", "strong_sell"].includes(String(thesis.recommendation || "").toLowerCase())) {
       txt += "\n\n⚠ Comité en SELL — si hay posición abierta, Lifecycle puede cerrarla.";
