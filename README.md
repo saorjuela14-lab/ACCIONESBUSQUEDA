@@ -111,9 +111,10 @@ GET  /api/v1/ops/status
 Se envía a las **09:35 y 16:05 ET** (días hábiles) con equity, posiciones, órdenes abiertas y cerradas del día.
 
 Opción más simple — [CallMeBot](https://www.callmebot.com/blog/free-api-whatsapp-messages/):
-1. Envía al WhatsApp **+34 644 54 90 86** el texto: `I allow callmebot to send me messages`
-2. El bot responde con tu `apikey`
-3. Variables en FastAPI Cloud:
+1. Guarda en contactos el bot actual: **+34 644 78 33 97** (los números viejos dejan de tener WhatsApp)
+2. Envíale: `I allow callmebot to send me messages`
+3. El bot responde con tu `apikey` (si no llega en 2 min, reintenta tras 24h)
+4. Variables en FastAPI Cloud:
 
 | Variable | Valor |
 |----------|--------|
