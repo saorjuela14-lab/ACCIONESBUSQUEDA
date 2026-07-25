@@ -5,6 +5,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from agents.technical.adx import calc_adx, calc_volume_sma
+
 
 def calc_rsi(close: pd.Series, period: int = 14) -> pd.Series:
     delta = close.diff()
@@ -48,8 +50,14 @@ def enrich_indicators(df: pd.DataFrame) -> pd.DataFrame:
     out["SMA50"] = out["Close"].rolling(50).mean()
     out["SMA200"] = out["Close"].rolling(200).mean()
     out["EMA20"] = out["Close"].ewm(span=20, adjust=False).mean()
-    out["VWAP"] = (out["Close"] * out["Volume"]).cumsum() / out["Volume"].cumsum()
-
+    if "Volume" in out.columns:
+        vol = out["Volume"].fillna(0)
+        out["VWAP"] = (out["Close"] * vol).cumsum() / vol.replace(0, np.nan).cumsum()
+        out["Volume_SMA20"] = calc_volume_sma(vol, 20)
+    else:
+        out["VWAP"] = np.nan
+        out["Volume_SMA20"] = np.nan
+    out["ADX"] = calc_adx(out["High"], out["Low"], out["Close"])
     return out
 
 
@@ -62,13 +70,15 @@ def detect_support_resistance(df: pd.DataFrame, lookback: int = 60) -> dict[str,
 
 
 def build_trade_levels(price: float, support: float, resistance: float, atr: float) -> dict[str, Any]:
-    risk = price - (support - atr * 1.5)
-    reward = (price + atr * 2) - price
+    stop = support - atr * 1.5
+    risk = price - stop
+    tp1 = price + atr * 2
+    reward = tp1 - price
     return {
-        "entry_zone": [support, support + atr * 0.5],
-        "stop_loss": support - atr * 1.5,
-        "take_profit_1": price + atr * 2,
-        "take_profit_2": price + atr * 3,
-        "take_profit_3": resistance,
+        "entry_zone": [round(support, 4), round(support + atr * 0.5, 4)],
+        "stop_loss": round(stop, 4),
+        "take_profit_1": round(tp1, 4),
+        "take_profit_2": round(price + atr * 3, 4),
+        "take_profit_3": round(resistance, 4),
         "risk_reward_ratio": round(reward / risk, 2) if risk > 0 else None,
     }
