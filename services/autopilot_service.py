@@ -131,8 +131,11 @@ class AutopilotService:
             steps["recommendations"] = {"error": str(exc)}
             report = None
 
-        # 5) Auto-execute (paper-first policy)
-        do_exec = settings.auto_execute_trades if execute_trades is None else execute_trades
+        # 5) Auto-execute (firm autonomy / paper-first policy)
+        if execute_trades is None:
+            do_exec = bool(settings.auto_execute_trades or settings.firm_autonomy)
+        else:
+            do_exec = execute_trades
         if do_exec and report and report.picks:
             try:
                 auto = AutoExecuteService(self._session, self._broker)

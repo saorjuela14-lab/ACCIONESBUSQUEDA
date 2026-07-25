@@ -1,4 +1,4 @@
-"""Paper-first auto-execute desk with LIVE promotion gates."""
+"""Paper-first / firm-autonomy auto-execute desk with LIVE promotion gates."""
 
 from __future__ import annotations
 
@@ -27,29 +27,54 @@ class AutoExecuteService:
 
     def policy(self) -> AutoExecutePolicy:
         s = self._settings
+        enabled = bool(s.auto_execute_trades or s.firm_autonomy)
+        live = bool(s.auto_execute_live or s.firm_autonomy)
         return AutoExecutePolicy(
-            enabled=s.auto_execute_trades,
-            paper_only_until_promoted=s.auto_execute_paper_first,
-            live_enabled=s.auto_execute_live,
+            enabled=enabled,
+            paper_only_until_promoted=bool(s.auto_execute_paper_first and not s.firm_autonomy),
+            live_enabled=live,
             max_notional=s.auto_execute_max_notional,
             require_market_open=s.auto_execute_require_market_open,
+            promotion_note=(
+                "Firma autónoma ON: compras/cierres sin click humano "
+                f"(tope ${s.auto_execute_max_notional:.0f}/orden, comité unánime + risk desk). "
+                f"Estado: FIRM_AUTONOMY={s.firm_autonomy} AUTO_EXECUTE_TRADES={s.auto_execute_trades} "
+                f"AUTO_EXECUTE_LIVE={s.auto_execute_live}"
+                if s.firm_autonomy
+                else (
+                    "Paper primero: AUTO_EXECUTE_TRADES=true con ALPACA_PAPER=true. "
+                    "LIVE solo con AUTO_EXECUTE_LIVE=true y límites bajos. "
+                    f"Estado: AUTO_EXECUTE_TRADES={s.auto_execute_trades} "
+                    f"(allowed={enabled})"
+                )
+            ),
         )
+
+    def _trades_enabled(self) -> bool:
+        s = self._settings
+        return bool(s.auto_execute_trades or s.firm_autonomy)
+
+    def _live_enabled(self) -> bool:
+        s = self._settings
+        return bool(s.auto_execute_live or s.firm_autonomy)
 
     def can_auto_trade(self) -> tuple[bool, str]:
         s = self._settings
-        if not s.auto_execute_trades:
+        if not self._trades_enabled():
             return False, "AUTO_EXECUTE_TRADES=false"
         if not self._broker.is_configured():
             return False, "Alpaca no configurada"
         if self._broker.paper:
             return True, "paper mode OK"
-        # LIVE path — require env + optional durable promotion flag
-        if s.auto_execute_paper_first and not s.auto_execute_live:
+        # LIVE path
+        if s.firm_autonomy:
+            return True, "firm_autonomy LIVE"
+        if s.auto_execute_paper_first and not self._live_enabled():
             return False, (
                 "LIVE bloqueado: primero opera en paper "
                 "(ALPACA_PAPER=true) o define AUTO_EXECUTE_LIVE=true"
             )
-        if not s.auto_execute_live:
+        if not self._live_enabled():
             return False, "AUTO_EXECUTE_LIVE=false"
         return True, "live promoted"
 
@@ -59,16 +84,16 @@ class AutoExecuteService:
             return ok, reason
         if await KillSwitchService(self._session, self._broker).is_active():
             return False, "kill_switch_active"
-        # Durable paper→LIVE promotion gate
-        if not self._broker.paper:
-            from database.repositories.ops_repository import OpsFlagRepository
+        if self._broker.paper or self._settings.firm_autonomy:
+            return True, reason
+        # Durable paper→LIVE promotion gate (legacy path)
+        from database.repositories.ops_repository import OpsFlagRepository
 
-            promo = await OpsFlagRepository(self._session).get_json("paper_promotion")
-            if self._settings.auto_execute_paper_first and not promo.get("promoted"):
-                if not self._settings.auto_execute_live:
-                    return False, "paper_promotion_required"
-                # AUTO_EXECUTE_LIVE=true can override missing flag, but warn via reason
-                return True, "live via AUTO_EXECUTE_LIVE (promotion flag ausente)"
+        promo = await OpsFlagRepository(self._session).get_json("paper_promotion")
+        if self._settings.auto_execute_paper_first and not promo.get("promoted"):
+            if not self._live_enabled():
+                return False, "paper_promotion_required"
+            return True, "live via AUTO_EXECUTE_LIVE (promotion flag ausente)"
         return True, reason
 
     async def run_from_picks(self, picks: list, *, actor: str = "scheduler") -> dict:
@@ -132,12 +157,12 @@ class AutoExecuteService:
             if len(lines) >= 3:
                 break
         if not lines:
-            reason = (
+            reason_out = (
                 "no_committee_consensus"
                 if skipped_no_committee
                 else "no_affordable_lines"
             )
-            return {"skipped": True, "reason": reason}
+            return {"skipped": True, "reason": reason_out}
 
         result = await self._broker.execute(
             ExecuteOrdersRequest(
@@ -158,6 +183,7 @@ class AutoExecuteService:
             payload={
                 "symbols": [ln.ticker for ln in lines],
                 "warnings": result.warnings[:5],
+                "firm_autonomy": self._settings.firm_autonomy,
             },
         )
         return {

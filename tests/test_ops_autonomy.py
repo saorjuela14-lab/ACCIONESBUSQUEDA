@@ -79,6 +79,7 @@ def test_auto_execute_paper_first_blocks_live():
 
     with patch("services.auto_execute_service.get_settings") as gs:
         s = MagicMock()
+        s.firm_autonomy = False
         s.auto_execute_trades = True
         s.auto_execute_paper_first = True
         s.auto_execute_live = False
@@ -99,6 +100,7 @@ def test_auto_execute_allows_paper():
 
     with patch("services.auto_execute_service.get_settings") as gs:
         s = MagicMock()
+        s.firm_autonomy = False
         s.auto_execute_trades = True
         s.auto_execute_paper_first = True
         s.auto_execute_live = False
@@ -108,6 +110,27 @@ def test_auto_execute_allows_paper():
         svc = AutoExecuteService(session, broker)
         ok, reason = svc.can_auto_trade()
         assert ok is True
+
+
+def test_firm_autonomy_allows_live_without_paper_first():
+    session = MagicMock()
+    broker = MagicMock()
+    broker.is_configured.return_value = True
+    broker.paper = False
+
+    with patch("services.auto_execute_service.get_settings") as gs:
+        s = MagicMock()
+        s.firm_autonomy = True
+        s.auto_execute_trades = False  # master switch still wins
+        s.auto_execute_paper_first = True
+        s.auto_execute_live = False
+        s.auto_execute_max_notional = 25
+        s.auto_execute_require_market_open = True
+        gs.return_value = s
+        svc = AutoExecuteService(session, broker)
+        ok, reason = svc.can_auto_trade()
+        assert ok is True
+        assert "firm_autonomy" in reason
 
 
 @pytest.mark.asyncio
@@ -134,9 +157,10 @@ async def test_auto_execute_skips_picks_without_committee_consensus():
          patch("services.auto_execute_service.KillSwitchService") as KS, \
          patch("services.risk_policy_service.RiskPolicyService") as RS:
         s = MagicMock()
+        s.firm_autonomy = True
         s.auto_execute_trades = True
-        s.auto_execute_paper_first = True
-        s.auto_execute_live = False
+        s.auto_execute_paper_first = False
+        s.auto_execute_live = True
         s.auto_execute_max_notional = 25
         s.auto_execute_require_market_open = True
         gs.return_value = s

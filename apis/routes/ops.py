@@ -52,6 +52,10 @@ class PromoteLiveRequest(BaseModel):
     confirm: bool = False
     note: str = "Promovido tras paper soak"
     min_paper_fills: int = Field(default=3, ge=0)
+    force: bool = Field(
+        default=False,
+        description="Saltar paper soak cuando el dueño autoriza firma autónoma LIVE",
+    )
 
 
 @router.get("/ops/kill-switch", response_model=KillSwitchState)
@@ -163,6 +167,8 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
     promo = await OpsFlagRepository(session).get_json("paper_promotion")
     return {
         "kill_switch": ks.model_dump(mode="json"),
+        "firm_autonomy": settings.firm_autonomy,
+        "autopilot_interval_minutes": settings.effective_autopilot_interval_minutes,
         "auto_execute": {
             "allowed": ok,
             "reason": reason,
@@ -170,6 +176,7 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
         },
         "paper_promotion": promo or {"promoted": False},
         "lifecycle_enabled": settings.lifecycle_enabled,
+        "lifecycle_auto_exit": settings.lifecycle_auto_exit,
         "reconcile_auto_sync": settings.reconcile_auto_sync,
         "risk": {
             "max_var_pct": settings.risk_max_var_pct,
@@ -210,12 +217,14 @@ async def promote_live(
         and e.paper is True
         and e.action in ("buy_submit", "auto_execute", "lifecycle_exit")
     )
-    if paper_fills < body.min_paper_fills:
+    settings = get_settings()
+    skip_soak = body.force or settings.firm_autonomy
+    if not skip_soak and paper_fills < body.min_paper_fills:
         raise HTTPException(
             status_code=400,
             detail=(
                 f"Paper soak incompleto: {paper_fills}/{body.min_paper_fills} eventos paper. "
-                "Opera en Alpaca Paper primero."
+                "Opera en Alpaca Paper primero o envía force=true / FIRM_AUTONOMY=true."
             ),
         )
     payload = {

@@ -90,13 +90,15 @@ class Settings(BaseSettings):
     risk_min_reward_risk: float = 1.2
     risk_off_size_mult: float = 0.35
     risk_crisis_block_buys: bool = True
-    # Autonomy — OFF by default (real capital). Paper first.
-    auto_execute_trades: bool = False
-    auto_execute_live: bool = False  # second gate for LIVE auto-submit
+    # Firm autonomy — independent capital desk (buys/exits without human click).
+    # Kill switch + committee unanimity + risk desk remain hard gates.
+    firm_autonomy: bool = True
+    auto_execute_trades: bool = True
+    auto_execute_live: bool = True  # LIVE auto-submit authorized
     auto_execute_max_notional: float = 25.0
     auto_execute_require_market_open: bool = True
-    auto_execute_paper_first: bool = True  # block LIVE auto unless promoted
-    autopilot_interval_minutes: int = 0  # 0 = disabled scheduled autopilot; use POST /ops/autopilot/run
+    auto_execute_paper_first: bool = False  # skip paper soak when firm_autonomy
+    autopilot_interval_minutes: int = 30  # scheduled full desk loop (0 = off)
 
     # Lifecycle desk
     lifecycle_enabled: bool = True
@@ -138,6 +140,15 @@ class Settings(BaseSettings):
     @property
     def daily_trade_schedule(self) -> list[str]:
         return [t.strip() for t in self.daily_trade_sessions.split(",") if t.strip()]
+
+    @property
+    def effective_autopilot_interval_minutes(self) -> int:
+        """Scheduled autopilot cadence; firm autonomy defaults to 30m when unset."""
+        if self.autopilot_interval_minutes and self.autopilot_interval_minutes > 0:
+            return int(self.autopilot_interval_minutes)
+        if self.firm_autonomy:
+            return 30
+        return 0
 
     @property
     def effective_alpaca_paper(self) -> bool:

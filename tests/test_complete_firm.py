@@ -57,9 +57,10 @@ async def test_auto_execute_async_blocks_kill_switch():
     with patch("services.auto_execute_service.get_settings") as gs, \
          patch("services.auto_execute_service.KillSwitchService") as KS:
         s = MagicMock()
+        s.firm_autonomy = True
         s.auto_execute_trades = True
-        s.auto_execute_paper_first = True
-        s.auto_execute_live = False
+        s.auto_execute_paper_first = False
+        s.auto_execute_live = True
         s.auto_execute_max_notional = 25
         s.auto_execute_require_market_open = True
         gs.return_value = s

@@ -25,7 +25,20 @@ async def lifespan(app: FastAPI):
     configure_logging()
     await init_db()
     settings = get_settings()
-    logger.info("app.startup", env=settings.app_env)
+    logger.info(
+        "app.startup",
+        env=settings.app_env,
+        firm_autonomy=settings.firm_autonomy,
+        auto_execute=settings.auto_execute_trades,
+        autopilot_minutes=settings.effective_autopilot_interval_minutes,
+    )
+
+    if settings.firm_autonomy:
+        from services.firm_autonomy_bootstrap import ensure_firm_autonomy_flags
+
+        async for session in get_session():
+            await ensure_firm_autonomy_flags(session, firm_autonomy=True)
+            break
 
     scheduler = None
     if settings.scheduler_enabled:
