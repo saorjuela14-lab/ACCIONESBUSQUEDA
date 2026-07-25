@@ -10,6 +10,8 @@ class VoiceCommandResult(BaseModel):
     params: dict = Field(default_factory=dict)
     ui_action: str | None = None
     data: dict | None = None
+    requires_confirmation: bool = False
+    pending_action: dict | None = None
 
 
 class VoiceHelpItem(BaseModel):
