@@ -30,6 +30,11 @@ class TradePick(BaseModel):
     rationale: str = ""
     risks: list[str] = Field(default_factory=list)
     sources: list[str] = Field(default_factory=list)
+    # Capital desk / autopilot: only execute when committee_unanimous is True
+    committee_unanimous: bool = False
+    committee_recommendation: str | None = None
+    short_horizon_buy: bool = False
+    long_horizon_buy: bool = False
 
 
 class DailyTradeReport(BaseModel):

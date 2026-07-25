@@ -569,10 +569,13 @@ class VoiceCommandService:
 
     async def _daily_trades(self, session, params, portfolio_id) -> VoiceCommandResult:
         market = get_market_provider()
+        from services.analysis_factory import build_analysis_service
+
         svc = DailyTradeRecommendationService(
             market_provider=market,
             discovery_service=CompanyDiscoveryService(market_provider=market),
             trade_repo=DailyTradeRepository(session),
+            analysis_service=build_analysis_service(session),
         )
         report = await svc.get_latest()
         if not report or not report.picks:

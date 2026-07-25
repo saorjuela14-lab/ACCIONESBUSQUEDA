@@ -9,11 +9,16 @@ from domain.daily_trade import TradePick
 from providers.interfaces import MarketDataProvider
 from providers.market.intervals import assess_market_status
 from services.capital_fit import capital_price_policy, discovery_themes_for_capital
+from services.committee_consensus import SOURCE_TAG, evaluate_consensus
 from services.company_discovery_service import CompanyDiscoveryService
 from services.risk_policy_service import RiskPolicyService
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Screen at most this many live candidates through the full committee (latency).
+_COMMITTEE_SCREEN_LIMIT = 6
+_COMMITTEE_CONCURRENCY = 2
 
 # Liquid names that often trade in the micro/penny range (validated live at runtime).
 # Delisted / dead shells (NKLA, WISH, BBIG, etc.) must never appear here.
@@ -64,7 +69,8 @@ class MicroPortfolioPlan:
 class MicroPortfolioManagerService:
     """
     For micro capital (e.g. $22): research affordable *live* names and build a whole-share plan.
-    Honors firm risk policy (cash reserve, max position %, max gross exposure).
+    Honors firm risk policy and only allocates when the investment committee is unanimous BUY
+    on both short-horizon and long-horizon strategies.
     """
 
     def __init__(
@@ -72,10 +78,12 @@ class MicroPortfolioManagerService:
         market_provider: MarketDataProvider,
         discovery_service: CompanyDiscoveryService | None = None,
         risk_service: RiskPolicyService | None = None,
+        analysis_service: object | None = None,
     ) -> None:
         self._market = market_provider
         self._discovery = discovery_service or CompanyDiscoveryService(market_provider)
         self._risk = risk_service or RiskPolicyService()
+        self._analysis = analysis_service
 
     def _position_count(self, capital: float) -> int:
         if capital <= 30:
@@ -143,9 +151,34 @@ class MicroPortfolioManagerService:
                 warnings=warnings,
             )
 
-        # Rank: score first, then prefer liquid mid-penny over residual sub-$0.25 shells
+        # Rank live candidates, then run investment committee (unanimous dual-horizon BUY)
         candidates.sort(key=lambda c: (-c["score"], c["price"]))
-        selected = candidates[:n_pos]
+        approved, committee_notes = await self._filter_committee_consensus(
+            candidates[: max(_COMMITTEE_SCREEN_LIMIT, n_pos * 2)]
+        )
+        warnings.extend(committee_notes)
+
+        if not approved:
+            warnings.append(
+                "Ningún ticker obtuvo consenso unánime del comité (BUY corto + largo plazo). "
+                "Se mantiene efectivo; no se compra por seeds ni heurística."
+            )
+            return MicroPortfolioPlan(
+                capital=capital,
+                cash_reserve_usd=cash_reserve,
+                deployable_usd=deployable,
+                max_share_price=max_price,
+                lines=[],
+                picks=[],
+                summary=(
+                    f"{policy.description_es} Escritorio autónomo: sin consenso del comité "
+                    f"no hay compras. Efectivo ${cash_reserve:.2f} "
+                    f"({cash_pct * 100:.0f}% reserva mínima)."
+                ),
+                warnings=warnings,
+            )
+
+        selected = approved[:n_pos]
 
         # Split deployable by equal weight, capped by max position %
         weight = 1.0 / len(selected)
@@ -162,7 +195,6 @@ class MicroPortfolioManagerService:
             if shares < 1:
                 continue
             cost = round(shares * price, 2)
-            # Enforce per-line and book-level caps
             while shares >= 1 and (
                 cost > max_line_usd + 0.01
                 or spent + cost > deployable + 0.01
@@ -176,9 +208,10 @@ class MicroPortfolioManagerService:
             pct = round(cost / capital * 100, 1)
             stop = round(price * 0.92, 2)
             target = round(price * 1.12, 2)
+            verdict = c.get("consensus")
             rationale = (
-                f"Gestión capital micro: {shares} acciones @ ${price:.2f} = ${cost:.2f} "
-                f"({pct}% del portafolio, cotización viva). {c.get('rationale', '')}"
+                f"Comité unánime BUY (corto+largo): {shares} acciones @ ${price:.2f} = ${cost:.2f} "
+                f"({pct}% del portafolio). {c.get('rationale', '')}"
             ).strip()
 
             lines.append(
@@ -194,14 +227,17 @@ class MicroPortfolioManagerService:
                     take_profit=target,
                 )
             )
+            sources = list(c.get("sources") or ["capital_desk"])
+            if SOURCE_TAG not in sources:
+                sources.append(SOURCE_TAG)
             picks.append(
                 TradePick(
                     ticker=c["ticker"],
                     company_name=c.get("company_name"),
                     action="compra capital",
-                    horizon="gestión 1-4 semanas",
+                    horizon="corto+largo (comité)",
                     score=round(c["score"], 2),
-                    confidence=0.55,
+                    confidence=float(c.get("committee_confidence") or 0.6),
                     current_price=price,
                     entry_price=price,
                     target_price=target,
@@ -214,7 +250,13 @@ class MicroPortfolioManagerService:
                         f"Tope de posición {self._risk.policy_from_settings().max_position_pct:.0f}% "
                         "por política de riesgo; no usar el 100% del portafolio.",
                     ],
-                    sources=c.get("sources") or ["capital_desk"],
+                    sources=sources,
+                    committee_unanimous=True,
+                    committee_recommendation=(
+                        verdict.recommendation if verdict else "buy"
+                    ),
+                    short_horizon_buy=True,
+                    long_horizon_buy=True,
                 )
             )
 
@@ -223,10 +265,10 @@ class MicroPortfolioManagerService:
         tickers_txt = ", ".join(f"{l.ticker}×{l.shares}" for l in lines) or "—"
         summary = (
             f"{policy.description_es} "
-            f"Plan de gestión: desplegar ${spent:.2f} ({deployed_pct}%) en {len(lines)} posiciones "
-            f"({tickers_txt}); efectivo ${cash_total:.2f} "
+            f"Plan autónomo con consenso del comité: desplegar ${spent:.2f} ({deployed_pct}%) "
+            f"en {len(lines)} posiciones ({tickers_txt}); efectivo ${cash_total:.2f} "
             f"({cash_total / capital * 100:.0f}%). "
-            f"Solo tickers con cotización viva; no se usa el 100% del capital."
+            f"Solo BUY unánime corto+largo; no se usa el 100% del capital."
         )
         if not lines:
             warnings.append("Ninguna línea pudo comprar ≥1 acción dentro de los topes de riesgo.")
@@ -247,6 +289,59 @@ class MicroPortfolioManagerService:
             summary=summary,
             warnings=warnings,
         )
+
+    async def _filter_committee_consensus(
+        self,
+        candidates: list[dict],
+    ) -> tuple[list[dict], list[str]]:
+        """Run committee on shortlist; keep only unanimous dual-horizon BUY."""
+        notes: list[str] = []
+        if not self._analysis:
+            notes.append(
+                "Comité no disponible en este contexto — no se asigna capital sin análisis."
+            )
+            return [], notes
+
+        sem = asyncio.Semaphore(_COMMITTEE_CONCURRENCY)
+        screen = candidates[:_COMMITTEE_SCREEN_LIMIT]
+
+        async def _one(c: dict) -> dict | None:
+            ticker = c["ticker"]
+            async with sem:
+                try:
+                    thesis = await self._analysis.score_for_consensus(ticker)
+                except Exception as exc:
+                    logger.warning("micro_committee_failed", ticker=ticker, error=str(exc))
+                    return None
+            verdict = evaluate_consensus(thesis)
+            if not verdict.passed:
+                logger.info(
+                    "micro_committee_reject",
+                    ticker=ticker,
+                    reasons=verdict.reasons[:4],
+                )
+                return None
+            enriched = dict(c)
+            enriched["consensus"] = verdict
+            enriched["committee_confidence"] = float(thesis.confidence or 0.6)
+            # Prefer committee-weighted conviction in ranking
+            enriched["score"] = float(c["score"]) + 40.0 + float(thesis.confidence or 0) * 20
+            enriched["rationale"] = (
+                f"Consenso comité {verdict.recommendation}: "
+                f"agentes BUY unánime · corto OK · largo OK. "
+                f"{c.get('rationale', '')}"
+            ).strip()
+            return enriched
+
+        results = await asyncio.gather(*[_one(c) for c in screen])
+        approved = [r for r in results if r]
+        rejected = len(screen) - len(approved)
+        notes.append(
+            f"Comité: {len(approved)}/{len(screen)} candidatos con BUY unánime "
+            f"corto+largo ({rejected} rechazados)."
+        )
+        approved.sort(key=lambda c: (-c["score"], c["price"]))
+        return approved, notes
 
     async def _gather_candidates(
         self,

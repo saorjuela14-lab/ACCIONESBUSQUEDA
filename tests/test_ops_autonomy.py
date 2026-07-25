@@ -117,3 +117,44 @@ async def test_kill_switch_requires_confirm():
     session = MagicMock()
     with pytest.raises(ValueError):
         await KillSwitchService(session, MagicMock()).activate(confirm=False)
+
+
+@pytest.mark.asyncio
+async def test_auto_execute_skips_picks_without_committee_consensus():
+    from domain.daily_trade import TradePick
+
+    session = MagicMock()
+    broker = MagicMock()
+    broker.is_configured.return_value = True
+    broker.paper = True
+    broker.get_clock = AsyncMock(return_value=MagicMock(is_open=True))
+    broker.execute = AsyncMock()
+
+    with patch("services.auto_execute_service.get_settings") as gs, \
+         patch("services.auto_execute_service.KillSwitchService") as KS, \
+         patch("services.risk_policy_service.RiskPolicyService") as RS:
+        s = MagicMock()
+        s.auto_execute_trades = True
+        s.auto_execute_paper_first = True
+        s.auto_execute_live = False
+        s.auto_execute_max_notional = 25
+        s.auto_execute_require_market_open = True
+        gs.return_value = s
+        KS.return_value.is_active = AsyncMock(return_value=False)
+        RS.return_value.status = AsyncMock(
+            return_value=MagicMock(
+                macro=MagicMock(trading_allowed=True, mode="neutral", block_reason=None)
+            )
+        )
+        svc = AutoExecuteService(session, broker)
+        pick = TradePick(
+            ticker="SOUN",
+            action="compra",
+            current_price=2.0,
+            committee_unanimous=False,
+            sources=["momentum"],
+        )
+        result = await svc.run_from_picks([pick], actor="test")
+        assert result["skipped"] is True
+        assert result["reason"] == "no_committee_consensus"
+        broker.execute.assert_not_awaited()

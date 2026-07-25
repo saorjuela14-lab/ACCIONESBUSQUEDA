@@ -67,11 +67,43 @@ class AnalysisService:
         portfolio: Portfolio | None = None,
         watchlist: list | None = None,
     ) -> InvestmentThesis:
+        thesis = await self._run_committee(
+            ticker,
+            portfolio=portfolio,
+            watchlist=watchlist,
+            persist_side_effects=True,
+        )
+        return thesis
+
+    async def score_for_consensus(self, ticker: str) -> InvestmentThesis:
+        """Full voting committee without memory/alert persistence — capital-desk screening."""
+        return await self._run_committee(
+            ticker,
+            portfolio=None,
+            watchlist=None,
+            persist_side_effects=False,
+            include_book_agents=False,
+        )
+
+    async def _run_committee(
+        self,
+        ticker: str,
+        *,
+        portfolio: Portfolio | None = None,
+        watchlist: list | None = None,
+        persist_side_effects: bool = True,
+        include_book_agents: bool = True,
+    ) -> InvestmentThesis:
         ticker = ticker.upper()
         quote = await self._market.get_quote(ticker)
         company_name = quote.get("company_name", ticker)
 
-        logger.info("analysis.start", ticker=ticker)
+        logger.info(
+            "analysis.start",
+            ticker=ticker,
+            persist=persist_side_effects,
+            book_agents=include_book_agents,
+        )
 
         context_agents = [
             self._fundamental,
@@ -105,50 +137,51 @@ class AnalysisService:
 
         reports: list[AgentReport] = prior_reports + [technical_report]
 
-        # Prior Investment Memory as committee evidence (not only post-store)
-        memory_context = await self._prior_memory_report(ticker)
-        if memory_context:
-            reports.append(memory_context)
+        if include_book_agents:
+            memory_context = await self._prior_memory_report(ticker)
+            if memory_context:
+                reports.append(memory_context)
 
-        portfolio_report = await self._portfolio.analyze(ticker, portfolio=portfolio)
-        watchlist_report = await self._watchlist.analyze(ticker, watchlist=watchlist or [])
-        reports.extend([portfolio_report, watchlist_report])
+            portfolio_report = await self._portfolio.analyze(ticker, portfolio=portfolio)
+            watchlist_report = await self._watchlist.analyze(ticker, watchlist=watchlist or [])
+            reports.extend([portfolio_report, watchlist_report])
 
-        technical_report = next(r for r in reports if r.agent_name == "technical_agent")
-        sentiment_report = next(r for r in prior_reports if r.agent_name == "sentiment_agent")
-        news_report = next(r for r in prior_reports if r.agent_name == "news_agent")
+            technical_report = next(r for r in reports if r.agent_name == "technical_agent")
+            sentiment_report = next(r for r in prior_reports if r.agent_name == "sentiment_agent")
+            news_report = next(r for r in prior_reports if r.agent_name == "news_agent")
 
-        alert_report = await self._alert.analyze(
-            ticker,
-            technical_report=technical_report,
-            sentiment_report=sentiment_report,
-            news_report=news_report,
-        )
-        reports.append(alert_report)
+            alert_report = await self._alert.analyze(
+                ticker,
+                technical_report=technical_report,
+                sentiment_report=sentiment_report,
+                news_report=news_report,
+            )
+            reports.append(alert_report)
 
-        from domain.entities import Alert
+            if persist_side_effects:
+                from domain.entities import Alert
 
-        alert_svc = AlertService(self._alert_repo)
-        for alert_data in alert_report.raw_data.get("alerts", []):
-            await alert_svc.emit(Alert(**alert_data))
+                alert_svc = AlertService(self._alert_repo)
+                for alert_data in alert_report.raw_data.get("alerts", []):
+                    await alert_svc.emit(Alert(**alert_data))
+                for alert in alert_report.raw_data.get("alert_types", []):
+                    logger.info("alert.generated", ticker=ticker, type=alert)
 
         weights = await self._memory_repo.get_agent_weights()
         if not weights:
             weights = InvestmentDirector.DEFAULT_WEIGHTS
 
-        thesis = self._director.build_thesis(ticker, reports, weights, float(quote.get("current_price") or 0))
-
-        await self._memory.analyze(
-            ticker,
-            thesis=thesis,
-            entry_price=float(quote.get("current_price") or 0) or None,
+        thesis = self._director.build_thesis(
+            ticker, reports, weights, float(quote.get("current_price") or 0)
         )
 
-        # Thesis flip → invalidate mandate / trigger lifecycle exit when held
-        await self._maybe_invalidate_on_sell(ticker, thesis, portfolio)
-
-        for alert in alert_report.raw_data.get("alert_types", []):
-            logger.info("alert.generated", ticker=ticker, type=alert)
+        if persist_side_effects:
+            await self._memory.analyze(
+                ticker,
+                thesis=thesis,
+                entry_price=float(quote.get("current_price") or 0) or None,
+            )
+            await self._maybe_invalidate_on_sell(ticker, thesis, portfolio)
 
         logger.info("analysis.complete", ticker=ticker, recommendation=thesis.recommendation.value)
         return thesis

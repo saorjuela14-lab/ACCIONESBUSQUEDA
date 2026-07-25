@@ -13,6 +13,7 @@ from domain.daily_trade import DailyTradeReport
 from domain.micro_portfolio import MicroAllocationLineOut, MicroPortfolioPlanOut
 from models.schemas import DailyTradeGenerateRequest, MicroManageRequest
 from providers.market.factory import get_market_provider
+from services.analysis_factory import build_analysis_service
 from services.company_discovery_service import CompanyDiscoveryService
 from services.daily_trade_recommendation_service import DailyTradeRecommendationService
 from services.micro_portfolio_manager_service import MicroPortfolioManagerService
@@ -26,6 +27,7 @@ def _build_service(session: AsyncSession) -> DailyTradeRecommendationService:
         market_provider=market,
         discovery_service=CompanyDiscoveryService(market_provider=market),
         trade_repo=DailyTradeRepository(session),
+        analysis_service=build_analysis_service(session),
     )
 
 
@@ -154,6 +156,7 @@ async def manage_micro_capital(
     manager = MicroPortfolioManagerService(
         market,
         CompanyDiscoveryService(market_provider=market),
+        analysis_service=build_analysis_service(session),
     )
     plan = await manager.manage(capital=capital, exclude_tickers=exclude)
 

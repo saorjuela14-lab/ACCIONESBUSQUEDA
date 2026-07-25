@@ -101,9 +101,16 @@ class AutoExecuteService:
 
         max_n = float(self._settings.auto_execute_max_notional)
         lines: list[ExecuteLine] = []
-        for pick in picks[:3]:
+        skipped_no_committee = 0
+        for pick in picks[:5]:
             action = getattr(pick, "action", "") or ""
             if action == "vigilar":
+                continue
+            # Firm rule: never auto-buy without unanimous committee BUY (short+long)
+            unanimous = bool(getattr(pick, "committee_unanimous", False))
+            sources = getattr(pick, "sources", None) or []
+            if not unanimous and "committee_unanimous_dual" not in sources:
+                skipped_no_committee += 1
                 continue
             ticker = getattr(pick, "ticker", None)
             price = getattr(pick, "current_price", None) or getattr(pick, "entry_price", None)
@@ -122,8 +129,15 @@ class AutoExecuteService:
                     take_profit=getattr(pick, "target_price", None),
                 )
             )
+            if len(lines) >= 3:
+                break
         if not lines:
-            return {"skipped": True, "reason": "no_affordable_lines"}
+            reason = (
+                "no_committee_consensus"
+                if skipped_no_committee
+                else "no_affordable_lines"
+            )
+            return {"skipped": True, "reason": reason}
 
         result = await self._broker.execute(
             ExecuteOrdersRequest(
