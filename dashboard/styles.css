@@ -313,15 +313,28 @@ body.modal-open { overflow: hidden; }
 .trade-rec-card .tr-btns .btn { font-size: 10px; padding: 2px 6px; }
 
 .tech-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0.5rem 0; flex-wrap: wrap; }
-.tech-toolbar-controls { display: flex; gap: 6px; flex-wrap: wrap; }
+.tech-toolbar-controls { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .tech-toolbar select { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 4px; font-size: 11px; }
+.tech-expand-btn { min-height: 32px; padding: 4px 10px; font-size: 14px; line-height: 1; }
 .tech-kpi-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 6px; margin-bottom: 0.5rem; }
 .tech-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
 .tech-kpi label { display: block; font-size: 9px; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
 .tech-kpi div { font-size: 12px; font-weight: 600; }
 .tech-kpi .bullish { color: var(--green); }
 .tech-kpi .bearish { color: var(--red); }
-.tech-summary { font-size: 12px; margin: 0.35rem 0 0.5rem; line-height: 1.45; }
+.tech-summary-wrap { margin: 0.35rem 0 0.5rem; }
+.tech-summary { font-size: 12px; margin: 0; line-height: 1.45; }
+.tech-summary.is-collapsed {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tech-summary-more {
+  background: transparent; border: none; color: var(--accent);
+  font-size: 11px; padding: 4px 0; cursor: pointer; margin-top: 2px;
+}
+.tech-summary-more.hidden { display: none; }
 .tech-data-status {
   font-size: 12px;
   line-height: 1.4;
@@ -345,9 +358,18 @@ body.modal-open { overflow: hidden; }
   background: rgba(34, 197, 94, 0.08);
   color: #86efac;
 }
-.tech-chart-box { position: relative; min-height: 220px; }
-.tech-chart-box.small { min-height: 120px; }
+.tech-view { scroll-margin-top: 4.5rem; }
+.tech-chart-box { position: relative; height: 260px; min-height: 220px; margin: 0.5rem 0; }
+.tech-chart-box.small { height: 140px; min-height: 120px; }
 .lw-chart { width: 100%; height: 100%; min-height: inherit; }
+.tech-chart-box.fullscreen {
+  position: fixed; inset: 0; z-index: 80;
+  height: auto !important; min-height: 100dvh; margin: 0;
+  background: var(--bg); padding: 0.5rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom));
+  border: none; border-radius: 0;
+}
+.tech-chart-box.fullscreen .lw-chart { min-height: calc(100dvh - 1rem - env(safe-area-inset-bottom)); }
+body.tech-chart-fs { overflow: hidden; }
 
 .gap-panel { margin: 0.5rem 0; padding: 0.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
 .gap-panel-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
@@ -511,9 +533,10 @@ body.modal-open { overflow: hidden; }
 
 @media (max-width: 900px) {
   .term-header { flex-wrap: wrap; gap: 0.5rem; }
+  .term-brand { font-size: 13px; }
   .regime { order: 3; width: 100%; text-align: left; font-size: 12px; }
-  .header-actions { flex: 1; flex-wrap: wrap; }
-  .header-actions input { flex: 1; min-width: 70px; font-size: 16px; }
+  .header-actions { flex: 1; flex-wrap: wrap; width: 100%; }
+  .header-actions input { flex: 1; min-width: 90px; font-size: 16px; }
   .btn { min-height: 44px; padding: 0.5rem 0.85rem; }
   .ceo-bar { grid-template-columns: repeat(2, 1fr); }
   .term-grid { grid-template-columns: 1fr; }
@@ -521,7 +544,11 @@ body.modal-open { overflow: hidden; }
   .col-right { order: 2; }
   .col-center { order: 1; }
   .metrics-row { grid-template-columns: repeat(2, 1fr); }
-  .tab-bar { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+  .metric-card div { font-size: 16px; }
+  .tab-bar {
+    overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch;
+    margin: 0 -0.35rem 0.5rem; padding: 0 0.35rem 4px;
+  }
   .tab { flex-shrink: 0; min-height: 40px; }
   .matrix-table { font-size: 11px; }
   .matrix-table th, .matrix-table td { padding: 8px 6px; }
@@ -534,4 +561,69 @@ body.modal-open { overflow: hidden; }
   .news-grid { grid-template-columns: 1fr; max-height: 360px; }
   .news-modal-dialog { padding: 1rem; }
   .news-modal-title { font-size: 16px; }
+
+  /* Technical view — readable full chart stack on phones */
+  .tech-view { scroll-margin-top: 3.5rem; padding-bottom: 0.5rem; }
+  .tech-toolbar {
+    position: sticky; top: 0; z-index: 8;
+    background: var(--panel); padding: 0.4rem 0; margin-top: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .tech-toolbar select {
+    font-size: 16px; min-height: 40px; padding: 6px 10px;
+  }
+  .tech-expand-btn { min-height: 40px; min-width: 40px; }
+  .tech-kpi-row {
+    display: flex; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px; grid-template-columns: none;
+  }
+  .tech-kpi {
+    flex: 0 0 auto; min-width: 96px;
+  }
+  .tech-chart-box {
+    height: min(52vh, 360px);
+    min-height: 260px;
+    touch-action: pan-x pan-y;
+  }
+  .tech-chart-box.small {
+    height: min(28vh, 180px);
+    min-height: 140px;
+  }
+  .gap-list { max-height: 180px; }
+  .gap-item { grid-template-columns: 48px 1fr; }
+  .gap-item .gap-status { grid-column: 1 / -1; }
+  .tech-summary { font-size: 13px; line-height: 1.5; }
+  .tech-data-status { font-size: 13px; }
+
+  /* Focus mode: hide chrome so the analysis fills the phone */
+  body.mobile-tech-focus .briefing-panel,
+  body.mobile-tech-focus .news-panel,
+  body.mobile-tech-focus .col-left,
+  body.mobile-tech-focus .col-right,
+  body.mobile-tech-focus .indices-row,
+  body.mobile-tech-focus .voice-bar,
+  body.mobile-tech-focus #watchlist-matrix-panel {
+    display: none !important;
+  }
+  body.mobile-tech-focus .ceo-bar {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  body.mobile-tech-focus .ceo-kpi:nth-child(n+4) { display: none; }
+  body.mobile-tech-focus .col-center .panel.tabs {
+    margin-top: 0.25rem;
+  }
+  body.mobile-tech-focus .terminal {
+    padding-bottom: calc(3.75rem + env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 480px) {
+  .term-brand .ver { display: none; }
+  .header-actions #btn-scan { display: none; }
+  .tech-chart-box {
+    height: min(58vh, 420px);
+    min-height: 280px;
+  }
+  .metrics-row { gap: 0.35rem; }
+  .metric-card { padding: 0.4rem; }
 }
