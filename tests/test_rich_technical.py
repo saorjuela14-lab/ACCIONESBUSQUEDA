@@ -10,9 +10,15 @@ import pytest
 from agents.technical.confluence import score_confluence
 from agents.technical.historical_setups import evaluate_historical_setups
 from agents.technical.indicators import enrich_indicators
+from agents.technical.market_opinion import (
+    build_market_opinion_from_engine,
+    build_market_opinion_from_prior,
+    tech_vs_market_alignment,
+)
 from agents.technical.playbook import build_playbook
 from agents.technical.structure import classify_structure
 from agents.technical.volume_analysis import analyze_volume
+from agents.technical.context import PriorContext
 from agents.technical_agent import TechnicalAgent
 from services.technical_chart_service import TechnicalChartService
 
@@ -88,6 +94,75 @@ def test_playbook_returns_spanish_strategy():
     assert pb["checklist"]
 
 
+def test_market_opinion_from_engine_and_alignment():
+    report = {
+        "aggregated_score": 22.5,
+        "aggregated_label": "bullish",
+        "confidence": 0.7,
+        "summary": "Narrativa positiva en noticias y redes.",
+        "news": {"score": 30, "confidence": 0.6, "trend": "rising", "sample_size": 12, "top_factors": ["Earnings beat"]},
+        "social": {"score": 18, "confidence": 0.5, "trend": "stable", "sample_size": 40, "top_factors": ["Bullish StockTwits"]},
+        "retail": {"score": 10, "confidence": 0.4, "trend": "stable", "sample_size": 20, "top_factors": []},
+        "analyst": {"score": 5, "confidence": 0.3, "trend": "stable", "sample_size": 3, "top_factors": []},
+        "institutional": {"score": 8, "confidence": 0.3, "trend": "stable", "sample_size": 2, "top_factors": []},
+        "sources_used": ["stocktwits", "yfinance_news"],
+        "sources_failed": [],
+    }
+    op = build_market_opinion_from_engine(report)
+    assert op["available"] is True
+    assert op["label"] == "bullish"
+    assert "Earnings beat" in op["top_factors"]
+    assert tech_vs_market_alignment("bullish", "bullish")["status"] == "aligned"
+    assert tech_vs_market_alignment("bullish", "bearish")["status"] == "diverged"
+
+
+def test_playbook_diverges_when_market_bearish():
+    mkt = build_market_opinion_from_engine({
+        "aggregated_score": -25,
+        "aggregated_label": "bearish",
+        "confidence": 0.65,
+        "summary": "Flujo negativo en social/noticias.",
+        "news": {"score": -30, "top_factors": ["Downgrade"]},
+        "social": {"score": -20, "top_factors": []},
+        "retail": {"score": -15, "top_factors": []},
+        "analyst": {"score": -10, "top_factors": []},
+        "institutional": {"score": -5, "top_factors": []},
+    })
+    pb = build_playbook(
+        ticker="TSLA",
+        price=200.0,
+        daily={"rsi": 40, "adx": 30, "bias": "bullish"},
+        structure={"structure": "uptrend", "label_es": "alcista", "confidence": 0.7, "last_low": 190},
+        confluence={
+            "htf_bias": "bullish",
+            "ltf_bias": "bullish",
+            "aligned_with_htf": True,
+            "label_es": "confluencia alcista",
+            "agreement_pct": 75,
+            "label": "bullish",
+        },
+        volume={"volume_confirm_es": "normal", "volume_ratio": 1.0},
+        historical={"available": False},
+        trade_levels={"stop_loss": 185, "risk_reward_ratio": 2.0},
+        market_opinion=mkt,
+    )
+    assert pb["strategy"] == "wait"
+    assert pb["market_opinion"]["label"] == "bearish"
+    assert pb["tech_market_alignment"]["status"] == "diverged"
+    assert any("Opinión mercado" in c for c in pb["checklist"])
+
+
+def test_market_opinion_from_prior_context():
+    ctx = PriorContext(
+        scores={"sentiment_agent": 20.0, "news_agent": 15.0},
+        summaries={"sentiment_agent": "Sentimiento agregado alcista"},
+        news_sentiment_score=12.0,
+    )
+    op = build_market_opinion_from_prior(ctx)
+    assert op["available"] is True
+    assert op["label"] in ("bullish", "neutral", "bearish")
+
+
 @pytest.mark.asyncio
 async def test_technical_agent_includes_playbook():
     market = MagicMock()
@@ -108,9 +183,22 @@ async def test_chart_service_exposes_playbook_fields():
     market = MagicMock()
     market.get_history = AsyncMock(return_value=_ohlcv(160, trend=0.2))
     svc = TechnicalChartService(market)
+    svc._fetch_market_opinion = AsyncMock(return_value={
+        "available": True,
+        "label": "bullish",
+        "label_es": "alcista",
+        "aggregated_score": 15.0,
+        "confidence": 0.6,
+        "summary": "Mercado constructivo",
+        "channels": {"news": {"score": 20}, "social": {"score": 10}},
+        "top_factors": ["Positive coverage"],
+        "headline": "Opinión de mercado alcista (+15.0)",
+    })
     data = await svc.build("AAPL", period="6mo", chart_timeframe="1D")
     assert data.playbook
     assert data.structure
     assert data.confluence
     assert data.snapshot is not None
     assert data.snapshot.adx is not None or data.snapshot.sma200 is not None
+    assert data.market_opinion.get("available") is True
+    assert data.playbook.get("market_opinion")

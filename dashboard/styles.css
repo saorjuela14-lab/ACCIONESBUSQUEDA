@@ -361,6 +361,19 @@ body.modal-open { overflow: hidden; }
 .tech-playbook ul { margin: 0.25rem 0 0.35rem 1rem; color: var(--muted); }
 .tech-playbook li { margin-bottom: 2px; }
 .tech-playbook .pb-hist { font-size: 11px; color: var(--amber); margin-top: 0.35rem; }
+.tech-playbook .pb-market {
+  margin: 0.4rem 0 0.5rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.03);
+  border: 1px dashed var(--border);
+  font-size: 11px;
+}
+.tech-playbook .pb-market-head { color: var(--text); margin-bottom: 2px; }
+.tech-playbook .pb-market-ch { color: var(--muted); margin-bottom: 4px; }
+.tech-playbook .pb-market-sum { color: var(--muted); margin: 0 0 4px; line-height: 1.4; }
+.tech-playbook .pb-market-align { color: var(--amber); margin: 0 0 2px; }
+.tech-playbook .pb-market-factor { color: var(--muted); }
 .tech-playbook.constructive { border-color: rgba(34,197,94,0.35); background: rgba(34,197,94,0.06); }
 .tech-playbook.constructive h4 { color: var(--green); }
 .tech-playbook.defensive { border-color: rgba(239,68,68,0.35); background: rgba(239,68,68,0.06); }

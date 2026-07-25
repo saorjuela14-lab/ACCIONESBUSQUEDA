@@ -18,6 +18,7 @@ from agents.technical.gaps import (
 from agents.technical.confluence import score_confluence
 from agents.technical.historical_setups import evaluate_historical_setups
 from agents.technical.indicators import build_trade_levels, detect_support_resistance, enrich_indicators
+from agents.technical.market_opinion import build_market_opinion_from_engine
 from agents.technical.playbook import build_playbook
 from agents.technical.structure import classify_structure
 from agents.technical.volume_analysis import analyze_volume
@@ -76,11 +77,15 @@ class TechnicalChartService:
         ticker = ticker.upper()
         tf = chart_timeframe if chart_timeframe in VALID_CHART_TIMEFRAMES else "1D"
 
+        # Kick off live market opinion in parallel with OHLC (bounded timeout).
+        opinion_task = asyncio.create_task(self._fetch_market_opinion(ticker))
+
         df, interval = await self._load_ohlc(ticker, tf, period)
         min_bars = 20 if tf not in ("1D", "1W") else 30
         status, stale_days, as_of = assess_market_status(df, interval)
 
         if df.empty or len(df) < min_bars:
+            opinion_task.cancel()
             gaps_by_tf = await self._scan_gaps_all_timeframes(ticker)
             # Daily empty for a delisted name — probe weekly for last known session
             if status == "unavailable":
@@ -203,6 +208,11 @@ class TechnicalChartService:
         chart_gaps = gaps_by_tf.get(tf, detect_gaps(df, timeframe=tf, min_gap_pct=GAP_TIMEFRAME_BY_LABEL[tf][3], interval=interval))
         unfilled = [g for gaps in gaps_by_tf.values() for g in gaps if not g.filled]
 
+        try:
+            market_opinion = await opinion_task
+        except Exception:
+            market_opinion = {"available": False}
+
         playbook = build_playbook(
             ticker=ticker,
             price=price,
@@ -218,6 +228,7 @@ class TechnicalChartService:
             historical=historical,
             trade_levels=trade_levels,
             unfilled_gaps=len([g for g in unfilled if not g.filled]),
+            market_opinion=market_opinion,
         )
 
         tf_label = {"1D": "diario", "1W": "semanal", "4H": "4 horas", "1H": "1 hora", "30m": "30 min", "15m": "15 min"}.get(tf, tf)
@@ -244,6 +255,7 @@ class TechnicalChartService:
             volume_context=volume,
             historical_setups=historical,
             playbook=playbook,
+            market_opinion=market_opinion if isinstance(market_opinion, dict) else {},
         )
 
     async def _load_ohlc(self, ticker: str, chart_timeframe: str, period: str) -> tuple[pd.DataFrame, str]:
@@ -290,6 +302,20 @@ class TechnicalChartService:
             *[_scan_one(*cfg) for cfg in GAP_TIMEFRAME_CONFIG]
         )
         return {label: gaps for label, gaps in results}
+
+    async def _fetch_market_opinion(self, ticker: str) -> dict:
+        """Live news/social/retail opinion via sentiment engine (soft-fail)."""
+        try:
+            from services.sentiment_engine_service import SentimentEngineService
+
+            report = await asyncio.wait_for(
+                SentimentEngineService().analyze(ticker),
+                timeout=6.0,
+            )
+            return build_market_opinion_from_engine(report)
+        except Exception as exc:
+            logger.info("market_opinion.unavailable", ticker=ticker, error=str(exc))
+            return {"available": False, "error": str(exc)[:160]}
 
     async def _bias_snapshot_multi(
         self,
