@@ -11,6 +11,7 @@ from domain.daily_trade import DailyTradeReport, TradePick
 from domain.discovery import DiscoveryCandidate
 from providers.interfaces import MarketDataProvider
 from services.capital_fit import affordability_bonus, capital_price_policy, discovery_themes_for_capital
+from services.committee_consensus import SOURCE_TAG, evaluate_consensus
 from services.company_discovery_service import CompanyDiscoveryService
 from services.macro_regime_service import MacroRegimeService
 from services.market_dashboard_service import MarketDashboardService
@@ -19,6 +20,9 @@ from services.risk_policy_service import RiskPolicyService
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+_COMMITTEE_DAILY_SCREEN = 6
+_COMMITTEE_DAILY_CONCURRENCY = 2
 
 _SHORT_TERM_THEMES = (
     "momentum breakout stock today",
@@ -42,10 +46,12 @@ class DailyTradeRecommendationService:
         market_provider: MarketDataProvider,
         discovery_service: CompanyDiscoveryService,
         trade_repo: DailyTradeRepository | None = None,
+        analysis_service: object | None = None,
     ) -> None:
         self._market = market_provider
         self._discovery = discovery_service
         self._repo = trade_repo
+        self._analysis = analysis_service
         self._dashboard = MarketDashboardService()
         self._macro = MacroRegimeService()
         self._risk = RiskPolicyService(self._macro)
@@ -138,24 +144,31 @@ class DailyTradeRecommendationService:
                 scored.append(pick)
 
         scored.sort(key=lambda p: p.score, reverse=True)
-        picks = scored[:max_picks]
+        # Only committee-unanimous BUY (short + long) may become actionable buys
+        picks = await self._apply_committee_gate(scored[:_COMMITTEE_DAILY_SCREEN], max_picks)
         used_manager = False
+        committee_notes: list[str] = []
 
-        # Capital desk fallback: always try to manage micro/small books
+        # Capital desk fallback for micro/small books — already committee-gated inside manager
         if capital and capital <= 500 and len(picks) < max(1, max_picks // 2) and macro.mode != "crisis":
-            manager = MicroPortfolioManagerService(self._market, self._discovery)
+            manager = MicroPortfolioManagerService(
+                self._market,
+                self._discovery,
+                analysis_service=self._analysis,
+            )
             plan = await manager.manage(
                 capital=capital * macro.size_multiplier,
                 exclude_tickers=exclude_tickers,
                 max_candidates=20,
             )
+            if plan.warnings:
+                committee_notes.extend(plan.warnings)
             if plan.picks:
                 used_manager = True
-                # Prefer manager picks for micro; merge unique
                 seen = {p.ticker for p in plan.picks}
                 merged = list(plan.picks)
                 for p in picks:
-                    if p.ticker not in seen:
+                    if p.ticker not in seen and p.committee_unanimous:
                         merged.append(p)
                         seen.add(p.ticker)
                 picks = merged[:max_picks]
@@ -172,6 +185,8 @@ class DailyTradeRecommendationService:
             size_multiplier=macro.size_multiplier,
             mode=macro.mode,
         )
+        # Defense: drop any non-unanimous buys before publish / autopilot
+        picks = [p for p in picks if p.committee_unanimous or p.action == _ACTION_WATCH]
 
         if macro.mode == "crisis":
             summary = (
@@ -183,9 +198,16 @@ class DailyTradeRecommendationService:
             summary = f"{price_policy.description_es} {summary}"
         if used_manager and not picks:
             summary = (
-                f"{price_policy.description_es} El escritorio de capital no encontró penny stocks "
-                "líquidos hoy. Mantén efectivo y vuelve a generar más tarde."
+                f"{price_policy.description_es} Sin consenso del comité (BUY corto+largo) "
+                "en candidatos líquidos hoy. Se mantiene efectivo."
             )
+        if not picks and macro.mode != "crisis":
+            summary = (
+                f"{summary} Regla de firma: solo se recomienda/compra con consenso unánime "
+                "del comité en corto y largo plazo."
+            )
+        if committee_notes and macro.mode != "crisis":
+            risk_notes.extend(committee_notes[:3])
         if macro.thesis and macro.mode != "crisis":
             summary = f"{summary} | Macro: {macro.thesis}"
 
@@ -220,6 +242,63 @@ class DailyTradeRecommendationService:
         if not self._repo:
             return None
         return await self._repo.get_latest()
+
+    async def _apply_committee_gate(
+        self,
+        candidates: list[TradePick],
+        max_picks: int,
+    ) -> list[TradePick]:
+        """Keep only picks with unanimous committee BUY on short + long horizons."""
+        if not candidates:
+            return []
+        if not self._analysis:
+            logger.warning("daily_trade.committee_unavailable")
+            return []
+
+        sem = asyncio.Semaphore(_COMMITTEE_DAILY_CONCURRENCY)
+        buy_like = [p for p in candidates if p.action != _ACTION_WATCH]
+
+        async def _gate(pick: TradePick) -> TradePick | None:
+            async with sem:
+                try:
+                    thesis = await self._analysis.score_for_consensus(pick.ticker)
+                except Exception as exc:
+                    logger.warning(
+                        "daily_trade.committee_failed",
+                        ticker=pick.ticker,
+                        error=str(exc),
+                    )
+                    return None
+            verdict = evaluate_consensus(thesis)
+            if not verdict.passed:
+                logger.info(
+                    "daily_trade.committee_reject",
+                    ticker=pick.ticker,
+                    reasons=verdict.reasons[:3],
+                )
+                return None
+            sources = list(pick.sources or [])
+            if SOURCE_TAG not in sources:
+                sources.append(SOURCE_TAG)
+            return pick.model_copy(
+                update={
+                    "committee_unanimous": True,
+                    "committee_recommendation": verdict.recommendation,
+                    "short_horizon_buy": True,
+                    "long_horizon_buy": True,
+                    "confidence": max(pick.confidence, float(thesis.confidence or 0.55)),
+                    "sources": sources,
+                    "rationale": (
+                        f"Comité unánime BUY corto+largo. {pick.rationale}"
+                    ).strip(),
+                    "horizon": "corto+largo (comité)",
+                }
+            )
+
+        gated = await asyncio.gather(*[_gate(p) for p in buy_like[:_COMMITTEE_DAILY_SCREEN]])
+        approved = [p for p in gated if p]
+        approved.sort(key=lambda p: p.score, reverse=True)
+        return approved[:max_picks]
 
     async def _fetch_market_regime(self) -> str:
         try:

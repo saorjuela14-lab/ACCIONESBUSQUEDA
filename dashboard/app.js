@@ -216,7 +216,7 @@ function capitalFitHint(capital) {
   const c = parseFloat(capital) || 0;
   if (c <= 0) return "";
   if (c <= 100) {
-    return `Capital micro ($${c}): penny stocks ≤ ~$5 con cotización viva; reserva cash ≥20% y tope ~35%/posición (no 100% del portafolio).`;
+    return `Capital micro ($${c}): solo compras con consenso unánime del comité (BUY corto+largo), cotización viva, cash ≥20% y tope ~35%/posición.`;
   }
   if (c <= 500) {
     return `Capital pequeño ($${c}): preferencia por acciones ≤ ~$25 que quepan en cada línea de asignación.`;
@@ -983,13 +983,21 @@ function renderMicroPlan(plan) {
   if (!el) return;
   lastMicroPlan = plan;
   if (!plan?.lines?.length) {
-    el.classList.add("hidden");
-    el.innerHTML = "";
+    el.classList.remove("hidden");
+    el.innerHTML = `
+      <div class="micro-plan-head">Plan de gestión · sin compras (falta consenso del comité)</div>
+      <div class="micro-plan-cash">Efectivo reserva: $${plan?.cash_reserve_usd ?? "—"} · Desplegable: $${plan?.deployable_usd ?? "—"}</div>
+      <p class="muted" style="font-size:11px;margin:8px 0">
+        Solo se compra si <b>todos</b> los agentes votan BUY y las estrategias de corto y largo plazo coinciden en compra.
+        ${(plan?.summary || "Mantén efectivo hasta que haya consenso.")}
+      </p>
+      ${(plan?.warnings || []).length ? `<p class="muted" style="font-size:10px">${plan.warnings.join(" · ")}</p>` : ""}
+    `;
     return;
   }
   el.classList.remove("hidden");
   el.innerHTML = `
-    <div class="micro-plan-head">Plan de gestión · capital $${plan.capital} · máx $${plan.max_share_price}/acc</div>
+    <div class="micro-plan-head">Plan de gestión · consenso comité BUY · capital $${plan.capital} · máx $${plan.max_share_price}/acc</div>
     <div class="micro-plan-cash">Efectivo reserva: $${plan.cash_reserve_usd} · Desplegable: $${plan.deployable_usd}</div>
     <table class="matrix-table compact">
       <thead><tr><th>Ticker</th><th>Precio</th><th>Acciones</th><th>$</th><th>%</th><th>Stop / Obj</th></tr></thead>
@@ -1095,8 +1103,11 @@ async function managePortfolioCapital() {
           picks: plan.picks,
           summary: plan.summary,
           generated_at: new Date().toISOString(),
-          disclaimer: "Plan de escritorio de capital — penny stocks asequibles. No es asesoría financiera.",
+          disclaimer: "Plan autónomo — solo tickers con consenso unánime del comité (BUY corto+largo). No es asesoría financiera.",
         });
+        toast(`${plan.picks.length} posiciones con consenso del comité`, 5000);
+      } else {
+        toast("Sin consenso del comité: se mantiene efectivo (sin compras forzadas)", 7000);
       }
       toast(plan.lines?.length
         ? `Plan $${plan.capital}: ${plan.lines.map((l) => l.ticker).join(", ")}`

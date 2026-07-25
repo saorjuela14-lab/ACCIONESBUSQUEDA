@@ -107,10 +107,13 @@ class AutopilotService:
 
         try:
             market = get_market_provider()
+            from services.analysis_factory import build_analysis_service
+
             daily = DailyTradeRecommendationService(
                 market_provider=market,
                 discovery_service=CompanyDiscoveryService(market_provider=market),
                 trade_repo=DailyTradeRepository(self._session),
+                analysis_service=build_analysis_service(self._session),
             )
             report = await daily.generate(
                 session=session_label,

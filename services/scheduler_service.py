@@ -116,10 +116,13 @@ class SchedulerService:
         async for session in get_session():
             market = get_market_provider()
             discovery = CompanyDiscoveryService(market_provider=market)
+            from services.analysis_factory import build_analysis_service
+
             service = DailyTradeRecommendationService(
                 market_provider=market,
                 discovery_service=discovery,
                 trade_repo=DailyTradeRepository(session),
+                analysis_service=build_analysis_service(session),
             )
             report = await service.generate(session=session_label, persist=True)
             logger.info(

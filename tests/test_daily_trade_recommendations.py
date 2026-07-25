@@ -56,7 +56,33 @@ async def test_generate_ranks_picks_by_score():
     repo = AsyncMock()
     service = DailyTradeRecommendationService(market, discovery, repo)
 
-    with patch.object(service, "_fetch_market_regime", new_callable=AsyncMock, return_value="bullish"):
+    async def _gate(candidates, max_picks):
+        out = []
+        for p in candidates[:max_picks]:
+            out.append(
+                p.model_copy(
+                    update={
+                        "committee_unanimous": True,
+                        "committee_recommendation": "buy",
+                        "short_horizon_buy": True,
+                        "long_horizon_buy": True,
+                        "sources": list(p.sources or []) + ["committee_unanimous_dual"],
+                    }
+                )
+            )
+        return out
+
+    macro = MagicMock(
+        mode="risk_on",
+        thesis="risk on",
+        block_reason=None,
+        macro_bias="dovish",
+        size_multiplier=1.0,
+        cash_target_pct=8.0,
+    )
+    with patch.object(service, "_fetch_market_regime", new_callable=AsyncMock, return_value="bullish"), \
+         patch.object(service._macro, "assess", new_callable=AsyncMock, return_value=macro), \
+         patch.object(service, "_apply_committee_gate", new_callable=AsyncMock, side_effect=_gate):
         report = await service.generate(session="pre_market", max_picks=5, persist=True)
 
     assert isinstance(report, DailyTradeReport)
@@ -64,6 +90,7 @@ async def test_generate_ranks_picks_by_score():
     assert report.session == "pre_market"
     assert len(report.picks) >= 1
     assert report.picks[0].ticker == "NVDA"
+    assert report.picks[0].committee_unanimous is True
     repo.save.assert_awaited_once()
 
 
@@ -98,3 +125,29 @@ def test_classify_action_overbought():
     action, horizon = service._classify_action(3.0, 8.0, 80.0, 2.0)
     assert action == "vigilar"
     assert horizon == "Esperar pullback"
+
+
+@pytest.mark.asyncio
+async def test_generate_without_analysis_yields_no_buys():
+    """Fail closed: no committee → no actionable buy recommendations."""
+    market = AsyncMock()
+    market.get_quote = AsyncMock(return_value={
+        "ticker": "NVDA",
+        "company_name": "NVIDIA",
+        "current_price": 900.0,
+    })
+    market.get_history = AsyncMock(return_value=_make_hist())
+
+    discovery = AsyncMock()
+    discovery.research = AsyncMock(return_value=DiscoveryReport(
+        query_themes=["momentum"],
+        candidates=[_candidate("NVDA", 12)],
+        summary="test",
+        sources_scanned=["stocktwits"],
+    ))
+
+    service = DailyTradeRecommendationService(market, discovery, None, analysis_service=None)
+    with patch.object(service, "_fetch_market_regime", new_callable=AsyncMock, return_value="bullish"):
+        report = await service.generate(session="pre_market", max_picks=5, persist=False)
+
+    assert report.picks == []
