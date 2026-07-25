@@ -79,10 +79,20 @@
     switch (cmd) {
       case "refresh":
         await deps.loadDashboard();
+        if (deps.loadAlpacaBook) {
+          try { await deps.loadAlpacaBook(); } catch { /* ignore */ }
+        }
+        break;
+      case "ticker":
+        if (arg && $("#global-ticker")) {
+          $("#global-ticker").value = arg;
+          if (deps.focusTechView) deps.focusTechView({ force: true });
+        }
         break;
       case "analyze":
         if (arg) {
           $("#global-ticker").value = arg;
+          if (deps.focusTechView) deps.focusTechView({ force: true });
           await deps.runAnalyze();
           if (deps.speakAnalyzeResult) await deps.speakAnalyzeResult(arg);
         }
@@ -107,7 +117,7 @@
   async function handleTranscript(text) {
     const trimmed = (text || "").trim();
     if (!trimmed) {
-      speak("No entendí. Prueba: cómo está el mercado.");
+      speak("No entendí. Prueba: cómo está el mercado, precio de NVDA, o compra 1 AAPL.");
       return;
     }
 
@@ -119,7 +129,14 @@
         method: "POST",
         body: JSON.stringify(body),
       });
-      setStatus(result.success ? "Listo ✓" : "Sin resultado", false);
+      if (result.requires_confirmation) {
+        setStatus("Esperando: di «confirma» o «cancela»", true);
+      } else {
+        setStatus(result.success ? "Listo ✓" : "Sin resultado", false);
+      }
+      if (result.requires_confirmation) {
+        deps.toast("Voz: orden pendiente — di confirma o cancela", 6000);
+      }
       speak(result.speech, async () => {
         if (result.ui_action) await dispatchUiAction(result.ui_action);
       });
@@ -256,8 +273,8 @@
 
     if (!SpeechRecognition || isIOS) {
       const hint = isIOS
-        ? "iPhone: escribe el comando abajo (voz limitada en Safari). La respuesta sí se escucha."
-        : "Escribe el comando abajo. Ej: cómo está el mercado";
+        ? "iPhone: escribe abajo (mic limitado). Ej: precio NVDA, analiza AAPL, compra 1 AAPL."
+        : "Escribe el comando. Ej: precio NVDA · analiza AAPL · compra 1 AAPL · confirma";
       setStatus(hint, false);
       btn.disabled = true;
       btn.title = "Micrófono no disponible — usa el campo de texto";
