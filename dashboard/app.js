@@ -2354,8 +2354,22 @@ function speakAnalyzeResult(ticker) {
     }
     const rec = trRec(lastThesis.recommendation);
     const conf = Math.round((lastThesis.confidence || 0) * 100);
-    const summary = (lastThesis.executive_summary || "").slice(0, 350);
-    const text = `${ticker}: ${rec}, confianza ${conf} por ciento. ${summary}`;
+    const summary = (lastThesis.executive_summary || "").slice(0, 280);
+    const tech = (lastThesis.agent_reports || []).find((r) => r.agent_name === "technical_agent");
+    const pb = tech?.raw_data?.playbook;
+    const mkt = tech?.raw_data?.market_opinion || pb?.market_opinion;
+    let text = `${ticker}: ${rec}, confianza ${conf} por ciento. ${summary}`;
+    if (pb?.strategy_es) {
+      text += ` Playbook: ${pb.strategy_es}. ${pb.opinion_es || ""}`;
+    }
+    if (mkt?.available) {
+      text += ` Opinión de mercado ${mkt.label_es || ""} (${Number(mkt.aggregated_score || 0) >= 0 ? "+" : ""}${Number(mkt.aggregated_score || 0).toFixed(0)}).`;
+    }
+    if (["sell", "strong_sell"].includes(String(lastThesis.recommendation || "").toLowerCase())) {
+      text += " El comité está en vender; si quieres cerrar en Alpaca di vende seguido del ticker.";
+    } else if (["buy", "strong_buy"].includes(String(lastThesis.recommendation || "").toLowerCase())) {
+      text += " Si quieres operar di compra 1 seguido del ticker, y luego confirma.";
+    }
     if (!window.speechSynthesis) { resolve(); return; }
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
@@ -2494,9 +2508,11 @@ document.addEventListener("keydown", (e) => {
       API,
       toast,
       loadDashboard,
+      loadAlpacaBook,
       runAnalyze,
       runDiscoveryResearch,
       switchToTab,
+      focusTechView,
       getPortfolioId: () => lastPortfolioId,
       speakAnalyzeResult,
     });
