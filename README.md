@@ -53,25 +53,28 @@ El escritorio de riesgo aplica **límites duros** a compras (concentración, cas
 | `GET /api/v1/risk/status` | Política + macro + libro Alpaca |
 | `GET /api/v1/risk/macro` | Solo régimen macro |
 
-Autonomía opcional (OFF por defecto):
+Firma autónoma (ON por defecto — opera sin click humano):
 
 ```
-AUTO_EXECUTE_TRADES=false
-AUTO_EXECUTE_LIVE=false   # segunda llave para LIVE
+FIRM_AUTONOMY=true
+AUTO_EXECUTE_TRADES=true
+AUTO_EXECUTE_LIVE=true
 AUTO_EXECUTE_MAX_NOTIONAL=25
+AUTOPILOT_INTERVAL_MINUTES=30
 ```
 
-Sin esas flags el sistema recomienda y alerta; **tú** confirmas cada orden LIVE.
+Compras solo con **consenso unánime del comité** (BUY corto+largo) + risk desk OK + mercado abierto.  
+Cierres por lifecycle (stop / trailing / time-stop). Panic: `POST /ops/kill-switch/on`.
 
-### Roadmap hacia autonomía tipo firma de capital
+### Escritorio autónomo tipo firma de capital
 
 1. ~~Risk Desk + macro en picks y órdenes~~
 2. ~~Ciclo de vida (trailing / time-stop / invalidar tesis → vender)~~
 3. ~~Reconciliación continua Alpaca ↔ DB + audit log~~
-4. ~~Auto-execute paper-first → LIVE con límites~~
+4. ~~Auto-execute LIVE con límites + comité unánime~~
 5. ~~VaR / beta / sectores duros + kill switch (pánico → flat)~~
 6. ~~Comité completo: memoria como evidencia + SELL → exit~~
-7. ~~Autopilot unificado + promoción paper→LIVE~~
+7. ~~Autopilot programado (reconcile → risk → lifecycle → picks → execute)~~
 
 ```
 GET  /api/v1/ops/status
@@ -84,7 +87,7 @@ GET  /api/v1/ops/audit
 GET  /api/v1/ops/risk-metrics
 ```
 
-**Cierre del prompt fundacional + broker autónomo:** el comité genera tesis auditables con memoria; el CEO Terminal opera el ciclo; el escritorio de capital reconcilia, gestiona riesgo/macro, cierra posiciones y puede auto-ejecutar en paper (LIVE solo tras promoción + flags).
+**Firma autónoma:** el comité filtra compras; el scheduler corre Autopilot ~cada 30 min en horario de mercado; lifecycle cierra; kill switch aplana el libro.
 
 ```bash
 python main.py serve      # API + scheduler integrado

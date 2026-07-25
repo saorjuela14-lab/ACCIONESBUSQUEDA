@@ -693,10 +693,12 @@ async function loadOpsDesk() {
     const sec = metrics?.max_sector
       ? `${metrics.max_sector} ${metrics.max_sector_pct}%`
       : "sector —";
+    const autonomy = st.firm_autonomy ? "FIRMA AUTO" : "manual";
+    const ap = st.autopilot_interval_minutes ? `AP ${st.autopilot_interval_minutes}m` : "AP off";
     el.textContent =
-      `Ops: kill ${ks ? "ON ⚠" : "off"} · auto ${st.auto_execute?.allowed ? "READY" : "blocked"}` +
-      ` · ${varTxt} · ${betaTxt} · ${sec}`;
-    el.title = st.auto_execute?.reason || "";
+      `Ops: ${autonomy} · kill ${ks ? "ON ⚠" : "off"} · auto ${st.auto_execute?.allowed ? "READY" : "blocked"}` +
+      ` · ${ap} · ${varTxt} · ${betaTxt} · ${sec}`;
+    el.title = st.auto_execute?.policy?.promotion_note || st.auto_execute?.reason || "";
   } catch {
     el.classList.add("warn");
     el.textContent = "Ops: no disponible";

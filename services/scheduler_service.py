@@ -298,11 +298,12 @@ class SchedulerService:
             replace_existing=True,
         )
 
-        # Full firm autopilot (optional; 0 disables)
-        if self._settings.autopilot_interval_minutes and self._settings.autopilot_interval_minutes > 0:
+        # Full firm autopilot (firm autonomy defaults to 30m when unset)
+        autopilot_every = self._settings.effective_autopilot_interval_minutes
+        if autopilot_every > 0:
             self._scheduler.add_job(
                 self._run_autopilot,
-                IntervalTrigger(minutes=self._settings.autopilot_interval_minutes),
+                IntervalTrigger(minutes=autopilot_every),
                 id="firm_autopilot",
                 replace_existing=True,
             )
@@ -315,7 +316,8 @@ class SchedulerService:
             watchlist_interval=self._settings.watchlist_scan_interval_minutes,
             lifecycle_interval=self._settings.lifecycle_scan_interval_minutes,
             reconcile_interval=self._settings.reconcile_interval_minutes,
-            autopilot_interval=self._settings.autopilot_interval_minutes,
+            autopilot_interval=autopilot_every,
+            firm_autonomy=self._settings.firm_autonomy,
         )
 
     def stop(self) -> None:
