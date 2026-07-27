@@ -13,12 +13,12 @@ def test_firm_autonomy_defaults_on():
     assert Settings.model_fields["auto_execute_trades"].default is True
     assert Settings.model_fields["auto_execute_live"].default is True
     assert Settings.model_fields["auto_execute_paper_first"].default is False
-    assert Settings.model_fields["autopilot_interval_minutes"].default == 30
+    assert Settings.model_fields["autopilot_interval_minutes"].default == 10
 
 
 def test_effective_autopilot_interval_fallback():
     s = Settings.model_construct(firm_autonomy=True, autopilot_interval_minutes=0)
-    assert s.effective_autopilot_interval_minutes == 30
+    assert s.effective_autopilot_interval_minutes == 10
     s2 = Settings.model_construct(firm_autonomy=True, autopilot_interval_minutes=15)
     assert s2.effective_autopilot_interval_minutes == 15
     s3 = Settings.model_construct(firm_autonomy=False, autopilot_interval_minutes=0)

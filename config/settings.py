@@ -116,7 +116,7 @@ class Settings(BaseSettings):
     auto_execute_max_notional: float = 25.0
     auto_execute_require_market_open: bool = True
     auto_execute_paper_first: bool = False  # skip paper soak when firm_autonomy
-    autopilot_interval_minutes: int = 30  # scheduled full desk loop (0 = off)
+    autopilot_interval_minutes: int = 10  # scheduled full desk loop (0 = off)
 
     # Lifecycle desk
     lifecycle_enabled: bool = True
@@ -165,11 +165,11 @@ class Settings(BaseSettings):
 
     @property
     def effective_autopilot_interval_minutes(self) -> int:
-        """Scheduled autopilot cadence; firm autonomy defaults to 30m when unset."""
+        """Scheduled autopilot cadence; firm autonomy defaults to 10m when unset."""
         if self.autopilot_interval_minutes and self.autopilot_interval_minutes > 0:
             return int(self.autopilot_interval_minutes)
         if self.firm_autonomy:
-            return 30
+            return 10
         return 0
 
     @property

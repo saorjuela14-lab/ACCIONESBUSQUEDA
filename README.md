@@ -60,7 +60,7 @@ FIRM_AUTONOMY=true
 AUTO_EXECUTE_TRADES=true
 AUTO_EXECUTE_LIVE=true
 AUTO_EXECUTE_MAX_NOTIONAL=25
-AUTOPILOT_INTERVAL_MINUTES=30
+AUTOPILOT_INTERVAL_MINUTES=10
 ```
 
 Compras solo con **consenso unánime del comité** (BUY corto+largo) + risk desk OK + mercado abierto.  
