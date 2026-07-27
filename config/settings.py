@@ -80,8 +80,8 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     twilio_whatsapp_from: str = ""  # e.g. whatsapp:+14155238886
     whatsapp_briefing_enabled: bool = True
-    # ET times for open/close portfolio status (comma-separated HH:MM)
-    whatsapp_briefing_times: str = "09:35,16:05"
+    # Exactly 3 desk messages per trading day (ET): open, lunch, close
+    whatsapp_briefing_times: str = "09:35,12:30,16:05"
 
     # Alpaca Trading API — LIVE by default (https://docs.alpaca.markets/)
     # Compatible with https://github.com/alpacahq/cli env vars

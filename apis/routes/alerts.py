@@ -55,11 +55,11 @@ async def test_push_notification() -> dict:
 
 @router.post("/alerts/briefing/send")
 async def send_status_briefing(
-    session_kind: str = Query(default="manual", pattern="^(open|close|manual)$"),
+    session_kind: str = Query(default="manual", pattern="^(open|lunch|close|manual)$"),
     whatsapp_only: bool = Query(default=False),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Envía ahora el status de portafolio/órdenes (apertura, cierre o manual)."""
+    """Envía ahora el status de portafolio/órdenes (apertura, almuerzo, cierre o manual)."""
     push = PushNotificationService()
     if whatsapp_only and not push.whatsapp_configured:
         raise HTTPException(
@@ -73,7 +73,7 @@ async def send_status_briefing(
     if not whatsapp_only and not push.any_channel_configured:
         raise HTTPException(status_code=400, detail="Ningún canal push configurado")
 
-    if session_kind in ("open", "close") and not whatsapp_only:
+    if session_kind in ("open", "lunch", "close") and not whatsapp_only:
         from services.status_briefing_catchup_service import StatusBriefingCatchupService
 
         result = await StatusBriefingCatchupService(session).send_if_needed(
@@ -90,7 +90,7 @@ async def send_status_briefing(
         session_kind,  # type: ignore[arg-type]
         whatsapp_only=whatsapp_only,
     )
-    if session_kind in ("open", "close"):
+    if session_kind in ("open", "lunch", "close"):
         from services.status_briefing_catchup_service import StatusBriefingCatchupService
 
         await StatusBriefingCatchupService(session).mark_sent(
@@ -103,7 +103,7 @@ async def send_status_briefing(
 
 @router.get("/alerts/briefing/preview")
 async def preview_status_briefing(
-    session_kind: str = Query(default="manual", pattern="^(open|close|manual)$"),
+    session_kind: str = Query(default="manual", pattern="^(open|lunch|close|manual)$"),
 ) -> dict:
     """Vista previa del texto del briefing (no envía)."""
     title, body = await DailyStatusBriefingService().build(session_kind)  # type: ignore[arg-type]
