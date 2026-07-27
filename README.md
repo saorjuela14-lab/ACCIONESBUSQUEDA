@@ -108,7 +108,7 @@ GET  /api/v1/ops/status
 3. Variables: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
 
 **WhatsApp (status apertura/cierre del portafolio):**  
-Se envía **3 veces por día hábil** (hora NY): **09:35 apertura**, **12:30 almuerzo**, **16:05 cierre** — equity, posiciones, órdenes abiertas y cerradas del día. No es un mensaje cada pocos minutos.
+Se envía **3 veces por día hábil** (hora NY): **09:35 apertura**, **12:30 almuerzo**, **16:05 cierre** — equity, posiciones, órdenes abiertas y cerradas del día. No es un mensaje cada pocos minutos. Si el host cloud dormía a la hora exacta, el arranque recupera los slots pendientes (máx. 1 por horario, hasta 18:30 ET).
 
 Opción más simple — [CallMeBot](https://www.callmebot.com/blog/free-api-whatsapp-messages/):
 1. Guarda en contactos el bot actual: **+34 644 78 33 97** (los números viejos dejan de tener WhatsApp)
