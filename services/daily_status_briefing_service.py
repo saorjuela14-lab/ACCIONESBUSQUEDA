@@ -15,11 +15,11 @@ from utils.logging import get_logger
 logger = get_logger(__name__)
 
 ET = ZoneInfo("America/New_York")
-SessionKind = Literal["open", "close", "manual"]
+SessionKind = Literal["open", "lunch", "close", "manual"]
 
 
 class DailyStatusBriefingService:
-    """Builds and sends a firm-style status digest at market open/close."""
+    """Builds and sends a firm-style status digest at open / lunch / close."""
 
     def __init__(
         self,
@@ -35,6 +35,7 @@ class DailyStatusBriefingService:
         now = datetime.now(ET)
         label = {
             "open": "APERTURA",
+            "lunch": "ALMUERZO",
             "close": "CIERRE",
             "manual": "STATUS",
         }.get(session_kind, "STATUS")
@@ -152,9 +153,11 @@ class DailyStatusBriefingService:
             lines.append("")
 
         if session_kind == "open":
-            lines.append("Gestión: Autopilot revisará compras solo con consenso del comité.")
+            lines.append("Gestión: apertura — Autopilot solo compra con consenso del comité.")
+        elif session_kind == "lunch":
+            lines.append("Gestión: almuerzo — revisión de mitad de sesión (posiciones y órdenes).")
         elif session_kind == "close":
-            lines.append("Gestión: lifecycle/risk revisaron salidas; resumen de fin de sesión.")
+            lines.append("Gestión: cierre — lifecycle/risk revisaron salidas; fin de sesión.")
         else:
             lines.append("Gestión: status manual bajo demanda.")
 

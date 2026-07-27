@@ -108,7 +108,7 @@ GET  /api/v1/ops/status
 3. Variables: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
 
 **WhatsApp (status apertura/cierre del portafolio):**  
-Se envía a las **09:35 y 16:05 ET** (días hábiles) con equity, posiciones, órdenes abiertas y cerradas del día.
+Se envía **3 veces por día hábil** (hora NY): **09:35 apertura**, **12:30 almuerzo**, **16:05 cierre** — equity, posiciones, órdenes abiertas y cerradas del día. No es un mensaje cada pocos minutos.
 
 Opción más simple — [CallMeBot](https://www.callmebot.com/blog/free-api-whatsapp-messages/):
 1. Guarda en contactos el bot actual: **+34 644 78 33 97** (los números viejos dejan de tener WhatsApp)
@@ -120,7 +120,7 @@ Opción más simple — [CallMeBot](https://www.callmebot.com/blog/free-api-what
 |----------|--------|
 | `WHATSAPP_PHONE` | Tu número internacional sin `+` (ej. `573001234567`) |
 | `WHATSAPP_API_KEY` | Apikey de CallMeBot |
-| `WHATSAPP_BRIEFING_TIMES` | `09:35,16:05` (default) |
+| `WHATSAPP_BRIEFING_TIMES` | `09:35,12:30,16:05` (default) |
 
 Alternativas Business: Meta Cloud API (`WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_TO`) o Twilio (`TWILIO_*` + `WHATSAPP_TO`).
 
@@ -129,7 +129,7 @@ Endpoints:
 GET  /api/v1/alerts/push-status
 POST /api/v1/alerts/test-push
 GET  /api/v1/alerts/briefing/preview
-POST /api/v1/alerts/briefing/send?session_kind=open|close|manual
+POST /api/v1/alerts/briefing/send?session_kind=open|lunch|close|manual
 ```
 
 Redeploy. En el panel → **Probar push** (también dispara un status manual).

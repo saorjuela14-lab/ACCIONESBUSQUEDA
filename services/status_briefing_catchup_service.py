@@ -1,4 +1,8 @@
-"""Durable open/close WhatsApp briefing with catch-up after restarts/sleep."""
+"""Durable open/lunch/close WhatsApp briefing with silent catch-up after restarts.
+
+You only receive **3 messages per trading day** (open, lunch, close).
+The catch-up job never spams: it only sends if that slot was missed and not yet marked sent.
+"""
 
 from __future__ import annotations
 
@@ -17,17 +21,18 @@ from utils.market_hours import is_trading_day
 logger = get_logger(__name__)
 
 ET = ZoneInfo("America/New_York")
-SessionKind = Literal["open", "close"]
+SessionKind = Literal["open", "lunch", "close"]
 
-# Windows: after this local ET time we may catch up until end of trading window
-_OPEN_AFTER = time(9, 35)
-_CLOSE_AFTER = time(16, 5)
-_OPEN_UNTIL = time(15, 30)  # don't send "open" late afternoon
-_CLOSE_UNTIL = time(20, 0)
+# Narrow catch-up windows — one send max per slot per day
+_WINDOWS: dict[SessionKind, tuple[time, time]] = {
+    "open": (time(9, 35), time(11, 0)),
+    "lunch": (time(12, 30), time(14, 0)),
+    "close": (time(16, 5), time(18, 30)),
+}
 
 
 class StatusBriefingCatchupService:
-    """Ensures today's open/close briefings are sent even if cron was missed."""
+    """Ensures today's 3 briefings are sent even if cron was missed — never more than once each."""
 
     FLAG_KEY = "status_briefing_sent"
 
@@ -54,7 +59,6 @@ class StatusBriefingCatchupService:
             "telegram": bool(result.get("telegram")),
             "title": result.get("title"),
         }
-        # Keep only last 7 days of keys
         state[day] = day_map
         trimmed = {k: state[k] for k in sorted(state.keys())[-7:]}
         await self._flags.set_json(self.FLAG_KEY, trimmed)
@@ -66,9 +70,8 @@ class StatusBriefingCatchupService:
 
     def _due(self, kind: SessionKind, now: datetime) -> bool:
         t = now.astimezone(ET).time()
-        if kind == "open":
-            return _OPEN_AFTER <= t <= _OPEN_UNTIL
-        return _CLOSE_AFTER <= t <= _CLOSE_UNTIL
+        start, end = _WINDOWS[kind]
+        return start <= t <= end
 
     async def send_if_needed(
         self,
@@ -94,14 +97,17 @@ class StatusBriefingCatchupService:
             message=f"Briefing {kind}: {result.get('title')}",
             payload={k: v for k, v in result.items() if k != "title"},
         )
-        logger.info("status_briefing.catchup", kind=kind, via=via, **{
-            k: v for k, v in result.items() if k != "title"
-        })
+        logger.info(
+            "status_briefing.sent",
+            kind=kind,
+            via=via,
+            **{k: v for k, v in result.items() if k != "title"},
+        )
         return result
 
     async def catch_up(self, *, via: str = "catchup") -> dict:
-        """Send any missed open/close briefing for today."""
-        out: dict = {"open": None, "close": None}
-        out["open"] = await self.send_if_needed("open", via=via)
-        out["close"] = await self.send_if_needed("close", via=via)
+        """Send at most the overdue slots for today (0–3 messages, usually 0)."""
+        out: dict = {}
+        for kind in ("open", "lunch", "close"):
+            out[kind] = await self.send_if_needed(kind, via=via)  # type: ignore[arg-type]
         return out

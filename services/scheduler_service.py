@@ -246,7 +246,7 @@ class SchedulerService:
         """WhatsApp/Telegram portfolio status at market open or close."""
         if not self._settings.whatsapp_briefing_enabled:
             return
-        kind = session_kind if session_kind in ("open", "close") else "manual"
+        kind = session_kind if session_kind in ("open", "lunch", "close") else "manual"
         if kind == "manual":
             from services.daily_status_briefing_service import DailyStatusBriefingService
 
@@ -268,7 +268,7 @@ class SchedulerService:
             break
 
     async def _run_status_briefing_catchup(self) -> None:
-        """Backup: if cron was missed (cold start / sleep), send overdue briefing."""
+        """Silent recovery only: sends a slot if cron was missed — never re-sends."""
         if not self._settings.whatsapp_briefing_enabled:
             return
         from utils.market_hours import is_trading_day
@@ -325,28 +325,39 @@ class SchedulerService:
             replace_existing=True,
         )
 
-        # WhatsApp/Telegram portfolio status at open + close (ET)
+        # Exactly 3 WhatsApp/Telegram status messages: open, lunch, close (ET)
         briefing_kind = {
             "09:35": "open",
             "09:30": "open",
+            "12:30": "lunch",
+            "12:00": "lunch",
+            "13:00": "lunch",
             "16:05": "close",
             "16:00": "close",
         }
         for time_str in self._settings.whatsapp_briefing_schedule:
             hour, minute = time_str.split(":")
-            kind = briefing_kind.get(time_str, "open" if int(hour) < 12 else "close")
+            h = int(hour)
+            if time_str in briefing_kind:
+                kind = briefing_kind[time_str]
+            elif h < 11:
+                kind = "open"
+            elif h < 15:
+                kind = "lunch"
+            else:
+                kind = "close"
             self._scheduler.add_job(
                 self._run_status_briefing,
-                CronTrigger(hour=int(hour), minute=int(minute), timezone=tz),
+                CronTrigger(hour=h, minute=int(minute), timezone=tz),
                 args=[kind],
                 id=f"status_briefing_{time_str}",
                 replace_existing=True,
             )
 
-        # Catch-up every 5 min — survives cold starts / missed cron
+        # Silent catch-up (does NOT spam — only fills a missed slot once)
         self._scheduler.add_job(
             self._run_status_briefing_catchup,
-            IntervalTrigger(minutes=5),
+            IntervalTrigger(minutes=10),
             id="status_briefing_catchup",
             replace_existing=True,
         )

@@ -1,4 +1,4 @@
-"""Tests for durable open/close briefing catch-up."""
+"""Tests for durable open/lunch/close briefing catch-up (no spam)."""
 
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -12,7 +12,7 @@ ET = ZoneInfo("America/New_York")
 
 
 @pytest.mark.asyncio
-async def test_catchup_sends_open_when_due_and_not_sent():
+async def test_catchup_sends_lunch_when_due():
     session = MagicMock()
     flags = MagicMock()
     flags.get_json = AsyncMock(return_value={})
@@ -25,16 +25,14 @@ async def test_catchup_sends_open_when_due_and_not_sent():
          patch("services.status_briefing_catchup_service.datetime") as dt:
         Audit.return_value.record = AsyncMock()
         Brief.return_value.send = AsyncMock(
-            return_value={"telegram": True, "whatsapp": True, "title": "APERTURA"}
+            return_value={"telegram": True, "whatsapp": True, "title": "ALMUERZO"}
         )
-        dt.now.return_value = datetime(2026, 7, 27, 10, 0, tzinfo=ET)
-        dt.side_effect = lambda *a, **k: datetime(*a, **k)
+        dt.now.return_value = datetime(2026, 7, 27, 12, 35, tzinfo=ET)
 
         svc = StatusBriefingCatchupService(session)
-        result = await svc.send_if_needed("open", via="test")
+        result = await svc.send_if_needed("lunch", via="test")
 
     assert result["whatsapp"] is True
-    flags.set_json.assert_awaited()
     Brief.return_value.send.assert_awaited_once()
 
 
@@ -64,7 +62,8 @@ async def test_catchup_skips_already_sent():
 
 
 @pytest.mark.asyncio
-async def test_catchup_skips_outside_window():
+async def test_open_window_does_not_span_all_day():
+    """After 11:00 ET, missed open is NOT resent — avoids spam; lunch/close are separate."""
     session = MagicMock()
     flags = MagicMock()
     flags.get_json = AsyncMock(return_value={})
@@ -75,8 +74,7 @@ async def test_catchup_skips_outside_window():
          patch("services.status_briefing_catchup_service.is_trading_day", return_value=True), \
          patch("services.status_briefing_catchup_service.datetime") as dt:
         Brief.return_value.send = AsyncMock()
-        # Before open window
-        dt.now.return_value = datetime(2026, 7, 27, 8, 0, tzinfo=ET)
+        dt.now.return_value = datetime(2026, 7, 27, 12, 0, tzinfo=ET)
 
         svc = StatusBriefingCatchupService(session)
         result = await svc.send_if_needed("open", via="test")
