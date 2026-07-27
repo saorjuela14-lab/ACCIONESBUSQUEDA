@@ -206,6 +206,11 @@ class SchedulerService:
                 synced=report.synced,
                 portfolio_id=report.portfolio_id,
             )
+            # Wake-path catch-up: cloud may sleep through exact cron minute
+            if self._settings.whatsapp_briefing_enabled:
+                from services.status_briefing_catchup_service import StatusBriefingCatchupService
+
+                await StatusBriefingCatchupService(session).catch_up(via="reconcile_catchup")
             break
 
     async def _run_autopilot(self) -> None:
@@ -241,28 +246,56 @@ class SchedulerService:
         """WhatsApp/Telegram portfolio status at market open or close."""
         if not self._settings.whatsapp_briefing_enabled:
             return
-        if not should_run_automation() and session_kind != "manual":
-            # Still allow open/close cron on trading days only
-            from utils.market_hours import is_trading_day
-
-            if not is_trading_day():
-                logger.info("scheduler.skipped", job="status_briefing", reason="non_trading_day")
-                return
-        from services.daily_status_briefing_service import DailyStatusBriefingService
-
         kind = session_kind if session_kind in ("open", "close") else "manual"
-        result = await DailyStatusBriefingService().send(kind)  # type: ignore[arg-type]
-        logger.info("scheduler.status_briefing", session=kind, **{
-            k: v for k, v in result.items() if k != "title"
-        })
+        if kind == "manual":
+            from services.daily_status_briefing_service import DailyStatusBriefingService
+
+            result = await DailyStatusBriefingService().send("manual")
+            logger.info("scheduler.status_briefing", session=kind, **{
+                k: v for k, v in result.items() if k != "title"
+            })
+            return
+
+        async for session in get_session():
+            from services.status_briefing_catchup_service import StatusBriefingCatchupService
+
+            result = await StatusBriefingCatchupService(session).send_if_needed(
+                kind,  # type: ignore[arg-type]
+                via="cron",
+                force=False,
+            )
+            logger.info("scheduler.status_briefing", session=kind, result=result)
+            break
+
+    async def _run_status_briefing_catchup(self) -> None:
+        """Backup: if cron was missed (cold start / sleep), send overdue briefing."""
+        if not self._settings.whatsapp_briefing_enabled:
+            return
+        from utils.market_hours import is_trading_day
+
+        if not is_trading_day():
+            return
+        async for session in get_session():
+            from services.status_briefing_catchup_service import StatusBriefingCatchupService
+
+            result = await StatusBriefingCatchupService(session).catch_up(via="interval_catchup")
+            delivered = False
+            for v in result.values():
+                if isinstance(v, dict) and (v.get("whatsapp") or v.get("telegram")):
+                    delivered = True
+                    break
+            if delivered:
+                logger.info("scheduler.status_briefing_catchup", **result)
+            break
 
     def start(self) -> None:
+        tz = ZoneInfo(self._settings.market_timezone)
         for time_str in self._settings.report_schedule:
             session = SESSION_MAP.get(time_str, MarketSession.MID_SESSION)
             hour, minute = time_str.split(":")
             self._scheduler.add_job(
                 self._run_market_report,
-                CronTrigger(hour=int(hour), minute=int(minute)),
+                CronTrigger(hour=int(hour), minute=int(minute), timezone=tz),
                 args=[session],
                 id=f"market_report_{time_str}",
                 replace_existing=True,
@@ -278,7 +311,7 @@ class SchedulerService:
             hour, minute = time_str.split(":")
             self._scheduler.add_job(
                 self._run_daily_trade_recommendations,
-                CronTrigger(hour=int(hour), minute=int(minute)),
+                CronTrigger(hour=int(hour), minute=int(minute), timezone=tz),
                 args=[session_label],
                 id=f"daily_trade_{time_str}",
                 replace_existing=True,
@@ -287,7 +320,7 @@ class SchedulerService:
         # Daily investment report + memory evaluation at post-market (17:30)
         self._scheduler.add_job(
             self._run_daily_report,
-            CronTrigger(hour=17, minute=30),
+            CronTrigger(hour=17, minute=30, timezone=tz),
             id="daily_investment_report",
             replace_existing=True,
         )
@@ -304,11 +337,19 @@ class SchedulerService:
             kind = briefing_kind.get(time_str, "open" if int(hour) < 12 else "close")
             self._scheduler.add_job(
                 self._run_status_briefing,
-                CronTrigger(hour=int(hour), minute=int(minute)),
+                CronTrigger(hour=int(hour), minute=int(minute), timezone=tz),
                 args=[kind],
                 id=f"status_briefing_{time_str}",
                 replace_existing=True,
             )
+
+        # Catch-up every 5 min — survives cold starts / missed cron
+        self._scheduler.add_job(
+            self._run_status_briefing_catchup,
+            IntervalTrigger(minutes=5),
+            id="status_briefing_catchup",
+            replace_existing=True,
+        )
 
         # Watchlist scan every N minutes during market hours
         self._scheduler.add_job(

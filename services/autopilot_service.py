@@ -174,6 +174,17 @@ class AutopilotService:
         except Exception:
             pass
 
+        # 7) Briefing catch-up (open/close WhatsApp) if cron was missed
+        try:
+            if settings.whatsapp_briefing_enabled:
+                from services.status_briefing_catchup_service import StatusBriefingCatchupService
+
+                steps["status_briefing"] = await StatusBriefingCatchupService(
+                    self._session
+                ).catch_up(via="autopilot_catchup")
+        except Exception as exc:
+            steps["status_briefing"] = {"error": str(exc)}
+
         await self._audit.record(
             "auto_execute",
             actor=actor,
