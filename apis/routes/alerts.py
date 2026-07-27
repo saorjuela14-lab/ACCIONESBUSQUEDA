@@ -57,6 +57,7 @@ async def test_push_notification() -> dict:
 async def send_status_briefing(
     session_kind: str = Query(default="manual", pattern="^(open|close|manual)$"),
     whatsapp_only: bool = Query(default=False),
+    session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Envía ahora el status de portafolio/órdenes (apertura, cierre o manual)."""
     push = PushNotificationService()
@@ -71,10 +72,32 @@ async def send_status_briefing(
         )
     if not whatsapp_only and not push.any_channel_configured:
         raise HTTPException(status_code=400, detail="Ningún canal push configurado")
+
+    if session_kind in ("open", "close") and not whatsapp_only:
+        from services.status_briefing_catchup_service import StatusBriefingCatchupService
+
+        result = await StatusBriefingCatchupService(session).send_if_needed(
+            session_kind,  # type: ignore[arg-type]
+            via="api_manual",
+            force=True,
+        )
+        return {
+            "ok": bool(result and any(result.get(c) for c in ("whatsapp", "telegram", "webhook"))),
+            "result": result,
+        }
+
     result = await DailyStatusBriefingService().send(
         session_kind,  # type: ignore[arg-type]
         whatsapp_only=whatsapp_only,
     )
+    if session_kind in ("open", "close"):
+        from services.status_briefing_catchup_service import StatusBriefingCatchupService
+
+        await StatusBriefingCatchupService(session).mark_sent(
+            session_kind,  # type: ignore[arg-type]
+            via="api_manual",
+            result=result,
+        )
     return {"ok": any(v for k, v in result.items() if k != "title" and v is True), "result": result}
 
 
