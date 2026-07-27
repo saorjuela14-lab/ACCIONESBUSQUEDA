@@ -24,6 +24,18 @@ from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+# Stablecoin parking pairs that trap USD buying power on Alpaca crypto
+_USD_PARKING_SYMBOLS = frozenset({"USDTUSD", "USDT/USD", "USDCUSD", "USDC/USD"})
+
+
+def is_usd_parking_symbol(symbol: str) -> bool:
+    """True for USDT/USDC vs USD crypto pairs used as cash parking."""
+    sym = (symbol or "").upper().strip()
+    return sym in _USD_PARKING_SYMBOLS or sym.replace("/", "") in {
+        "USDTUSD",
+        "USDCUSD",
+    }
+
 
 class AutopilotService:
     """Runs the full capital-desk loop in a single ordered pass."""
@@ -33,6 +45,39 @@ class AutopilotService:
         self._settings = get_settings()
         self._broker = AlpacaOrderService()
         self._audit = AuditService(session)
+
+    async def _sweep_usd_parking(self) -> dict[str, Any]:
+        """Liquidate USDT/USDC parking → USD cash so the desk can size equity buys."""
+        if not self._broker.is_configured():
+            return {"skipped": True, "reason": "broker_unconfigured"}
+        positions = await self._broker.get_positions()
+        targets = [p for p in positions if is_usd_parking_symbol(p.symbol)]
+        if not targets:
+            return {"closed": [], "message": "no_usd_parking"}
+        closed: list[dict[str, Any]] = []
+        errors: list[str] = []
+        for pos in targets:
+            close_sym = (pos.symbol or "").upper().replace("/", "")
+            try:
+                raw = await self._broker.close_position(close_sym)
+                closed.append(
+                    {
+                        "symbol": close_sym,
+                        "qty": pos.qty,
+                        "market_value": pos.market_value,
+                        "status": (raw or {}).get("status") if isinstance(raw, dict) else "submitted",
+                        "order_id": (raw or {}).get("id") if isinstance(raw, dict) else None,
+                    }
+                )
+                logger.info(
+                    "autopilot.cash_sweep",
+                    symbol=close_sym,
+                    qty=pos.qty,
+                    market_value=pos.market_value,
+                )
+            except Exception as exc:
+                errors.append(f"{close_sym}: {exc}")
+        return {"closed": closed, "errors": errors}
 
     async def run(
         self,
@@ -67,6 +112,12 @@ class AutopilotService:
             }
         except Exception as exc:
             steps["reconcile"] = {"error": str(exc)}
+
+        # 1b) USDT/USDC parking → USD cash (buying power for equities)
+        try:
+            steps["cash_sweep"] = await self._sweep_usd_parking()
+        except Exception as exc:
+            steps["cash_sweep"] = {"error": str(exc)}
 
         # 2) Risk / macro status
         try:
