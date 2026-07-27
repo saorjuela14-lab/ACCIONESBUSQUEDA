@@ -2,6 +2,10 @@
 
 You only receive **3 messages per trading day** (open, lunch, close).
 The catch-up job never spams: it only sends if that slot was missed and not yet marked sent.
+
+Cold-start / sleep: if the host woke after the cron minute, any overdue slot
+still due before end-of-desk (18:30 ET) is sent once — so a 13:00 wake still
+delivers missed open + lunch.
 """
 
 from __future__ import annotations
@@ -23,12 +27,13 @@ logger = get_logger(__name__)
 ET = ZoneInfo("America/New_York")
 SessionKind = Literal["open", "lunch", "close"]
 
-# Narrow catch-up windows — one send max per slot per day
-_WINDOWS: dict[SessionKind, tuple[time, time]] = {
-    "open": (time(9, 35), time(11, 0)),
-    "lunch": (time(12, 30), time(14, 0)),
-    "close": (time(16, 5), time(18, 30)),
+# Scheduled times (ET). Catch-up is due from this time until desk end.
+_SLOT_AT: dict[SessionKind, time] = {
+    "open": time(9, 35),
+    "lunch": time(12, 30),
+    "close": time(16, 5),
 }
+_DESK_END = time(18, 30)
 
 
 class StatusBriefingCatchupService:
@@ -69,9 +74,15 @@ class StatusBriefingCatchupService:
         return bool((state.get(day) or {}).get(kind))
 
     def _due(self, kind: SessionKind, now: datetime) -> bool:
+        """True if slot time has passed today and desk is still active (≤18:30 ET)."""
         t = now.astimezone(ET).time()
-        start, end = _WINDOWS[kind]
-        return start <= t <= end
+        if t > _DESK_END:
+            return False
+        return t >= _SLOT_AT[kind]
+
+    @staticmethod
+    def _delivered(result: dict) -> bool:
+        return any(result.get(c) for c in ("whatsapp", "telegram", "webhook"))
 
     async def send_if_needed(
         self,
@@ -89,16 +100,19 @@ class StatusBriefingCatchupService:
             return {"skipped": True, "reason": "already_sent", "kind": kind}
 
         result = await DailyStatusBriefingService().send(kind)
-        await self.mark_sent(kind, via=via, result=result)
+        delivered = self._delivered(result)
+        if delivered or force:
+            # Only durable-mark on success (or explicit force) so failed WA can retry
+            await self.mark_sent(kind, via=via, result=result)
         await self._audit.record(
             "status_briefing",
             actor=via,
-            success=any(result.get(c) for c in ("whatsapp", "telegram", "webhook")),
+            success=delivered,
             message=f"Briefing {kind}: {result.get('title')}",
             payload={k: v for k, v in result.items() if k != "title"},
         )
         logger.info(
-            "status_briefing.sent",
+            "status_briefing.sent" if delivered else "status_briefing.failed",
             kind=kind,
             via=via,
             **{k: v for k, v in result.items() if k != "title"},
