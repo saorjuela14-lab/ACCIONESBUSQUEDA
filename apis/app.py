@@ -46,6 +46,20 @@ async def lifespan(app: FastAPI):
         scheduler = await start_scheduler()
         logger.info("app.scheduler.started")
 
+    # Wake path: cloud hosts may sleep through cron — catch up overdue slots once
+    if settings.whatsapp_briefing_enabled:
+        try:
+            from services.status_briefing_catchup_service import StatusBriefingCatchupService
+
+            async for session in get_session():
+                catch = await StatusBriefingCatchupService(session).catch_up(
+                    via="startup_catchup"
+                )
+                logger.info("app.briefing_startup_catchup", result=catch)
+                break
+        except Exception as exc:
+            logger.warning("app.briefing_startup_catchup_failed", error=str(exc))
+
     yield
 
     if scheduler:

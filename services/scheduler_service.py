@@ -352,6 +352,9 @@ class SchedulerService:
                 args=[kind],
                 id=f"status_briefing_{time_str}",
                 replace_existing=True,
+                # Survive short sleeps / deploys around the exact minute
+                misfire_grace_time=90 * 60,
+                coalesce=True,
             )
 
         # Silent catch-up (does NOT spam — only fills a missed slot once)
@@ -360,6 +363,8 @@ class SchedulerService:
             IntervalTrigger(minutes=10),
             id="status_briefing_catchup",
             replace_existing=True,
+            misfire_grace_time=9 * 60,
+            coalesce=True,
         )
 
         # Watchlist scan every N minutes during market hours
