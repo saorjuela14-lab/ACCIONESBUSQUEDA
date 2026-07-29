@@ -350,12 +350,18 @@ class AlpacaOrderService:
             try:
                 from services.portfolio_risk_metrics_service import PortfolioRiskMetricsService
 
+                equity = float(account.equity or account.portfolio_value or 0.0)
                 risk_metrics = await PortfolioRiskMetricsService().compute(
                     positions,
-                    equity=account.equity or account.portfolio_value or 0.0,
+                    equity=equity,
                 )
                 if risk_metrics.warnings:
                     warnings.extend(risk_metrics.warnings[:3])
+                # Ultra-micro books (~$50): one liquid name can push historical VaR
+                # over the institutional 8% gate while still respecting concentration,
+                # cash reserve and max-notional. Soft-warn so the continuous hunt
+                # can keep buying within those caps.
+                ultra_micro_book = 0 < equity <= 50.0
                 if (
                     settings.risk_enforce_var_beta
                     and risk_metrics.var_1d_95_pct is not None
@@ -363,26 +369,34 @@ class AlpacaOrderService:
                 ):
                     buy_lines = [ln for ln in request.lines if ln.side == "buy"]
                     if buy_lines and not request.dry_run:
-                        return ExecuteOrdersResponse(
-                            paper=self._broker.paper,
-                            dry_run=request.dry_run,
-                            warnings=[
+                        if ultra_micro_book:
+                            warnings.append(
                                 f"VaR 1d 95% {risk_metrics.var_1d_95_pct:.1f}% > "
-                                f"límite {settings.risk_max_var_pct:.1f}% — compras bloqueadas.",
-                                *warnings,
-                            ],
-                            failed=[
-                                BrokerOrderResult(
-                                    symbol=ln.ticker.upper(),
-                                    qty=ln.shares,
-                                    side=ln.side,
-                                    type=ln.order_type,
-                                    status="failed",
-                                    error="Bloqueado por VaR del portafolio",
-                                )
-                                for ln in buy_lines
-                            ],
-                        )
+                                f"límite {settings.risk_max_var_pct:.1f}% — aviso "
+                                f"(libro ultra-micro ${equity:.0f}; no bloquea; "
+                                "rige tope 35%/posición + notional)."
+                            )
+                        else:
+                            return ExecuteOrdersResponse(
+                                paper=self._broker.paper,
+                                dry_run=request.dry_run,
+                                warnings=[
+                                    f"VaR 1d 95% {risk_metrics.var_1d_95_pct:.1f}% > "
+                                    f"límite {settings.risk_max_var_pct:.1f}% — compras bloqueadas.",
+                                    *warnings,
+                                ],
+                                failed=[
+                                    BrokerOrderResult(
+                                        symbol=ln.ticker.upper(),
+                                        qty=ln.shares,
+                                        side=ln.side,
+                                        type=ln.order_type,
+                                        status="failed",
+                                        error="Bloqueado por VaR del portafolio",
+                                    )
+                                    for ln in buy_lines
+                                ],
+                            )
                 if (
                     settings.risk_enforce_var_beta
                     and risk_metrics.portfolio_beta is not None
