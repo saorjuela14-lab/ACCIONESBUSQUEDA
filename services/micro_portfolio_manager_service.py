@@ -17,9 +17,10 @@ from utils.logging import get_logger
 logger = get_logger(__name__)
 
 # Screen candidates through the committee in rounds until we find buys (or exhaust).
-_COMMITTEE_BATCH = 8
-_COMMITTEE_MAX_SCREEN = 40
-_COMMITTEE_CONCURRENCY = 3
+# Keep latency under Cloudflare ~100s: stop at first approval, capped universe.
+_COMMITTEE_BATCH = 4
+_COMMITTEE_MAX_SCREEN = 16
+_COMMITTEE_CONCURRENCY = 4
 
 # Liquid names that often trade in the micro/penny range (validated live at runtime).
 # Delisted / dead shells (NKLA, WISH, BBIG, etc.) must never appear here.
