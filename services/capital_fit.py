@@ -32,12 +32,14 @@ def capital_price_policy(capital: float, target_positions: int = 4) -> CapitalPr
     Standard: no hard max — CFDs still available as fallback.
     """
     capital = max(1.0, float(capital))
-    n = max(2, min(6, int(target_positions)))
+    n = max(1, min(6, int(target_positions)))
     avg_line = capital * 0.9 / n
 
     if capital <= 100:
-        # $50 portfolio → aim for stocks under ~$5 (penny / micro)
-        max_price = min(5.0, max(1.0, avg_line * 1.2))
+        # Fit whole shares under max position (~35%): $22 → ~$7.7–$8.5, not hard $5
+        avg_line = capital * 0.80 / n
+        max_line = capital * 0.35
+        max_price = round(min(12.0, max(3.0, max_line * 1.05)), 2)
         prefer = min(max_price, avg_line)
         return CapitalPricePolicy(
             capital=capital,
@@ -48,8 +50,8 @@ def capital_price_policy(capital: float, target_positions: int = 4) -> CapitalPr
             prefer_whole_shares=True,
             target_positions=n,
             description_es=(
-                f"Capital micro (${capital:,.0f}): buscar penny stocks / acciones ≤ ${max_price:.2f} "
-                f"para comprar acciones enteras (~${avg_line:.0f} por posición)."
+                f"Capital micro (${capital:,.0f}): acciones ≤ ${max_price:.2f} "
+                f"para 1 acción entera (~${avg_line:.0f}/línea, tope ~${max_line:.0f})."
             ),
         )
 
@@ -167,10 +169,11 @@ def discovery_themes_for_capital(policy: CapitalPricePolicy, base_themes: list[s
     themes = list(base_themes or [])
     if policy.tier == "micro":
         themes.extend([
-            "penny stocks under $5 breakout",
-            "micro cap volume spike under $5",
-            "OTC and low priced stocks momentum",
-            "small float penny stock catalyst",
+            "penny stocks under $8 breakout",
+            "micro cap volume spike under $10",
+            "stocks under $8 momentum today",
+            "small float catalyst under $8",
+            "affordable small cap under $10",
         ])
     elif policy.tier == "small":
         themes.extend([

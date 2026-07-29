@@ -56,7 +56,7 @@ async def test_generate_ranks_picks_by_score():
     repo = AsyncMock()
     service = DailyTradeRecommendationService(market, discovery, repo)
 
-    async def _gate(candidates, max_picks):
+    async def _gate(candidates, max_picks, **_kwargs):
         out = []
         for p in candidates[:max_picks]:
             out.append(

@@ -106,16 +106,20 @@ def _analysis_pass() -> MagicMock:
 
 
 def _analysis_reject() -> MagicMock:
+    """Strongly bearish — fails both strict and micro soft gates."""
     thesis = _passing_thesis("X")
-    # Force HOLD on technical
     reports = [
-        r.model_copy(update={"score": 0.0}) if r.agent_name == "technical_agent" else r
+        r.model_copy(update={"score": -40.0})
         for r in thesis.agent_reports
+    ]
+    strategies = [
+        s.model_copy(update={"score": -40.0}) for s in thesis.strategy_conclusions
     ]
     thesis = thesis.model_copy(
         update={
             "agent_reports": reports,
-            "recommendation": InvestmentRecommendation.HOLD,
+            "strategy_conclusions": strategies,
+            "recommendation": InvestmentRecommendation.STRONG_SELL,
         }
     )
     analysis = MagicMock()
@@ -133,8 +137,10 @@ async def test_micro_manager_builds_whole_share_plan():
     plan = await svc.manage(capital=22)
 
     assert plan.capital == 22
-    assert plan.max_share_price <= 5
+    assert plan.max_share_price is not None
+    assert plan.max_share_price <= 12
     assert len(plan.lines) >= 1
+    assert len(plan.lines) <= 1  # ultra-micro: one position
     for line in plan.lines:
         assert line.shares >= 1
         assert line.price <= plan.max_share_price
@@ -211,7 +217,7 @@ async def test_micro_manager_empty_without_committee_consensus():
     plan = await svc.manage(capital=22)
     assert plan.lines == []
     assert plan.picks == []
-    assert any("consenso" in w.lower() or "unánime" in w.lower() for w in plan.warnings)
+    assert any("consenso" in w.lower() or "comité" in w.lower() or "mayoría" in w.lower() for w in plan.warnings)
 
 
 @pytest.mark.asyncio

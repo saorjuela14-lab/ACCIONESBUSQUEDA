@@ -4,8 +4,8 @@ You only receive **3 messages per trading day** (open, lunch, close).
 The catch-up job never spams: it only sends if that slot was missed and not yet marked sent.
 
 Cold-start / sleep: if the host woke after the cron minute, any overdue slot
-still due before end-of-desk (18:30 ET) is sent once — so a 13:00 wake still
-delivers missed open + lunch.
+still due before end-of-day (23:59 ET) is sent once — so a late evening wake
+still delivers a missed close.
 """
 
 from __future__ import annotations
@@ -27,13 +27,14 @@ logger = get_logger(__name__)
 ET = ZoneInfo("America/New_York")
 SessionKind = Literal["open", "lunch", "close"]
 
-# Scheduled times (ET). Catch-up is due from this time until desk end.
+# Scheduled times (ET). Catch-up is due from this time until desk end (covers cold starts).
 _SLOT_AT: dict[SessionKind, time] = {
     "open": time(9, 35),
     "lunch": time(12, 30),
     "close": time(16, 5),
 }
-_DESK_END = time(18, 30)
+# Keep close recoverable late evening if the host slept through 16:05–18:30
+_DESK_END = time(23, 59)
 
 
 class StatusBriefingCatchupService:
@@ -74,7 +75,7 @@ class StatusBriefingCatchupService:
         return bool((state.get(day) or {}).get(kind))
 
     def _due(self, kind: SessionKind, now: datetime) -> bool:
-        """True if slot time has passed today and desk is still active (≤18:30 ET)."""
+        """True if slot time has passed today and before 23:59 ET."""
         t = now.astimezone(ET).time()
         if t > _DESK_END:
             return False

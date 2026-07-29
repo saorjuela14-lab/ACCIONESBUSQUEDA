@@ -9,7 +9,7 @@ from domain.daily_trade import TradePick
 from providers.interfaces import MarketDataProvider
 from providers.market.intervals import assess_market_status
 from services.capital_fit import capital_price_policy, discovery_themes_for_capital
-from services.committee_consensus import SOURCE_TAG, evaluate_consensus
+from services.committee_consensus import SOURCE_TAG, SOURCE_TAG_SOFT, evaluate_consensus
 from services.company_discovery_service import CompanyDiscoveryService
 from services.risk_policy_service import RiskPolicyService
 from utils.logging import get_logger
@@ -17,7 +17,7 @@ from utils.logging import get_logger
 logger = get_logger(__name__)
 
 # Screen at most this many live candidates through the full committee (latency).
-_COMMITTEE_SCREEN_LIMIT = 6
+_COMMITTEE_SCREEN_LIMIT = 10
 _COMMITTEE_CONCURRENCY = 2
 
 # Liquid names that often trade in the micro/penny range (validated live at runtime).
@@ -28,16 +28,17 @@ _MICRO_SEED_TICKERS = (
     "NIO", "LCID", "RIVN", "AMC", "BB", "ACHR", "JOBY",
     "LUNR", "ASTS", "BITF", "CIFR", "APLD", "BBAI", "GRAB",
     "IONQ", "RXRX", "CHPT", "SPCE", "DNA", "MVST", "LAZR",
+    "ABEV", "VALE", "ITUB", "PBR", "BBD", "GOLD", "NU",
 )
 
 
 _PENNY_THEMES = (
-    "penny stocks under $5 volume spike",
-    "micro cap biotech under $5",
-    "stocks under $3 breakout today",
-    "cheap small cap momentum under $5",
-    "low priced stocks catalyst under $5",
-    "sub $5 AI semiconductor stocks",
+    "penny stocks under $8 volume spike",
+    "micro cap biotech under $8",
+    "stocks under $8 breakout today",
+    "cheap small cap momentum under $10",
+    "low priced stocks catalyst under $8",
+    "sub $8 AI semiconductor stocks",
 )
 
 
@@ -86,6 +87,8 @@ class MicroPortfolioManagerService:
         self._analysis = analysis_service
 
     def _position_count(self, capital: float) -> int:
+        if capital <= 25:
+            return 1
         if capital <= 30:
             return 2
         if capital <= 60:
@@ -151,16 +154,17 @@ class MicroPortfolioManagerService:
                 warnings=warnings,
             )
 
-        # Rank live candidates, then run investment committee (unanimous dual-horizon BUY)
+        # Rank live candidates, then run investment committee (micro = soft majority)
         candidates.sort(key=lambda c: (-c["score"], c["price"]))
         approved, committee_notes = await self._filter_committee_consensus(
-            candidates[: max(_COMMITTEE_SCREEN_LIMIT, n_pos * 2)]
+            candidates[: max(_COMMITTEE_SCREEN_LIMIT, n_pos * 2)],
+            mode="micro" if policy.tier == "micro" else "strict",
         )
         warnings.extend(committee_notes)
 
         if not approved:
             warnings.append(
-                "Ningún ticker obtuvo consenso unánime del comité (BUY corto + largo plazo). "
+                "Ningún ticker obtuvo consenso del comité (micro: mayoría BUY corto+largo). "
                 "Se mantiene efectivo; no se compra por seeds ni heurística."
             )
             return MicroPortfolioPlan(
@@ -209,8 +213,10 @@ class MicroPortfolioManagerService:
             stop = round(price * 0.92, 2)
             target = round(price * 1.12, 2)
             verdict = c.get("consensus")
+            tag = verdict.source_tag if verdict else SOURCE_TAG
+            label = "mayoría" if tag == SOURCE_TAG_SOFT else "unánime"
             rationale = (
-                f"Comité unánime BUY (corto+largo): {shares} acciones @ ${price:.2f} = ${cost:.2f} "
+                f"Comité {label} BUY (corto+largo): {shares} acciones @ ${price:.2f} = ${cost:.2f} "
                 f"({pct}% del portafolio). {c.get('rationale', '')}"
             ).strip()
 
@@ -228,8 +234,8 @@ class MicroPortfolioManagerService:
                 )
             )
             sources = list(c.get("sources") or ["capital_desk"])
-            if SOURCE_TAG not in sources:
-                sources.append(SOURCE_TAG)
+            if tag not in sources:
+                sources.append(tag)
             picks.append(
                 TradePick(
                     ticker=c["ticker"],
@@ -268,7 +274,7 @@ class MicroPortfolioManagerService:
             f"Plan autónomo con consenso del comité: desplegar ${spent:.2f} ({deployed_pct}%) "
             f"en {len(lines)} posiciones ({tickers_txt}); efectivo ${cash_total:.2f} "
             f"({cash_total / capital * 100:.0f}%). "
-            f"Solo BUY unánime corto+largo; no se usa el 100% del capital."
+            f"Micro: mayoría BUY corto+largo; no se usa el 100% del capital."
         )
         if not lines:
             warnings.append("Ninguna línea pudo comprar ≥1 acción dentro de los topes de riesgo.")
@@ -293,8 +299,10 @@ class MicroPortfolioManagerService:
     async def _filter_committee_consensus(
         self,
         candidates: list[dict],
+        *,
+        mode: str = "strict",
     ) -> tuple[list[dict], list[str]]:
-        """Run committee on shortlist; keep only unanimous dual-horizon BUY."""
+        """Run committee on shortlist; micro uses soft majority dual-horizon."""
         notes: list[str] = []
         if not self._analysis:
             notes.append(
@@ -313,11 +321,12 @@ class MicroPortfolioManagerService:
                 except Exception as exc:
                     logger.warning("micro_committee_failed", ticker=ticker, error=str(exc))
                     return None
-            verdict = evaluate_consensus(thesis)
+            verdict = evaluate_consensus(thesis, mode=mode)
             if not verdict.passed:
                 logger.info(
                     "micro_committee_reject",
                     ticker=ticker,
+                    mode=mode,
                     reasons=verdict.reasons[:4],
                 )
                 return None
@@ -326,9 +335,10 @@ class MicroPortfolioManagerService:
             enriched["committee_confidence"] = float(thesis.confidence or 0.6)
             # Prefer committee-weighted conviction in ranking
             enriched["score"] = float(c["score"]) + 40.0 + float(thesis.confidence or 0) * 20
+            label = "mayoría" if mode == "micro" else "unánime"
             enriched["rationale"] = (
-                f"Consenso comité {verdict.recommendation}: "
-                f"agentes BUY unánime · corto OK · largo OK. "
+                f"Consenso comité ({label}) {verdict.recommendation}: "
+                f"corto OK · largo OK. "
                 f"{c.get('rationale', '')}"
             ).strip()
             return enriched
@@ -336,8 +346,9 @@ class MicroPortfolioManagerService:
         results = await asyncio.gather(*[_one(c) for c in screen])
         approved = [r for r in results if r]
         rejected = len(screen) - len(approved)
+        gate = "mayoría micro" if mode == "micro" else "BUY unánime"
         notes.append(
-            f"Comité: {len(approved)}/{len(screen)} candidatos con BUY unánime "
+            f"Comité: {len(approved)}/{len(screen)} candidatos con {gate} "
             f"corto+largo ({rejected} rechazados)."
         )
         approved.sort(key=lambda c: (-c["score"], c["price"]))

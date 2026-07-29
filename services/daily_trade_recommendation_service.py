@@ -11,7 +11,7 @@ from domain.daily_trade import DailyTradeReport, TradePick
 from domain.discovery import DiscoveryCandidate
 from providers.interfaces import MarketDataProvider
 from services.capital_fit import affordability_bonus, capital_price_policy, discovery_themes_for_capital
-from services.committee_consensus import SOURCE_TAG, evaluate_consensus
+from services.committee_consensus import evaluate_consensus, is_actionable_source
 from services.company_discovery_service import CompanyDiscoveryService
 from services.macro_regime_service import MacroRegimeService
 from services.market_dashboard_service import MarketDashboardService
@@ -21,7 +21,7 @@ from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-_COMMITTEE_DAILY_SCREEN = 6
+_COMMITTEE_DAILY_SCREEN = 10
 _COMMITTEE_DAILY_CONCURRENCY = 2
 
 _SHORT_TERM_THEMES = (
@@ -75,7 +75,7 @@ class DailyTradeRecommendationService:
 
         # Micro books: few whole-share positions, not 8 tiny lines
         if capital and capital <= 100:
-            max_picks = min(max_picks, 3 if capital <= 60 else 4)
+            max_picks = min(max_picks, 1 if capital <= 25 else (3 if capital <= 60 else 4))
         if macro.mode in ("risk_off", "crisis"):
             max_picks = min(max_picks, 2 if capital and capital <= 100 else 4)
             risk_notes.append(
@@ -92,6 +92,7 @@ class DailyTradeRecommendationService:
                 *themes[:3],
             ]
         micro_mode = bool(capital and capital <= 500)
+        committee_mode = "micro" if (capital and capital <= 100) else "strict"
 
         discovery = await self._discovery.research(
             themes=themes,
@@ -101,7 +102,7 @@ class DailyTradeRecommendationService:
         )
 
         scored: list[TradePick] = []
-        min_score = 22 if micro_mode else 35
+        min_score = 18 if (capital and capital <= 100) else (22 if micro_mode else 35)
         if macro.mode == "risk_off":
             min_score += 8
         elif macro.mode == "crisis":
@@ -115,7 +116,7 @@ class DailyTradeRecommendationService:
             )
             if pick:
                 if capital:
-                    line = (capital * 0.9 * macro.size_multiplier) / max(max_picks, 1)
+                    line = (capital * 0.80) / max(max_picks, 1)
                     pick.score = pick.score + affordability_bonus(
                         pick.current_price or 0, line, price_policy
                     )
@@ -144,8 +145,10 @@ class DailyTradeRecommendationService:
                 scored.append(pick)
 
         scored.sort(key=lambda p: p.score, reverse=True)
-        # Only committee-unanimous BUY (short + long) may become actionable buys
-        picks = await self._apply_committee_gate(scored[:_COMMITTEE_DAILY_SCREEN], max_picks)
+        # Committee gate (micro = soft majority; larger books = unanimous)
+        picks = await self._apply_committee_gate(
+            scored[:_COMMITTEE_DAILY_SCREEN], max_picks, mode=committee_mode
+        )
         used_manager = False
         committee_notes: list[str] = []
 
@@ -156,8 +159,9 @@ class DailyTradeRecommendationService:
                 self._discovery,
                 analysis_service=self._analysis,
             )
+            # Do NOT shrink capital by size_multiplier here — apply sizing later
             plan = await manager.manage(
-                capital=capital * macro.size_multiplier,
+                capital=capital,
                 exclude_tickers=exclude_tickers,
                 max_candidates=20,
             )
@@ -185,8 +189,13 @@ class DailyTradeRecommendationService:
             size_multiplier=macro.size_multiplier,
             mode=macro.mode,
         )
-        # Defense: drop any non-unanimous buys before publish / autopilot
-        picks = [p for p in picks if p.committee_unanimous or p.action == _ACTION_WATCH]
+        # Defense: drop ungated buys before publish / autopilot
+        picks = [
+            p for p in picks
+            if p.committee_unanimous
+            or is_actionable_source(p.sources)
+            or p.action == _ACTION_WATCH
+        ]
 
         if macro.mode == "crisis":
             summary = (
@@ -198,13 +207,13 @@ class DailyTradeRecommendationService:
             summary = f"{price_policy.description_es} {summary}"
         if used_manager and not picks:
             summary = (
-                f"{price_policy.description_es} Sin consenso del comité (BUY corto+largo) "
-                "en candidatos líquidos hoy. Se mantiene efectivo."
+                f"{price_policy.description_es} Sin consenso del comité "
+                "(micro: mayoría BUY corto+largo) en candidatos líquidos hoy. Se mantiene efectivo."
             )
         if not picks and macro.mode != "crisis":
             summary = (
-                f"{summary} Regla de firma: solo se recomienda/compra con consenso unánime "
-                "del comité en corto y largo plazo."
+                f"{summary} Regla de firma: solo se recomienda/compra con consenso del comité "
+                "en corto y largo plazo (micro = mayoría)."
             )
         if committee_notes and macro.mode != "crisis":
             risk_notes.extend(committee_notes[:3])
@@ -247,8 +256,10 @@ class DailyTradeRecommendationService:
         self,
         candidates: list[TradePick],
         max_picks: int,
+        *,
+        mode: str = "strict",
     ) -> list[TradePick]:
-        """Keep only picks with unanimous committee BUY on short + long horizons."""
+        """Keep picks that pass committee gate (strict unanimous or micro majority)."""
         if not candidates:
             return []
         if not self._analysis:
@@ -269,17 +280,20 @@ class DailyTradeRecommendationService:
                         error=str(exc),
                     )
                     return None
-            verdict = evaluate_consensus(thesis)
+            verdict = evaluate_consensus(thesis, mode=mode)
             if not verdict.passed:
                 logger.info(
                     "daily_trade.committee_reject",
                     ticker=pick.ticker,
+                    mode=mode,
                     reasons=verdict.reasons[:3],
                 )
                 return None
+            tag = verdict.source_tag
             sources = list(pick.sources or [])
-            if SOURCE_TAG not in sources:
-                sources.append(SOURCE_TAG)
+            if tag not in sources:
+                sources.append(tag)
+            label = "mayoría micro" if mode == "micro" else "unánime"
             return pick.model_copy(
                 update={
                     "committee_unanimous": True,
@@ -289,7 +303,7 @@ class DailyTradeRecommendationService:
                     "confidence": max(pick.confidence, float(thesis.confidence or 0.55)),
                     "sources": sources,
                     "rationale": (
-                        f"Comité unánime BUY corto+largo. {pick.rationale}"
+                        f"Comité {label} BUY corto+largo. {pick.rationale}"
                     ).strip(),
                     "horizon": "corto+largo (comité)",
                 }

@@ -105,3 +105,31 @@ def test_long_horizon_weak_fails():
 def test_dividend_sell_blocks_long():
     verdict = evaluate_consensus(_full_thesis(dividend_score=-20.0))
     assert verdict.passed is False
+
+
+def test_micro_soft_allows_one_agent_hold():
+    from services.committee_consensus import SOURCE_TAG_SOFT
+
+    thesis = _full_thesis()
+    reports = [
+        r.model_copy(update={"score": 0.0}) if r.agent_name == "technical_agent" else r
+        for r in thesis.agent_reports
+    ]
+    thesis = thesis.model_copy(
+        update={
+            "agent_reports": reports,
+            "recommendation": InvestmentRecommendation.HOLD,
+        }
+    )
+    # Strict fails
+    assert evaluate_consensus(thesis).passed is False
+    # Micro majority (9/10 BUY, thesis HOLD OK, horizons still BUY) passes
+    soft = evaluate_consensus(thesis, mode="micro")
+    assert soft.passed is True
+    assert soft.source_tag == SOURCE_TAG_SOFT
+
+
+def test_micro_soft_blocks_strong_sell_cluster():
+    thesis = _full_thesis(agent_score=-40.0, short_score=-40.0, long_score=-40.0)
+    thesis = thesis.model_copy(update={"recommendation": InvestmentRecommendation.STRONG_SELL})
+    assert evaluate_consensus(thesis, mode="micro").passed is False

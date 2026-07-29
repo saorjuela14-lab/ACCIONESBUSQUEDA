@@ -8,14 +8,21 @@ from services.capital_fit import (
 )
 
 
-def test_micro_capital_prefers_penny_band():
-    policy = capital_price_policy(50)
+def test_micro_capital_prefers_affordable_band():
+    policy = capital_price_policy(50, target_positions=2)
     assert policy.tier == "micro"
     assert policy.max_share_price is not None
-    assert policy.max_share_price <= 5.0
+    assert 3.0 <= policy.max_share_price <= 12.0
     assert policy.prefer_whole_shares
     assert price_fits_hard(2.5, policy)
     assert not price_fits_hard(120.0, policy)
+
+
+def test_ultra_micro_allows_share_under_max_line():
+    policy = capital_price_policy(22, target_positions=1)
+    assert policy.max_share_price is not None
+    assert policy.max_share_price >= 7.0  # ~35% of $22
+    assert price_fits_hard(7.0, policy)
 
 
 def test_standard_capital_no_hard_max():

@@ -151,6 +151,9 @@ async def test_auto_execute_skips_picks_without_committee_consensus():
     broker.is_configured.return_value = True
     broker.paper = True
     broker.get_clock = AsyncMock(return_value=MagicMock(is_open=True))
+    broker.get_account = AsyncMock(
+        return_value=MagicMock(cash=21.68, equity=21.68, buying_power=21.68)
+    )
     broker.execute = AsyncMock()
 
     with patch("services.auto_execute_service.get_settings") as gs, \

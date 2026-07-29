@@ -5,6 +5,7 @@ from __future__ import annotations
 from config.settings import get_settings
 from domain.broker import ExecuteLine, ExecuteOrdersRequest
 from domain.ops import AutoExecutePolicy
+from services.committee_consensus import is_actionable_source
 from services.alpaca_order_service import AlpacaOrderService
 from services.audit_service import AuditService
 from services.kill_switch_service import KillSwitchService
@@ -37,7 +38,7 @@ class AutoExecuteService:
             require_market_open=s.auto_execute_require_market_open,
             promotion_note=(
                 "Firma autónoma ON: compras/cierres sin click humano "
-                f"(tope ${s.auto_execute_max_notional:.0f}/orden, comité unánime + risk desk). "
+                f"(tope ${s.auto_execute_max_notional:.0f}/orden, comité + risk desk). "
                 f"Estado: FIRM_AUTONOMY={s.firm_autonomy} AUTO_EXECUTE_TRADES={s.auto_execute_trades} "
                 f"AUTO_EXECUTE_LIVE={s.auto_execute_live}"
                 if s.firm_autonomy
@@ -125,23 +126,42 @@ class AutoExecuteService:
                 return {"skipped": True, "reason": f"clock_failed:{exc}"}
 
         max_n = float(self._settings.auto_execute_max_notional)
+        cash = 0.0
+        equity = 0.0
+        try:
+            account = await self._broker.get_account()
+            cash = float(account.cash or 0)
+            equity = float(account.equity or cash or 0)
+        except Exception as exc:
+            logger.warning("auto_execute.account_failed", error=str(exc))
+
+        # Micro risk: never spend >80% cash or >35% equity on one order
+        book_cap = max_n
+        if cash > 0:
+            book_cap = min(book_cap, cash * 0.80)
+        if equity > 0:
+            book_cap = min(book_cap, equity * 0.35)
+        if book_cap < 1:
+            return {"skipped": True, "reason": "insufficient_buying_power"}
+
         lines: list[ExecuteLine] = []
         skipped_no_committee = 0
         for pick in picks[:5]:
             action = getattr(pick, "action", "") or ""
             if action == "vigilar":
                 continue
-            # Firm rule: never auto-buy without unanimous committee BUY (short+long)
+            # Firm rule: committee tag required (unanimous or micro majority)
             unanimous = bool(getattr(pick, "committee_unanimous", False))
             sources = getattr(pick, "sources", None) or []
-            if not unanimous and "committee_unanimous_dual" not in sources:
+            if not unanimous and not is_actionable_source(sources):
                 skipped_no_committee += 1
                 continue
             ticker = getattr(pick, "ticker", None)
             price = getattr(pick, "current_price", None) or getattr(pick, "entry_price", None)
             if not ticker or not price or price <= 0:
                 continue
-            shares = int(max_n // float(price))
+            affordable = float(book_cap)
+            shares = int(affordable // float(price))
             if shares < 1:
                 continue
             lines.append(
@@ -154,7 +174,7 @@ class AutoExecuteService:
                     take_profit=getattr(pick, "target_price", None),
                 )
             )
-            if len(lines) >= 3:
+            if len(lines) >= 2:
                 break
         if not lines:
             reason_out = (
