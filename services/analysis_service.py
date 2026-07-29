@@ -85,6 +85,50 @@ class AnalysisService:
             include_book_agents=False,
         )
 
+    async def score_for_micro_consensus(self, ticker: str) -> InvestmentThesis:
+        """Fast micro screen: core agents only (latency-safe for continuous hunt)."""
+        ticker = ticker.upper()
+        quote = await self._market.get_quote(ticker)
+        company_name = quote.get("company_name", ticker)
+        common_kwargs = {
+            "company_name": company_name,
+            "sector": quote.get("sector"),
+            "industry": quote.get("industry"),
+        }
+        core_agents = [
+            self._fundamental,
+            self._news,
+            self._sentiment,
+            self._valuation,
+            self._company_risk,
+            self._macro,
+            self._market_dependency,
+        ]
+        prior_reports: list[AgentReport] = list(
+            await asyncio.gather(
+                *[agent.analyze(ticker, **common_kwargs) for agent in core_agents]
+            )
+        )
+        technical_report = await self._technical.analyze(
+            ticker,
+            **common_kwargs,
+            prior_reports=prior_reports,
+        )
+        reports = prior_reports + [technical_report]
+        weights = await self._memory_repo.get_agent_weights()
+        if not weights:
+            weights = InvestmentDirector.DEFAULT_WEIGHTS
+        thesis = self._director.build_thesis(
+            ticker, reports, weights, float(quote.get("current_price") or 0)
+        )
+        logger.info(
+            "analysis.micro_complete",
+            ticker=ticker,
+            recommendation=thesis.recommendation.value,
+            agents=len(reports),
+        )
+        return thesis
+
     async def _run_committee(
         self,
         ticker: str,

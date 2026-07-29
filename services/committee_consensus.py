@@ -34,6 +34,20 @@ VOTING_AGENTS: frozenset[str] = frozenset(
     }
 )
 
+# Fast micro screen — subset used by score_for_micro_consensus
+MICRO_VOTING_AGENTS: frozenset[str] = frozenset(
+    {
+        "fundamental_agent",
+        "technical_agent",
+        "valuation_agent",
+        "macro_agent",
+        "news_agent",
+        "sentiment_agent",
+        "company_risk_agent",
+        "market_dependency_agent",
+    }
+)
+
 SHORT_STRATEGIES: frozenset[StrategyType] = frozenset(
     {
         StrategyType.MOMENTUM,
@@ -59,10 +73,11 @@ SOURCE_TAG = "committee_unanimous_dual"
 SOURCE_TAG_SOFT = "committee_majority_dual_soft"
 
 # Micro soft gate thresholds (hunt mode — keep blocking junk, allow actionable micro)
-_MICRO_MIN_BUY_AGENTS = 5  # of 10 voting agents
+_MICRO_MIN_BUY_AGENTS = 4  # of MICRO_VOTING_AGENTS present
 _MICRO_MAX_SELL_AGENTS = 2
 _MICRO_MIN_SHORT_BUYS = 1  # of 3 short strategies
 _MICRO_MIN_LONG_BUYS = 1  # of 2 long strategies (or non-bearish avg)
+_MICRO_MIN_NET = 2
 
 
 def score_to_recommendation(score: float) -> InvestmentRecommendation:
@@ -176,16 +191,24 @@ def _evaluate_strict(thesis: InvestmentThesis) -> ConsensusVerdict:
 
 
 def _evaluate_micro(thesis: InvestmentThesis) -> ConsensusVerdict:
-    """Softer gate for micro books: majority BUY, no cluster of sells."""
+    """Softer gate for micro books: majority of core agents, no cluster of sells."""
     reasons: list[str] = []
     agent_votes: dict[str, str] = {}
 
     voting_reports = [
-        r for r in (thesis.agent_reports or []) if r.agent_name in VOTING_AGENTS
+        r for r in (thesis.agent_reports or []) if r.agent_name in MICRO_VOTING_AGENTS
     ]
-    missing = sorted(VOTING_AGENTS - {r.agent_name for r in voting_reports})
-    if missing:
-        reasons.append(f"Faltan votos del comité: {', '.join(missing)}")
+    # Prefer micro core set; fall back to full roster if a full thesis was supplied
+    roster = MICRO_VOTING_AGENTS
+    if len(voting_reports) < 4:
+        voting_reports = [
+            r for r in (thesis.agent_reports or []) if r.agent_name in VOTING_AGENTS
+        ]
+        roster = VOTING_AGENTS
+
+    missing = sorted(roster - {r.agent_name for r in voting_reports})
+    # Allow up to 2 missing core agents on the fast path
+    missing_ok = len(missing) <= 2
 
     buy_n = 0
     sell_n = 0
@@ -201,16 +224,17 @@ def _evaluate_micro(thesis: InvestmentThesis) -> ConsensusVerdict:
                 strong_sell = True
 
     agents_ok = (
-        not missing
+        missing_ok
         and bool(voting_reports)
         and buy_n >= _MICRO_MIN_BUY_AGENTS
         and sell_n <= _MICRO_MAX_SELL_AGENTS
         and not strong_sell
+        and (buy_n - sell_n) >= _MICRO_MIN_NET
     )
-    if not agents_ok and not missing:
+    if not agents_ok:
         reasons.append(
-            f"Micro: agentes BUY {buy_n}/{len(VOTING_AGENTS)} "
-            f"(mín {_MICRO_MIN_BUY_AGENTS}), SELL={sell_n}"
+            f"Micro: agentes BUY {buy_n}/{len(voting_reports)} "
+            f"(mín {_MICRO_MIN_BUY_AGENTS}), SELL={sell_n}, missing={missing[:3]}"
         )
 
     short_scores, short_ok = _horizon_majority_ok(
@@ -243,17 +267,11 @@ def _evaluate_micro(thesis: InvestmentThesis) -> ConsensusVerdict:
             f"Tesis del director={thesis_rec.value if thesis_rec else 'n/a'} — bloquea micro"
         )
 
-    # Net agent tilt: need clear buy bias, not a coin flip
-    net_ok = (buy_n - sell_n) >= 3
-    if agents_ok and not net_ok:
-        reasons.append(f"Micro: sesgo neto débil BUY-SELL={buy_n - sell_n} (mín +3)")
-        agents_ok = False
-
     passed = bool(agents_ok and short_ok and long_ok and thesis_ok)
     return ConsensusVerdict(
         passed=passed,
         thesis_buy=is_buy(thesis_rec) if thesis_rec else False,
-        agents_unanimous_buy=buy_n == len(VOTING_AGENTS) and not missing,
+        agents_unanimous_buy=buy_n >= len(roster) - len(missing) and not sell_n,
         short_horizon_buy=short_ok,
         long_horizon_buy=long_ok,
         agent_votes=agent_votes,

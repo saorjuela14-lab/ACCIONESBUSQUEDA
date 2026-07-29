@@ -18,9 +18,9 @@ logger = get_logger(__name__)
 
 # Screen candidates through the committee in rounds until we find buys (or exhaust).
 # Keep latency under Cloudflare ~100s: stop at first approval, capped universe.
-_COMMITTEE_BATCH = 4
-_COMMITTEE_MAX_SCREEN = 16
-_COMMITTEE_CONCURRENCY = 4
+_COMMITTEE_BATCH = 3
+_COMMITTEE_MAX_SCREEN = 9
+_COMMITTEE_CONCURRENCY = 3
 
 # Liquid names that often trade in the micro/penny range (validated live at runtime).
 # Delisted / dead shells (NKLA, WISH, BBIG, etc.) must never appear here.
@@ -397,7 +397,13 @@ class MicroPortfolioManagerService:
             ticker = c["ticker"]
             async with sem:
                 try:
-                    thesis = await self._analysis.score_for_consensus(ticker)
+                    score_fn = getattr(
+                        self._analysis, "score_for_micro_consensus", None
+                    )
+                    if mode == "micro" and callable(score_fn):
+                        thesis = await score_fn(ticker)
+                    else:
+                        thesis = await self._analysis.score_for_consensus(ticker)
                 except Exception as exc:
                     logger.warning("micro_committee_failed", ticker=ticker, error=str(exc))
                     return None
@@ -457,7 +463,8 @@ class MicroPortfolioManagerService:
 
         # Validate discovery + seeds in parallel: quote + live daily bars
         seeds = [t for t in _MICRO_SEED_TICKERS if t not in exclude]
-        probe_tickers = list(dict.fromkeys(discovery_tickers + seeds))
+        # Cap seed probes for latency; discovery names still included first
+        probe_tickers = list(dict.fromkeys(discovery_tickers + seeds[:36]))
         probes = await asyncio.gather(*[self._probe_live_quote(t) for t in probe_tickers])
 
         for ticker, probe in zip(probe_tickers, probes):
