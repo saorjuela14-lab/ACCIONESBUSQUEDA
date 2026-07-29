@@ -25,9 +25,20 @@ async def list_alerts(session: AsyncSession = Depends(get_session)) -> list[Aler
 
 
 @router.get("/alerts/push-status")
-async def alert_push_status() -> dict:
-    """Indica si Telegram/WhatsApp/webhook están configurados para push."""
-    return PushNotificationService().status()
+async def alert_push_status(session: AsyncSession = Depends(get_session)) -> dict:
+    """Indica si Telegram/WhatsApp/webhook están configurados + briefings enviados hoy."""
+    status = PushNotificationService().status()
+    try:
+        from services.status_briefing_catchup_service import StatusBriefingCatchupService
+
+        svc = StatusBriefingCatchupService(session)
+        day = svc._today_key()
+        state = await svc._state()
+        status["briefing_day"] = day
+        status["briefing_sent_today"] = dict(state.get(day) or {})
+    except Exception as exc:
+        status["briefing_sent_today_error"] = str(exc)[:120]
+    return status
 
 
 @router.post("/alerts/test-push")
