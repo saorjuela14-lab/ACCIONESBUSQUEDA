@@ -1,16 +1,20 @@
 # Keep FastAPI Cloud awake so WhatsApp open/lunch/close cron can fire.
-# Without this, the host sleeps and briefings only arrive when something wakes the app.
+# Hobby hosts sleep without traffic; this is a best-effort wake until Railway always-on.
 name: Desk keepalive
 
 on:
   schedule:
-    # Every 10 min during US market + catchup window (≈08:00–18:30 ET = 12:00–22:30 UTC EDT)
-    - cron: "*/10 12-22 * * 1-5"
+    # Every 5 min during US market + catchup window (≈08:00–18:30 ET ≈ 12:00–22:30 UTC EDT)
+    - cron: "*/5 12-22 * * 1-5"
     # Extra pings around the 3 briefing slots (ET → UTC, EDT)
-    - cron: "32,35,40 13 * * 1-5"   # open ~09:35 ET
-    - cron: "28,30,35 16 * * 1-5"   # lunch ~12:30 ET
-    - cron: "3,5,10,20 20 * * 1-5"  # close ~16:05 ET + late catch-up
+    - cron: "30,32,35,38,40 13 * * 1-5"   # open ~09:35 ET
+    - cron: "25,28,30,32,35 16 * * 1-5"   # lunch ~12:30 ET
+    - cron: "0,3,5,8,10,15,20 20 * * 1-5" # close ~16:05 ET + late catch-up
   workflow_dispatch:
+
+concurrency:
+  group: desk-keepalive
+  cancel-in-progress: false
 
 jobs:
   ping:
@@ -21,14 +25,24 @@ jobs:
         run: |
           set -euo pipefail
           URL="${KEEPALIVE_URL:-https://accionesbusqueda.fastapicloud.dev/health}"
-          echo "GET $URL"
-          code=$(curl -sS -o /tmp/health.json -w "%{http_code}" \
-            -A "NexBuy-desk-keepalive/1.0" \
-            --max-time 60 \
-            "$URL")
-          echo "HTTP $code"
-          head -c 500 /tmp/health.json || true
-          echo
+          # Also wake Railway URL if configured (always-on primary)
+          URLS="$URL"
+          if [ -n "${RAILWAY_KEEPALIVE_URL:-}" ]; then
+            URLS="$URLS ${RAILWAY_KEEPALIVE_URL}"
+          fi
+          for u in $URLS; do
+            echo "GET $u"
+            code=$(curl -sS -o /tmp/health.json -w "%{http_code}" \
+              -A "NexBuy-desk-keepalive/1.1" \
+              --max-time 60 \
+              "$u" || echo "000")
+            echo "HTTP $code"
+            head -c 400 /tmp/health.json || true
+            echo
+          done
+          # Succeed if primary FastAPI Cloud responded 200 (Railway optional)
+          code=$(curl -sS -o /dev/null -w "%{http_code}" -A "NexBuy-desk-keepalive/1.1" --max-time 60 "$URL" || echo "000")
           test "$code" = "200"
         env:
           KEEPALIVE_URL: ${{ vars.KEEPALIVE_URL }}
+          RAILWAY_KEEPALIVE_URL: ${{ vars.RAILWAY_KEEPALIVE_URL }}
