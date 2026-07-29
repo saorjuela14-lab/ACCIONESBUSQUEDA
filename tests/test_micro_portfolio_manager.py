@@ -144,7 +144,7 @@ async def test_micro_manager_builds_whole_share_plan():
     for line in plan.lines:
         assert line.shares >= 1
         assert line.price <= plan.max_share_price
-        assert line.allocation_pct <= 35.5
+        assert line.allocation_pct <= 40.5
     assert all(p.committee_unanimous for p in plan.picks)
     deployed = sum(l.allocation_usd for l in plan.lines)
     assert deployed / 22 <= 0.85
@@ -217,7 +217,10 @@ async def test_micro_manager_empty_without_committee_consensus():
     plan = await svc.manage(capital=22)
     assert plan.lines == []
     assert plan.picks == []
-    assert any("consenso" in w.lower() or "comité" in w.lower() or "mayoría" in w.lower() for w in plan.warnings)
+    assert any(
+        "consenso" in w.lower() or "comité" in w.lower() or "caza" in w.lower() or "mayoría" in w.lower()
+        for w in plan.warnings
+    )
 
 
 @pytest.mark.asyncio

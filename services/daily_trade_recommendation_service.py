@@ -21,8 +21,8 @@ from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-_COMMITTEE_DAILY_SCREEN = 10
-_COMMITTEE_DAILY_CONCURRENCY = 2
+_COMMITTEE_DAILY_SCREEN = 16
+_COMMITTEE_DAILY_CONCURRENCY = 3
 
 _SHORT_TERM_THEMES = (
     "momentum breakout stock today",
@@ -102,7 +102,7 @@ class DailyTradeRecommendationService:
         )
 
         scored: list[TradePick] = []
-        min_score = 18 if (capital and capital <= 100) else (22 if micro_mode else 35)
+        min_score = 12 if (capital and capital <= 100) else (22 if micro_mode else 35)
         if macro.mode == "risk_off":
             min_score += 8
         elif macro.mode == "crisis":
@@ -163,7 +163,7 @@ class DailyTradeRecommendationService:
             plan = await manager.manage(
                 capital=capital,
                 exclude_tickers=exclude_tickers,
-                max_candidates=20,
+                max_candidates=40,
             )
             if plan.warnings:
                 committee_notes.extend(plan.warnings)
@@ -309,8 +309,22 @@ class DailyTradeRecommendationService:
                 }
             )
 
-        gated = await asyncio.gather(*[_gate(p) for p in buy_like[:_COMMITTEE_DAILY_SCREEN]])
-        approved = [p for p in gated if p]
+        # Hunt in batches — don't stop after the first rejects
+        approved: list[TradePick] = []
+        buy_like = [p for p in candidates if p.action != _ACTION_WATCH]
+        batch = 8
+        for start in range(0, min(len(buy_like), _COMMITTEE_DAILY_SCREEN), batch):
+            if len(approved) >= max_picks:
+                break
+            chunk = buy_like[start : start + batch]
+            gated = await asyncio.gather(*[_gate(p) for p in chunk])
+            approved.extend([p for p in gated if p])
+            logger.info(
+                "daily_trade.committee_hunt",
+                screened=start + len(chunk),
+                approved=len(approved),
+                mode=mode,
+            )
         approved.sort(key=lambda p: p.score, reverse=True)
         return approved[:max_picks]
 
