@@ -240,9 +240,12 @@ Evidence Agents → Alert Engine → Investment Director → Investment Memory
 
 Flujo recomendado: **GitHub como fuente única** — escribes los cambios en Cursor (Cloud Agent), el código vive en el repo; no necesitas clonar en tu PC.
 
-### Desplegar en FastAPI Cloud (recomendado — gratis, sin tarjeta)
+### Desplegar en FastAPI Cloud (Hobby — **se duerme sin tráfico**)
 
 [FastAPI Cloud](https://fastapicloud.com) es la plataforma oficial del equipo FastAPI. Plan **Hobby gratis**, sin tarjeta, hasta 3 apps. Integración directa con GitHub.
+
+> **Importante:** en Hobby el proceso **se apaga** si nadie lo visita. Por eso a veces fallan los WhatsApp de 09:35 / 12:30 / 16:05. Mitigación: workflow **Desk keepalive** (GitHub Actions cada 5 min).  
+> **Alternativa always-on (recomendada para la firma):** [Railway](#railway-always-on) — el proceso no hiberna.
 
 #### Paso 1 — Crear cuenta (1 min)
 
@@ -333,11 +336,30 @@ Si prefieres token en lugar de la app de GitHub:
    - `FASTAPI_CLOUD_APP_ID`
 4. El workflow `.github/workflows/fastapi-cloud-deploy.yml` desplegará en cada push a `main`
 
+### Railway always-on {#railway-always-on}
+
+Railway mantiene el proceso **siempre encendido** (no hiberna como FastAPI Cloud Hobby). El repo ya incluye `Dockerfile` + `railway.toml`.
+
+```bash
+# En el repo
+railway login          # o railway up -y (crea proyecto + deploy)
+railway up -y
+railway domain         # genera URL pública https://….up.railway.app
+```
+
+Copia **las mismas variables** del panel FastAPI Cloud (Alpaca, WhatsApp CallMeBot, Telegram, `DATABASE_URL` Postgres Neon, `FIRM_AUTONOMY`, etc.) a Railway → Variables. Luego:
+
+1. En GitHub → **Settings → Variables**: `RAILWAY_KEEPALIVE_URL` = tu URL Railway `/health`
+2. Opcional: apunta el dashboard a la URL Railway y deja FastAPI Cloud como respaldo
+3. El workflow **Desk keepalive** pinea ambas URLs
+
+Con Railway como primario, los 3 WhatsApp (apertura / almuerzo / cierre) salen a la hora aunque nadie abra el panel.
+
 ### Otras plataformas (referencia)
 
 | Plataforma | Motivo |
 |------------|--------|
-| Railway | Crédito limitado tras trial |
+| Railway | **Always-on** (recomendado para briefings + autopilot) |
 | Zeabur | Obliga a comprar servidor |
 | Render | Pide tarjeta |
 | SnapDeploy | Pide add-ons PostgreSQL/Redis |
