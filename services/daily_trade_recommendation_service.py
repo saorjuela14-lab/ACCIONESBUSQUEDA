@@ -272,7 +272,10 @@ class DailyTradeRecommendationService:
         async def _gate(pick: TradePick) -> TradePick | None:
             async with sem:
                 try:
-                    thesis = await self._analysis.score_for_consensus(pick.ticker)
+                    if mode == "micro" and hasattr(self._analysis, "score_for_micro_consensus"):
+                        thesis = await self._analysis.score_for_micro_consensus(pick.ticker)
+                    else:
+                        thesis = await self._analysis.score_for_consensus(pick.ticker)
                 except Exception as exc:
                     logger.warning(
                         "daily_trade.committee_failed",

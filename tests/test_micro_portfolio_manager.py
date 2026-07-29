@@ -102,6 +102,7 @@ def _market_mock(prices: dict[str, float], *, stale: set[str] | None = None) -> 
 def _analysis_pass() -> MagicMock:
     analysis = MagicMock()
     analysis.score_for_consensus = AsyncMock(side_effect=lambda t: _passing_thesis(t))
+    analysis.score_for_micro_consensus = AsyncMock(side_effect=lambda t: _passing_thesis(t))
     return analysis
 
 
@@ -124,6 +125,7 @@ def _analysis_reject() -> MagicMock:
     )
     analysis = MagicMock()
     analysis.score_for_consensus = AsyncMock(return_value=thesis)
+    analysis.score_for_micro_consensus = AsyncMock(return_value=thesis)
     return analysis
 
 
