@@ -83,6 +83,75 @@ class DailyTradeRecommendationService:
             )
 
         price_policy = capital_price_policy(capital or 1000, target_positions=max_picks)
+        micro_mode = bool(capital and capital <= 500)
+        committee_mode = "micro" if (capital and capital <= 100) else "strict"
+        used_manager = False
+        committee_notes: list[str] = []
+        picks: list[TradePick] = []
+
+        # Ultra-micro: skip slow social discovery — capital desk hunt only (latency)
+        if capital and capital <= 30 and macro.mode != "crisis":
+            manager = MicroPortfolioManagerService(
+                self._market,
+                self._discovery,
+                analysis_service=self._analysis,
+            )
+            plan = await manager.manage(
+                capital=capital,
+                exclude_tickers=exclude_tickers,
+                max_candidates=18,
+            )
+            if plan.warnings:
+                committee_notes.extend(plan.warnings)
+            if plan.picks:
+                used_manager = True
+                picks = list(plan.picks)[:max_picks]
+                summary = plan.summary
+            else:
+                summary = (
+                    f"{price_policy.description_es} Caza continua sin consenso aún. "
+                    f"{' '.join(plan.warnings[:2])}"
+                )
+            picks = self._risk.filter_picks_for_regime(
+                picks,
+                size_multiplier=macro.size_multiplier,
+                mode=macro.mode,
+            )
+            picks = [
+                p for p in picks
+                if p.committee_unanimous
+                or is_actionable_source(p.sources)
+                or p.action == _ACTION_WATCH
+            ]
+            if committee_notes:
+                risk_notes.extend(committee_notes[:4])
+            if macro.thesis:
+                summary = f"{summary} | Macro: {macro.thesis}"
+            report = DailyTradeReport(
+                report_date=date.today(),
+                generated_at=datetime.now(timezone.utc),
+                session=session,
+                market_regime=regime,
+                macro_mode=macro.mode,
+                macro_bias=macro.macro_bias,
+                macro_thesis=macro.thesis,
+                size_multiplier=macro.size_multiplier,
+                risk_notes=risk_notes,
+                summary=summary,
+                picks=picks,
+            )
+            if persist and self._repo:
+                await self._repo.save(report)
+            logger.info(
+                "daily_trade.generate.done",
+                picks=len(picks),
+                session=session,
+                micro_manager=True,
+                fast_path=True,
+                macro_mode=macro.mode,
+            )
+            return report
+
         themes = discovery_themes_for_capital(price_policy, list(_SHORT_TERM_THEMES))
         # Defensive themes overlay when risk-off
         if macro.mode in ("risk_off", "crisis"):
@@ -91,8 +160,6 @@ class DailyTradeRecommendationService:
                 "consumer staples ETF constituents",
                 *themes[:3],
             ]
-        micro_mode = bool(capital and capital <= 500)
-        committee_mode = "micro" if (capital and capital <= 100) else "strict"
 
         discovery = await self._discovery.research(
             themes=themes,
@@ -150,7 +217,7 @@ class DailyTradeRecommendationService:
             scored[:_COMMITTEE_DAILY_SCREEN], max_picks, mode=committee_mode
         )
         used_manager = False
-        committee_notes: list[str] = []
+        committee_notes = []
 
         # Capital desk fallback for micro/small books — already committee-gated inside manager
         if capital and capital <= 500 and len(picks) < max(1, max_picks // 2) and macro.mode != "crisis":

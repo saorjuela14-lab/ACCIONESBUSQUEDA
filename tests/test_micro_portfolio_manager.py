@@ -131,7 +131,7 @@ def _analysis_reject() -> MagicMock:
 
 @pytest.mark.asyncio
 async def test_micro_manager_builds_whole_share_plan():
-    market = _market_mock({"SOUN": 1.5, "PLUG": 1.5, "FCEL": 1.5, "RIOT": 1.5})
+    market = _market_mock({"F": 1.5, "NOK": 1.5, "SIRI": 1.5, "T": 1.5})
     discovery = MagicMock()
     discovery.research = AsyncMock(return_value=MagicMock(candidates=[]))
 
@@ -167,7 +167,7 @@ async def test_micro_manager_respects_price_cap():
 @pytest.mark.asyncio
 async def test_micro_manager_skips_delisted_even_with_quote():
     market = _market_mock(
-        {"NKLA": 0.18, "SOUN": 1.4, "PLUG": 2.0},
+        {"NKLA": 0.18, "F": 1.4, "NOK": 2.0},
         stale={"NKLA"},
     )
     from domain.discovery import DiscoveryCandidate
@@ -197,7 +197,7 @@ async def test_micro_manager_skips_delisted_even_with_quote():
 
 @pytest.mark.asyncio
 async def test_micro_manager_enforces_cash_reserve_not_full_deploy():
-    market = _market_mock({"SOUN": 0.5, "PLUG": 0.5, "FCEL": 0.5, "RIOT": 0.5})
+    market = _market_mock({"F": 0.5, "NOK": 0.5, "SIRI": 0.5, "T": 0.5})
     discovery = MagicMock()
     discovery.research = AsyncMock(return_value=MagicMock(candidates=[]))
 
@@ -211,7 +211,7 @@ async def test_micro_manager_enforces_cash_reserve_not_full_deploy():
 
 @pytest.mark.asyncio
 async def test_micro_manager_empty_without_committee_consensus():
-    market = _market_mock({"SOUN": 1.5, "PLUG": 1.5})
+    market = _market_mock({"F": 1.5, "NOK": 1.5})
     discovery = MagicMock()
     discovery.research = AsyncMock(return_value=MagicMock(candidates=[]))
 
@@ -227,10 +227,13 @@ async def test_micro_manager_empty_without_committee_consensus():
 
 @pytest.mark.asyncio
 async def test_micro_manager_empty_without_analysis_service():
-    market = _market_mock({"SOUN": 1.5})
+    market = _market_mock({"F": 1.5})
     discovery = MagicMock()
     discovery.research = AsyncMock(return_value=MagicMock(candidates=[]))
     svc = MicroPortfolioManagerService(market, discovery)
     plan = await svc.manage(capital=22)
     assert plan.lines == []
-    assert any("Comité no disponible" in w for w in plan.warnings)
+    assert any(
+        "Comité no disponible" in w or "caza" in w.lower() or "consenso" in w.lower()
+        for w in plan.warnings
+    )

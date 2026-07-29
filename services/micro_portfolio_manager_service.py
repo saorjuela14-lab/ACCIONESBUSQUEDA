@@ -25,16 +25,16 @@ _COMMITTEE_CONCURRENCY = 3
 # Liquid names that often trade in the micro/penny range (validated live at runtime).
 # Delisted / dead shells (NKLA, WISH, BBIG, etc.) must never appear here.
 _MICRO_SEED_TICKERS = (
-    "SOUN", "PLUG", "FCEL", "RIOT", "MARA", "OPEN", "CLOV", "SENS",
-    "SIRI", "NOK", "SNAP", "F", "AAL", "SOFI", "NIO", "LCID", "RIVN",
+    # Prefer liquid names that often clear ~$8 micro max-line first
+    "F", "NOK", "SIRI", "T", "VZ", "PFE", "INTC", "KEY", "HBAN", "RF",
+    "AAL", "SNAP", "SOFI", "NIO", "WBD", "PCG", "KMI", "AGNC", "NLY",
+    "PLUG", "FCEL", "RIOT", "MARA", "OPEN", "CLOV", "SENS", "SOUN",
     "AMC", "BB", "ACHR", "JOBY", "LUNR", "ASTS", "BITF", "CIFR",
     "APLD", "BBAI", "GRAB", "CHPT", "SPCE", "DNA", "MVST", "LAZR",
-    "ABEV", "VALE", "ITUB", "PBR", "BBD", "GOLD", "NU", "KEY",
-    "HBAN", "RF", "CFG", "WBD", "PFE", "INTC", "T", "VZ", "PCG",
-    "KMI", "MPW", "AGNC", "NLY", "ARR", "TWO", "ORC",
+    "ABEV", "VALE", "ITUB", "PBR", "BBD", "GOLD", "NU", "CFG",
     "JD", "BIDU", "XPEV", "LI", "HOOD", "UPST", "PATH",
     "RIG", "HAL", "HL", "AG", "CDE", "BTBT", "CAN", "HUT", "CLSK",
-    "WULF", "IREN", "IONQ", "RXRX",
+    "WULF", "IREN", "IONQ", "RXRX", "ARR", "TWO", "ORC", "MPW",
 )
 
 
@@ -446,25 +446,28 @@ class MicroPortfolioManagerService:
         exclude: set[str],
         max_candidates: int,
     ) -> list[dict]:
-        themes = discovery_themes_for_capital(policy, list(_PENNY_THEMES))
-        report = await self._discovery.research(
-            themes=themes,
-            max_candidates=max_candidates,
-            exclude_tickers=list(exclude),
-            max_price=max_price,
-        )
-
         found: dict[str, dict] = {}
-        discovery_tickers = [
-            c.ticker for c in report.candidates
-            if c.ticker not in exclude
-        ]
-        discovery_meta = {c.ticker: c for c in report.candidates}
+        discovery_tickers: list[str] = []
+        discovery_meta: dict = {}
 
-        # Validate discovery + seeds in parallel: quote + live daily bars
+        # Ultra-micro: skip slow social/news discovery — hunt liquid seeds only
+        if policy.capital > 30:
+            themes = discovery_themes_for_capital(policy, list(_PENNY_THEMES))
+            report = await self._discovery.research(
+                themes=themes,
+                max_candidates=max_candidates,
+                exclude_tickers=list(exclude),
+                max_price=max_price,
+            )
+            discovery_tickers = [
+                c.ticker for c in report.candidates
+                if c.ticker not in exclude
+            ]
+            discovery_meta = {c.ticker: c for c in report.candidates}
+
         seeds = [t for t in _MICRO_SEED_TICKERS if t not in exclude]
-        # Cap seed probes for latency; discovery names still included first
-        probe_tickers = list(dict.fromkeys(discovery_tickers + seeds[:36]))
+        seed_cap = 18 if policy.capital <= 30 else 36
+        probe_tickers = list(dict.fromkeys(discovery_tickers + seeds[:seed_cap]))
         probes = await asyncio.gather(*[self._probe_live_quote(t) for t in probe_tickers])
 
         for ticker, probe in zip(probe_tickers, probes):
@@ -476,7 +479,6 @@ class MicroPortfolioManagerService:
             disc = discovery_meta.get(ticker)
             if disc:
                 score = disc.score + (10 if price <= max_price * 0.5 else 0)
-                # Prefer discovery over seeds; boost live volume proxy via score floor
                 score += 5
                 found[ticker] = {
                     "ticker": ticker,
@@ -488,19 +490,19 @@ class MicroPortfolioManagerService:
                     "sources": disc.sources,
                 }
             elif ticker not in found:
-                # Mild penalty for very thin residual pennies even if "live"
                 thin_penalty = 8 if price < 0.25 else 0
                 found[ticker] = {
                     "ticker": ticker,
                     "company_name": probe.get("company_name"),
                     "price": price,
-                    "score": 25 + (12 if price <= 2 else 5) - thin_penalty,
-                    "rationale": "Candidato líquido con cotización viva en banda micro.",
+                    "score": 25.0 - thin_penalty + (5 if price <= max_price * 0.5 else 0),
+                    "rationale": "Seed líquido micro con cotización viva.",
                     "catalysts": [],
-                    "sources": ["seed_universe"],
+                    "sources": ["micro_seed"],
                 }
 
-        return list(found.values())
+        ranked = sorted(found.values(), key=lambda c: (-c["score"], c["price"]))
+        return ranked[: max(max_candidates, 12)]
 
     async def _probe_live_quote(self, ticker: str) -> dict | None:
         """Require a positive quote AND daily bars marked live (not stale/delisted)."""
