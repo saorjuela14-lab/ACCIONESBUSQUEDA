@@ -205,13 +205,29 @@ class PushNotificationService:
         )
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(url)
+            body = (response.text or "")[:500]
+            body_l = body.lower()
             if response.status_code >= 400:
                 logger.warning(
                     "push.whatsapp.callmebot_failed",
                     status=response.status_code,
-                    detail=response.text[:200],
+                    detail=body[:200],
                 )
                 return False
+            # CallMeBot often returns 200 HTML; require queued/ack and reject error pages
+            bad = ("invalid", "not activated", "error", "blocked", "wrong apikey", "api key")
+            if any(b in body_l for b in bad) and "queued" not in body_l:
+                logger.warning(
+                    "push.whatsapp.callmebot_rejected",
+                    status=response.status_code,
+                    detail=body[:200],
+                )
+                return False
+            logger.info(
+                "push.whatsapp.callmebot_ok",
+                status=response.status_code,
+                queued="queued" in body_l,
+            )
             return True
 
     async def _send_whatsapp_meta(self, text: str) -> bool:
