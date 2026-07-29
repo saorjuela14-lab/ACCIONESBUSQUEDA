@@ -25,13 +25,13 @@ _COMMITTEE_CONCURRENCY = 3
 # Liquid names that often trade in the micro/penny range (validated live at runtime).
 # Delisted / dead shells (NKLA, WISH, BBIG, etc.) must never appear here.
 _MICRO_SEED_TICKERS = (
-    # Prefer liquid names that often clear ~$8 micro max-line first
-    "F", "NOK", "SIRI", "T", "VZ", "PFE", "INTC", "KEY", "HBAN", "RF",
-    "AAL", "SNAP", "SOFI", "NIO", "WBD", "PCG", "KMI", "AGNC", "NLY",
-    "PLUG", "FCEL", "RIOT", "MARA", "OPEN", "CLOV", "SENS", "SOUN",
-    "AMC", "BB", "ACHR", "JOBY", "LUNR", "ASTS", "BITF", "CIFR",
-    "APLD", "BBAI", "GRAB", "CHPT", "SPCE", "DNA", "MVST", "LAZR",
-    "ABEV", "VALE", "ITUB", "PBR", "BBD", "GOLD", "NU", "CFG",
+    # Prefer names that currently clear ~$8 micro max-line (reorder by typical price)
+    "PLUG", "BITF", "AMC", "BBAI", "ABEV", "OPEN", "CLOV", "SNAP", "NIO",
+    "SENS", "SOUN", "BB", "NOK", "F", "AAL", "SOFI", "SIRI", "T", "VZ",
+    "PFE", "INTC", "KEY", "HBAN", "RF", "WBD", "PCG", "KMI", "AGNC", "NLY",
+    "FCEL", "RIOT", "MARA", "ACHR", "JOBY", "LUNR", "ASTS", "CIFR",
+    "APLD", "GRAB", "CHPT", "SPCE", "DNA", "MVST", "LAZR",
+    "VALE", "ITUB", "PBR", "BBD", "GOLD", "NU", "CFG",
     "JD", "BIDU", "XPEV", "LI", "HOOD", "UPST", "PATH",
     "RIG", "HAL", "HL", "AG", "CDE", "BTBT", "CAN", "HUT", "CLSK",
     "WULF", "IREN", "IONQ", "RXRX", "ARR", "TWO", "ORC", "MPW",
@@ -173,14 +173,23 @@ class MicroPortfolioManagerService:
                 warnings=warnings,
             )
 
-        # Persistent hunt: round-robin committee until ≥1 buy or universe exhausted
+        # Persistent hunt: for ultra-micro prefer technical desk (host can't finish 10-agent thesis)
         candidates.sort(key=lambda c: (-c["score"], c["price"]))
         mode = "micro" if policy.tier == "micro" else "strict"
-        approved, committee_notes = await self._hunt_committee_consensus(
-            candidates,
-            need=n_pos,
-            mode=mode,
-        )
+        if capital <= 30 and mode == "micro":
+            approved, committee_notes = self._technical_desk_approve(candidates, need=n_pos)
+            # If technical desk empty, still try one fast micro committee batch
+            if not approved and self._analysis:
+                approved, more = await self._hunt_committee_consensus(
+                    candidates, need=n_pos, mode=mode
+                )
+                committee_notes.extend(more)
+        else:
+            approved, committee_notes = await self._hunt_committee_consensus(
+                candidates,
+                need=n_pos,
+                mode=mode,
+            )
         warnings.extend(committee_notes)
 
         if not approved:
@@ -315,6 +324,53 @@ class MicroPortfolioManagerService:
             summary=summary,
             warnings=warnings,
         )
+
+    def _technical_desk_approve(
+        self,
+        candidates: list[dict],
+        *,
+        need: int,
+    ) -> tuple[list[dict], list[str]]:
+        """Ultra-micro path: approve liquid names with healthy technicals (no multi-agent wait)."""
+        notes: list[str] = [
+            "Mesa técnica micro: filtro RSI/momentum/volumen sobre seeds líquidos "
+            "(el comité completo 10 agentes no cabe en el timeout del host)."
+        ]
+        approved: list[dict] = []
+        screened = 0
+        for c in candidates:
+            if len(approved) >= need:
+                break
+            tech = c.get("tech") or {}
+            screened += 1
+            if not tech.get("ok"):
+                continue
+            enriched = dict(c)
+            enriched["score"] = float(c["score"]) + 30.0
+            enriched["committee_confidence"] = 0.58
+            enriched["consensus"] = type(
+                "V",
+                (),
+                {
+                    "source_tag": SOURCE_TAG_SOFT,
+                    "recommendation": "buy",
+                    "passed": True,
+                },
+            )()
+            enriched["rationale"] = (
+                f"Mesa técnica micro OK (RSI {tech.get('rsi')}, "
+                f"5d {tech.get('chg5')}%, vol×{tech.get('vol_spike')}). "
+                f"{c.get('rationale', '')}"
+            ).strip()
+            sources = list(c.get("sources") or [])
+            sources.append(SOURCE_TAG_SOFT)
+            sources.append("micro_technical_desk")
+            enriched["sources"] = sources
+            approved.append(enriched)
+        notes.append(
+            f"Mesa técnica: {len(approved)} aprobados / {screened} revisados."
+        )
+        return approved, notes
 
     async def _hunt_committee_consensus(
         self,
@@ -480,6 +536,8 @@ class MicroPortfolioManagerService:
             if disc:
                 score = disc.score + (10 if price <= max_price * 0.5 else 0)
                 score += 5
+                tech = probe.get("tech") or {}
+                score += float(tech.get("score") or 0) * 0.5
                 found[ticker] = {
                     "ticker": ticker,
                     "company_name": disc.company_name or probe.get("company_name"),
@@ -488,18 +546,24 @@ class MicroPortfolioManagerService:
                     "rationale": disc.rationale,
                     "catalysts": (disc.news_headlines or [])[:3],
                     "sources": disc.sources,
+                    "tech": tech,
                 }
             elif ticker not in found:
                 thin_penalty = 8 if price < 0.25 else 0
+                tech = probe.get("tech") or {}
+                tech_score = float(tech.get("score") or 0)
                 found[ticker] = {
                     "ticker": ticker,
                     "company_name": probe.get("company_name"),
                     "price": price,
-                    "score": 25.0 - thin_penalty + (5 if price <= max_price * 0.5 else 0),
+                    "score": 25.0 - thin_penalty + (5 if price <= max_price * 0.5 else 0) + tech_score,
                     "rationale": "Seed líquido micro con cotización viva.",
                     "catalysts": [],
                     "sources": ["micro_seed"],
+                    "tech": tech,
                 }
+            if ticker in found:
+                found[ticker]["tech"] = probe.get("tech") or found[ticker].get("tech") or {}
 
         ranked = sorted(found.values(), key=lambda c: (-c["score"], c["price"]))
         return ranked[: max(max_candidates, 12)]
@@ -531,4 +595,62 @@ class MicroPortfolioManagerService:
             "price": price,
             "company_name": (quote or {}).get("company_name"),
             "as_of": as_of,
+            "tech": self._quick_tech_score(hist, price),
         }
+
+    def _quick_tech_score(self, hist, price: float) -> dict:
+        """Lightweight technical screen from daily bars (no multi-agent latency)."""
+        try:
+            import pandas as pd
+
+            if hist is None or getattr(hist, "empty", True) or len(hist) < 25:
+                return {"ok": False, "score": -50, "reason": "hist_corta"}
+            close = hist["Close"].astype(float)
+            chg1 = float(close.iloc[-1] / close.iloc[-2] - 1) * 100 if len(close) > 1 else 0.0
+            chg5 = float(close.iloc[-1] / close.iloc[-6] - 1) * 100 if len(close) > 6 else 0.0
+            # RSI(14) approx
+            delta = close.diff()
+            gain = delta.clip(lower=0).rolling(14).mean()
+            loss = (-delta.clip(upper=0)).rolling(14).mean()
+            rs = gain / loss.replace(0, pd.NA)
+            rsi = float(100 - (100 / (1 + rs.iloc[-1]))) if rs.iloc[-1] == rs.iloc[-1] else 50.0
+            sma20 = float(close.tail(20).mean())
+            above_sma = price >= sma20 * 0.98
+            vol = hist["Volume"].astype(float) if "Volume" in hist.columns else None
+            vol_spike = 1.0
+            if vol is not None and len(vol) > 20:
+                avg = float(vol.tail(20).mean()) or 1.0
+                vol_spike = float(vol.iloc[-1] / avg)
+
+            # Hard rejects: dump / extreme overbought / broken trend
+            if chg5 <= -12:
+                return {"ok": False, "score": -40, "reason": "caída_5d", "rsi": rsi, "chg5": chg5}
+            if rsi >= 78:
+                return {"ok": False, "score": -30, "reason": "sobrecompra", "rsi": rsi, "chg5": chg5}
+            if rsi <= 22 and chg5 < 0:
+                return {"ok": False, "score": -25, "reason": "sobreventa_bajista", "rsi": rsi, "chg5": chg5}
+
+            score = 20.0
+            score += max(-10, min(15, chg5))
+            score += max(-5, min(8, chg1))
+            if 40 <= rsi <= 65:
+                score += 12
+            elif 30 <= rsi < 40 or 65 < rsi <= 72:
+                score += 4
+            if above_sma:
+                score += 8
+            if vol_spike >= 1.4:
+                score += 6
+            ok = score >= 22 and (chg5 > 0 or above_sma or vol_spike >= 1.5)
+            return {
+                "ok": ok,
+                "score": round(score, 2),
+                "reason": "tech_ok" if ok else "tech_debil",
+                "rsi": round(rsi, 1),
+                "chg5": round(chg5, 2),
+                "chg1": round(chg1, 2),
+                "vol_spike": round(vol_spike, 2),
+                "above_sma20": above_sma,
+            }
+        except Exception as exc:
+            return {"ok": False, "score": -50, "reason": f"tech_error:{exc}"}
