@@ -58,11 +58,11 @@ SELL_THRESHOLD = -15.0
 SOURCE_TAG = "committee_unanimous_dual"
 SOURCE_TAG_SOFT = "committee_majority_dual_soft"
 
-# Micro soft gate thresholds
-_MICRO_MIN_BUY_AGENTS = 7  # of 10 voting agents
-_MICRO_MAX_SELL_AGENTS = 1
-_MICRO_MIN_SHORT_BUYS = 2  # of 3 short strategies
-_MICRO_MIN_LONG_BUYS = 1  # of 2 long strategies
+# Micro soft gate thresholds (hunt mode — keep blocking junk, allow actionable micro)
+_MICRO_MIN_BUY_AGENTS = 5  # of 10 voting agents
+_MICRO_MAX_SELL_AGENTS = 2
+_MICRO_MIN_SHORT_BUYS = 1  # of 3 short strategies
+_MICRO_MIN_LONG_BUYS = 1  # of 2 long strategies (or non-bearish avg)
 
 
 def score_to_recommendation(score: float) -> InvestmentRecommendation:
@@ -220,11 +220,8 @@ def _evaluate_micro(thesis: InvestmentThesis) -> ConsensusVerdict:
         label="corto plazo",
         reasons=reasons,
     )
-    long_scores, long_ok = _horizon_majority_ok(
+    long_scores, long_ok = _long_micro_ok(
         thesis.strategy_conclusions or [],
-        LONG_STRATEGIES,
-        min_buys=_MICRO_MIN_LONG_BUYS,
-        label="largo plazo",
         reasons=reasons,
     )
     # Dividend still blocks if actively bearish
@@ -246,6 +243,12 @@ def _evaluate_micro(thesis: InvestmentThesis) -> ConsensusVerdict:
             f"Tesis del director={thesis_rec.value if thesis_rec else 'n/a'} — bloquea micro"
         )
 
+    # Net agent tilt: need clear buy bias, not a coin flip
+    net_ok = (buy_n - sell_n) >= 3
+    if agents_ok and not net_ok:
+        reasons.append(f"Micro: sesgo neto débil BUY-SELL={buy_n - sell_n} (mín +3)")
+        agents_ok = False
+
     passed = bool(agents_ok and short_ok and long_ok and thesis_ok)
     return ConsensusVerdict(
         passed=passed,
@@ -260,6 +263,39 @@ def _evaluate_micro(thesis: InvestmentThesis) -> ConsensusVerdict:
         recommendation=thesis_rec.value if thesis_rec else None,
         mode="micro",
     )
+
+
+def _long_micro_ok(
+    conclusions: list[StrategyConclusion],
+    *,
+    reasons: list[str],
+) -> tuple[dict[str, float], bool]:
+    """Pennies rarely score VALUE/GROWTH BUY — allow non-bearish long book."""
+    scores: dict[str, float] = {}
+    present = [c for c in conclusions if c.strategy in LONG_STRATEGIES]
+    if len(present) < len(LONG_STRATEGIES):
+        missing = sorted(s.value for s in LONG_STRATEGIES - {c.strategy for c in present})
+        reasons.append(f"Estrategias largo plazo incompletas: {', '.join(missing)}")
+        return scores, False
+    buys = 0
+    sells = 0
+    total = 0.0
+    for c in present:
+        scores[c.strategy.value] = float(c.score)
+        total += float(c.score)
+        rec = score_to_recommendation(float(c.score))
+        if is_buy(rec):
+            buys += 1
+        elif is_sell(rec):
+            sells += 1
+    avg = total / len(present)
+    ok = buys >= _MICRO_MIN_LONG_BUYS or (sells == 0 and avg >= -5.0)
+    if not ok:
+        reasons.append(
+            f"Micro largo: buys={buys} sells={sells} avg={avg:.1f} "
+            f"(se requiere ≥{_MICRO_MIN_LONG_BUYS} BUY o avg≥-5 sin SELL)"
+        )
+    return scores, ok
 
 
 def _horizon_majority_ok(

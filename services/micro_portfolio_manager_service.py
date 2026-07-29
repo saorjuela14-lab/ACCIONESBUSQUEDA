@@ -16,19 +16,24 @@ from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Screen at most this many live candidates through the full committee (latency).
-_COMMITTEE_SCREEN_LIMIT = 10
-_COMMITTEE_CONCURRENCY = 2
+# Screen candidates through the committee in rounds until we find buys (or exhaust).
+_COMMITTEE_BATCH = 8
+_COMMITTEE_MAX_SCREEN = 40
+_COMMITTEE_CONCURRENCY = 3
 
 # Liquid names that often trade in the micro/penny range (validated live at runtime).
 # Delisted / dead shells (NKLA, WISH, BBIG, etc.) must never appear here.
 _MICRO_SEED_TICKERS = (
-    "SOUN", "PLUG", "FCEL", "RIOT", "MARA", "OPEN", "CLOV",
-    "SENS", "SIRI", "NOK", "SNAP", "F", "AAL", "SOFI",
-    "NIO", "LCID", "RIVN", "AMC", "BB", "ACHR", "JOBY",
-    "LUNR", "ASTS", "BITF", "CIFR", "APLD", "BBAI", "GRAB",
-    "IONQ", "RXRX", "CHPT", "SPCE", "DNA", "MVST", "LAZR",
-    "ABEV", "VALE", "ITUB", "PBR", "BBD", "GOLD", "NU",
+    "SOUN", "PLUG", "FCEL", "RIOT", "MARA", "OPEN", "CLOV", "SENS",
+    "SIRI", "NOK", "SNAP", "F", "AAL", "SOFI", "NIO", "LCID", "RIVN",
+    "AMC", "BB", "ACHR", "JOBY", "LUNR", "ASTS", "BITF", "CIFR",
+    "APLD", "BBAI", "GRAB", "CHPT", "SPCE", "DNA", "MVST", "LAZR",
+    "ABEV", "VALE", "ITUB", "PBR", "BBD", "GOLD", "NU", "KEY",
+    "HBAN", "RF", "CFG", "WBD", "PFE", "INTC", "T", "VZ", "PCG",
+    "KMI", "MPW", "AGNC", "NLY", "ARR", "TWO", "ORC",
+    "JD", "BIDU", "XPEV", "LI", "HOOD", "UPST", "PATH",
+    "RIG", "HAL", "HL", "AG", "CDE", "BTBT", "CAN", "HUT", "CLSK",
+    "WULF", "IREN", "IONQ", "RXRX",
 )
 
 
@@ -39,6 +44,10 @@ _PENNY_THEMES = (
     "cheap small cap momentum under $10",
     "low priced stocks catalyst under $8",
     "sub $8 AI semiconductor stocks",
+    "high volume stocks under $7 today",
+    "bank stocks under $10 dividend",
+    "China ADR under $10 momentum",
+    "bitcoin miners under $10 volume",
 )
 
 
@@ -69,9 +78,10 @@ class MicroPortfolioPlan:
 
 class MicroPortfolioManagerService:
     """
-    For micro capital (e.g. $22): research affordable *live* names and build a whole-share plan.
-    Honors firm risk policy and only allocates when the investment committee is unanimous BUY
-    on both short-horizon and long-horizon strategies.
+    For micro capital (e.g. $22): continuously research affordable *live* names and
+    build a whole-share plan. Keeps hunting across the universe until the investment
+    committee soft-approves (micro majority) or the live list is exhausted — then the
+    next autopilot cycle searches again.
     """
 
     def __init__(
@@ -105,27 +115,35 @@ class MicroPortfolioManagerService:
         cash_pct = max(risk.cash_reserve_pct / 100.0, cash_floor, 1.0 - risk.max_gross_exposure_pct / 100.0)
         max_gross_pct = min(risk.max_gross_exposure_pct / 100.0, 1.0 - cash_pct)
         deployable = round(capital * max_gross_pct, 2)
-        max_line = round(capital * (risk.max_position_pct / 100.0), 2)
+        # Ultra-micro: allow up to 40% on the single line so more liquid names fit
+        pos_pct = risk.max_position_pct / 100.0
+        if capital <= 25:
+            pos_pct = max(pos_pct, 0.40)
+        max_line = round(capital * pos_pct, 2)
         return cash_pct, deployable, max_line, max_gross_pct
 
     async def manage(
         self,
         capital: float,
         exclude_tickers: list[str] | None = None,
-        max_candidates: int = 20,
+        max_candidates: int = 40,
     ) -> MicroPortfolioPlan:
         capital = max(1.0, float(capital))
         n_pos = self._position_count(capital)
         policy = capital_price_policy(capital, target_positions=n_pos)
         cash_pct, deployable, max_line_usd, max_gross_pct = self._risk_budgets(capital, policy.tier)
         cash_reserve = round(capital * cash_pct, 2)
-        max_price = policy.max_share_price or policy.prefer_max_price
+        # Prefer policy max, but never below what one share under max_line needs
+        max_price = max(
+            float(policy.max_share_price or policy.prefer_max_price),
+            min(12.0, max_line_usd * 1.02),
+        )
         exclude = {t.upper() for t in (exclude_tickers or [])}
         warnings: list[str] = [
             (
                 f"Política de riesgo: reserva cash ≥{cash_pct * 100:.0f}%, "
                 f"exposición bruta ≤{max_gross_pct * 100:.0f}%, "
-                f"máx {max_line_usd:.2f}/posición ({self._risk.policy_from_settings().max_position_pct:.0f}%)."
+                f"máx ${max_line_usd:.2f}/posición · búsqueda continua hasta consenso."
             )
         ]
 
@@ -133,7 +151,7 @@ class MicroPortfolioManagerService:
             policy=policy,
             max_price=max_price,
             exclude=exclude,
-            max_candidates=max_candidates,
+            max_candidates=max(max_candidates, 40),
         )
 
         if not candidates:
@@ -154,18 +172,20 @@ class MicroPortfolioManagerService:
                 warnings=warnings,
             )
 
-        # Rank live candidates, then run investment committee (micro = soft majority)
+        # Persistent hunt: round-robin committee until ≥1 buy or universe exhausted
         candidates.sort(key=lambda c: (-c["score"], c["price"]))
-        approved, committee_notes = await self._filter_committee_consensus(
-            candidates[: max(_COMMITTEE_SCREEN_LIMIT, n_pos * 2)],
-            mode="micro" if policy.tier == "micro" else "strict",
+        mode = "micro" if policy.tier == "micro" else "strict"
+        approved, committee_notes = await self._hunt_committee_consensus(
+            candidates,
+            need=n_pos,
+            mode=mode,
         )
         warnings.extend(committee_notes)
 
         if not approved:
             warnings.append(
-                "Ningún ticker obtuvo consenso del comité (micro: mayoría BUY corto+largo). "
-                "Se mantiene efectivo; no se compra por seeds ni heurística."
+                "Búsqueda continua: se revisó el universo vivo y ninguno pasó el comité hoy. "
+                "El próximo ciclo de autopilot vuelve a buscar (no se congela el cash)."
             )
             return MicroPortfolioPlan(
                 capital=capital,
@@ -175,9 +195,8 @@ class MicroPortfolioManagerService:
                 lines=[],
                 picks=[],
                 summary=(
-                    f"{policy.description_es} Escritorio autónomo: sin consenso del comité "
-                    f"no hay compras. Efectivo ${cash_reserve:.2f} "
-                    f"({cash_pct * 100:.0f}% reserva mínima)."
+                    f"{policy.description_es} Escritorio en caza continua: sin consenso aún. "
+                    f"Efectivo ${cash_reserve:.2f} ({cash_pct * 100:.0f}% reserva mínima)."
                 ),
                 warnings=warnings,
             )
@@ -296,13 +315,72 @@ class MicroPortfolioManagerService:
             warnings=warnings,
         )
 
+    async def _hunt_committee_consensus(
+        self,
+        candidates: list[dict],
+        *,
+        need: int,
+        mode: str = "strict",
+    ) -> tuple[list[dict], list[str]]:
+        """Keep screening batches until we have `need` approvals or exhaust the list."""
+        notes: list[str] = []
+        if not self._analysis:
+            notes.append(
+                "Comité no disponible en este contexto — no se asigna capital sin análisis."
+            )
+            return [], notes
+
+        approved: list[dict] = []
+        screened = 0
+        rejected = 0
+        universe = candidates[:_COMMITTEE_MAX_SCREEN]
+
+        for start in range(0, len(universe), _COMMITTEE_BATCH):
+            if len(approved) >= need:
+                break
+            batch = universe[start : start + _COMMITTEE_BATCH]
+            batch_ok, batch_notes = await self._filter_committee_consensus(
+                batch, mode=mode, limit=len(batch)
+            )
+            screened += len(batch)
+            rejected += len(batch) - len(batch_ok)
+            approved.extend(batch_ok)
+            # Keep only the most informative note from each batch
+            if batch_notes:
+                notes.append(batch_notes[-1])
+            logger.info(
+                "micro_committee_hunt_batch",
+                screened=screened,
+                approved=len(approved),
+                need=need,
+                mode=mode,
+            )
+
+        notes.insert(
+            0,
+            (
+                f"Caza continua: {len(approved)} aprobados / {screened} analizados "
+                f"({rejected} rechazados, universo {len(universe)})."
+            ),
+        )
+        # De-dupe by ticker preserving score order
+        seen: set[str] = set()
+        unique: list[dict] = []
+        for c in sorted(approved, key=lambda x: (-x["score"], x["price"])):
+            if c["ticker"] in seen:
+                continue
+            seen.add(c["ticker"])
+            unique.append(c)
+        return unique, notes
+
     async def _filter_committee_consensus(
         self,
         candidates: list[dict],
         *,
         mode: str = "strict",
+        limit: int | None = None,
     ) -> tuple[list[dict], list[str]]:
-        """Run committee on shortlist; micro uses soft majority dual-horizon."""
+        """Run committee on a batch; micro uses soft majority dual-horizon."""
         notes: list[str] = []
         if not self._analysis:
             notes.append(
@@ -311,7 +389,8 @@ class MicroPortfolioManagerService:
             return [], notes
 
         sem = asyncio.Semaphore(_COMMITTEE_CONCURRENCY)
-        screen = candidates[:_COMMITTEE_SCREEN_LIMIT]
+        cap = limit if limit is not None else _COMMITTEE_BATCH
+        screen = candidates[:cap]
 
         async def _one(c: dict) -> dict | None:
             ticker = c["ticker"]
@@ -333,7 +412,6 @@ class MicroPortfolioManagerService:
             enriched = dict(c)
             enriched["consensus"] = verdict
             enriched["committee_confidence"] = float(thesis.confidence or 0.6)
-            # Prefer committee-weighted conviction in ranking
             enriched["score"] = float(c["score"]) + 40.0 + float(thesis.confidence or 0) * 20
             label = "mayoría" if mode == "micro" else "unánime"
             enriched["rationale"] = (
@@ -348,8 +426,8 @@ class MicroPortfolioManagerService:
         rejected = len(screen) - len(approved)
         gate = "mayoría micro" if mode == "micro" else "BUY unánime"
         notes.append(
-            f"Comité: {len(approved)}/{len(screen)} candidatos con {gate} "
-            f"corto+largo ({rejected} rechazados)."
+            f"Comité lote: {len(approved)}/{len(screen)} con {gate} "
+            f"({rejected} rechazados)."
         )
         approved.sort(key=lambda c: (-c["score"], c["price"]))
         return approved, notes
@@ -378,7 +456,7 @@ class MicroPortfolioManagerService:
 
         # Validate discovery + seeds in parallel: quote + live daily bars
         seeds = [t for t in _MICRO_SEED_TICKERS if t not in exclude]
-        probe_tickers = list(dict.fromkeys(discovery_tickers + seeds[:28]))
+        probe_tickers = list(dict.fromkeys(discovery_tickers + seeds))
         probes = await asyncio.gather(*[self._probe_live_quote(t) for t in probe_tickers])
 
         for ticker, probe in zip(probe_tickers, probes):

@@ -129,6 +129,14 @@ def test_micro_soft_allows_one_agent_hold():
     assert soft.source_tag == SOURCE_TAG_SOFT
 
 
+def test_micro_soft_allows_non_bearish_long_without_value_buy():
+    """Pennies often lack VALUE BUY — non-bearish long avg should still pass micro."""
+    thesis = _full_thesis(long_score=0.0)  # HOLD on value+growth
+    soft = evaluate_consensus(thesis, mode="micro")
+    assert soft.passed is True
+    assert soft.long_horizon_buy is True
+
+
 def test_micro_soft_blocks_strong_sell_cluster():
     thesis = _full_thesis(agent_score=-40.0, short_score=-40.0, long_score=-40.0)
     thesis = thesis.model_copy(update={"recommendation": InvestmentRecommendation.STRONG_SELL})
