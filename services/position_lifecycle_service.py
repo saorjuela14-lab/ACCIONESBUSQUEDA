@@ -28,6 +28,62 @@ class PositionLifecycleService:
         self._market = get_market_provider()
         self._audit = AuditService(session)
         self._settings = get_settings()
+        self._equity_cache: float | None = None
+
+    async def _book_equity(self) -> float | None:
+        if self._equity_cache is not None:
+            return self._equity_cache
+        if not self._broker.is_configured():
+            return None
+        try:
+            acct = await self._broker.get_account()
+            eq = float(acct.equity or acct.portfolio_value or 0.0)
+            self._equity_cache = eq if eq > 0 else None
+        except Exception:
+            self._equity_cache = None
+        return self._equity_cache
+
+    async def _exit_params(self) -> dict[str, float | int | None]:
+        """Institutional defaults, or faster micro rotation when equity is tiny."""
+        s = self._settings
+        equity = await self._book_equity()
+        micro = equity is not None and 0 < equity <= float(s.lifecycle_micro_equity_usd)
+        if micro:
+            return {
+                "trailing_pct": s.lifecycle_micro_trailing_pct or None,
+                "time_stop_days": s.lifecycle_micro_time_stop_days or None,
+                "stop_pct": s.lifecycle_micro_default_stop_pct,
+                "target_pct": s.lifecycle_micro_default_target_pct,
+                "micro": True,
+            }
+        return {
+            "trailing_pct": s.lifecycle_trailing_pct or None,
+            "time_stop_days": s.lifecycle_time_stop_days or None,
+            "stop_pct": s.lifecycle_default_stop_pct,
+            "target_pct": s.lifecycle_default_target_pct,
+            "micro": False,
+        }
+
+    async def _sync_broker_stop(self, mandate: PositionMandate, stop: float | None) -> str | None:
+        if not self._settings.lifecycle_sync_broker_stops:
+            return None
+        if not stop or stop <= 0 or mandate.qty <= 0:
+            return None
+        if not self._broker.is_configured():
+            return None
+        try:
+            result = await self._broker.replace_protective_stop(
+                symbol=mandate.symbol,
+                qty=float(mandate.qty),
+                stop_price=float(stop),
+            )
+            if result is None:
+                return None
+            if result.error:
+                return f"broker stop fail: {result.error}"
+            return f"broker GTC stop @{stop:.4f} id={result.id or '?'}"
+        except Exception as exc:
+            return f"broker stop sync error: {exc}"
 
     async def register_from_fill(
         self,
@@ -41,28 +97,41 @@ class PositionLifecycleService:
         sector: str | None = None,
         beta: float | None = None,
     ) -> PositionMandate:
-        s = self._settings
-        trail = s.lifecycle_trailing_pct if s.lifecycle_trailing_pct > 0 else None
-        days = s.lifecycle_time_stop_days if s.lifecycle_time_stop_days > 0 else None
-        if stop_loss is None and entry_price > 0:
-            stop_loss = round(entry_price * (1 - s.lifecycle_default_stop_pct), 4)
-        if take_profit is None and entry_price > 0:
-            take_profit = round(entry_price * (1 + s.lifecycle_default_target_pct), 4)
+        params = await self._exit_params()
+        trail = params["trailing_pct"]
+        days = params["time_stop_days"]
+        stop_pct = float(params["stop_pct"] or 0)
+        target_pct = float(params["target_pct"] or 0)
+        if stop_loss is None and entry_price > 0 and stop_pct > 0:
+            stop_loss = round(entry_price * (1 - stop_pct), 4)
+        if take_profit is None and entry_price > 0 and target_pct > 0:
+            take_profit = round(entry_price * (1 + target_pct), 4)
         mandate = PositionMandate(
             symbol=symbol.upper(),
             qty=qty,
             entry_price=entry_price,
             stop_loss=stop_loss,
             take_profit=take_profit,
-            trailing_pct=trail,
+            trailing_pct=float(trail) if trail else None,
             peak_price=entry_price,
-            time_stop_days=days,
+            time_stop_days=int(days) if days else None,
             thesis=thesis,
             sector=sector,
             beta=beta,
             status="open",
         )
-        return await self._mandates.upsert_open(mandate)
+        saved = await self._mandates.upsert_open(mandate)
+        # Ensure Alpaca has a live GTC stop even if entry bracket was day/expired
+        detail = await self._sync_broker_stop(saved, saved.stop_loss)
+        if detail:
+            await self._audit.record(
+                "protective_stop_sync",
+                symbol=saved.symbol,
+                message=detail,
+                actor="lifecycle",
+                payload={"stop": saved.stop_loss, "micro": params["micro"]},
+            )
+        return saved
 
     async def invalidate_thesis(self, symbol: str, reason: str) -> PositionMandate | None:
         m = await self._mandates.get_open(symbol)
@@ -97,6 +166,7 @@ class PositionLifecycleService:
                 await self._mandates.save(m)
 
         out: list[PositionMandate] = []
+        params = await self._exit_params()
         for p in positions:
             sym = p.symbol.upper()
             if sym in existing:
@@ -104,6 +174,13 @@ class PositionLifecycleService:
                 m.qty = float(p.qty)
                 if p.current_price and (m.peak_price is None or p.current_price > m.peak_price):
                     m.peak_price = float(p.current_price)
+                # Keep open mandates on the active policy (micro vs institutional)
+                if params["trailing_pct"] and (
+                    m.trailing_pct is None or abs(float(m.trailing_pct) - float(params["trailing_pct"])) > 1e-9
+                ):
+                    m.trailing_pct = float(params["trailing_pct"])
+                if params["time_stop_days"] and m.time_stop_days != int(params["time_stop_days"]):
+                    m.time_stop_days = int(params["time_stop_days"])
                 await self._mandates.save(m)
                 out.append(m)
             else:
@@ -209,14 +286,22 @@ class PositionLifecycleService:
             if decision.action == "tighten_stop" and decision.new_stop:
                 m.stop_loss = decision.new_stop
                 await self._mandates.save(m)
+                broker_detail = await self._sync_broker_stop(m, decision.new_stop)
                 await self._audit.record(
                     "trailing_update",
                     symbol=m.symbol,
-                    message=decision.reason,
+                    message=decision.reason
+                    + (f" · {broker_detail}" if broker_detail else ""),
                     actor="lifecycle",
-                    payload={"stop": decision.new_stop, "price": price},
+                    payload={
+                        "stop": decision.new_stop,
+                        "price": price,
+                        "broker": broker_detail,
+                    },
                 )
                 decision.executed = True
+                if broker_detail:
+                    decision.detail = broker_detail
             elif decision.action == "exit" and execute_exits:
                 executed = False
                 detail = None
