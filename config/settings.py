@@ -126,6 +126,13 @@ class Settings(BaseSettings):
     lifecycle_default_stop_pct: float = 0.08
     lifecycle_default_target_pct: float = 0.12
     lifecycle_auto_exit: bool = True
+    # Ultra-micro books need faster autonomous rotation (not 10-day holds)
+    lifecycle_micro_equity_usd: float = 50.0
+    lifecycle_micro_time_stop_days: int = 3
+    lifecycle_micro_trailing_pct: float = 0.05
+    lifecycle_micro_default_stop_pct: float = 0.05
+    lifecycle_micro_default_target_pct: float = 0.06
+    lifecycle_sync_broker_stops: bool = True
 
     # Continuous reconcile
     reconcile_interval_minutes: int = 20

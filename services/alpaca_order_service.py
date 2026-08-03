@@ -216,6 +216,46 @@ class AlpacaOrderService:
     async def close_position(self, symbol: str) -> dict[str, Any]:
         return await self._broker.close_position(symbol)
 
+    async def replace_protective_stop(
+        self,
+        *,
+        symbol: str,
+        qty: float,
+        stop_price: float,
+    ) -> BrokerOrderResult | None:
+        """Cancel open sell stops for symbol and place a fresh GTC stop (trailing sync)."""
+        sym = symbol.upper().strip()
+        if qty <= 0 or stop_price <= 0:
+            return None
+        try:
+            open_orders = await self.list_orders(status="open", limit=100)
+        except Exception:
+            open_orders = []
+        for od in open_orders:
+            if od.symbol.upper() != sym:
+                continue
+            if (od.side or "").lower() != "sell":
+                continue
+            otype = (od.type or "").lower()
+            if otype not in ("stop", "stop_limit"):
+                continue
+            if od.id:
+                try:
+                    await self.cancel_order(od.id)
+                except Exception:
+                    pass
+        return await self.submit_one(
+            BrokerOrderRequest(
+                symbol=sym,
+                qty=float(qty),
+                side="sell",
+                order_type="stop",
+                time_in_force="gtc",
+                stop_price=round(float(stop_price), 4),
+                client_order_id=f"nexbuy-trail-{sym.lower()}-{uuid4().hex[:8]}",
+            )
+        )
+
     async def close_all_positions(self, *, cancel_orders: bool = True) -> list[dict[str, Any]]:
         return await self._broker.close_all_positions(cancel_orders=cancel_orders)
 
@@ -534,11 +574,20 @@ class AlpacaOrderService:
                     except Exception as exc:
                         warnings.append(f"{line.ticker}: sector gate skip ({exc})")
 
+            # Protective legs must survive overnight — day TIF expires same session
+            # (AMC Jul 29: stop canceled / TP expired → only soft software stops left).
+            use_gtc = bool(
+                line.side == "buy"
+                and line.stop_loss
+                and line.take_profit
+                and line.order_type == "market"
+            )
             order_req = BrokerOrderRequest(
                 symbol=line.ticker.upper().strip(),
                 qty=line.shares,
                 side=line.side,
                 order_type=line.order_type,
+                time_in_force="gtc" if use_gtc else "day",
                 limit_price=line.limit_price,
                 take_profit=line.take_profit,
                 stop_loss=line.stop_loss,

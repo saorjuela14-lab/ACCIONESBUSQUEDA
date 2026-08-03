@@ -50,6 +50,44 @@ def test_lifecycle_trailing_and_time_stop():
     assert "invalidada" in action3.reason.lower()
 
 
+def test_lifecycle_take_profit_fires():
+    svc = PositionLifecycleService.__new__(PositionLifecycleService)
+    now = utc_now()
+    m = PositionMandate(
+        symbol="SNAP",
+        qty=1,
+        entry_price=4.78,
+        stop_loss=4.54,
+        take_profit=5.07,  # ~+6% micro target
+        trailing_pct=0.05,
+        peak_price=4.78,
+        time_stop_days=3,
+        opened_at=now - timedelta(days=1),
+    )
+    action = PositionLifecycleService._evaluate(svc, m, price=5.10, now=now)
+    assert action.action == "exit"
+    assert "Take-profit" in action.reason
+
+
+def test_lifecycle_micro_time_stop_three_days():
+    svc = PositionLifecycleService.__new__(PositionLifecycleService)
+    now = utc_now()
+    m = PositionMandate(
+        symbol="AMC",
+        qty=2,
+        entry_price=2.69,
+        stop_loss=2.55,
+        take_profit=2.85,
+        trailing_pct=0.05,
+        peak_price=2.86,
+        time_stop_days=3,
+        opened_at=now - timedelta(days=3, hours=1),
+    )
+    action = PositionLifecycleService._evaluate(svc, m, price=2.79, now=now)
+    assert action.action == "exit"
+    assert "Time-stop" in action.reason
+
+
 def test_sector_gate_blocks_overweight():
     metrics = PortfolioRiskMetrics(
         equity=1000,
