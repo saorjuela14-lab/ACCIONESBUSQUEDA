@@ -133,7 +133,22 @@ class AutopilotService:
         except Exception as exc:
             steps["risk"] = {"error": str(exc)}
 
-        # 3) Lifecycle scan (exits first)
+        # 2b) Continuous holdings strategy review (reformulate thesis → prefer TP)
+        try:
+            from services.holdings_strategy_review_service import HoldingsStrategyReviewService
+
+            # Technical-first review (latency-safe). Reformulates TP/stop every loop;
+            # harvests near take-profit; invalidates on sell bias.
+            holdings = await HoldingsStrategyReviewService(
+                self._session,
+                self._broker,
+                analysis=None,
+            ).review(execute_exits=settings.lifecycle_auto_exit)
+            steps["holdings_review"] = holdings
+        except Exception as exc:
+            steps["holdings_review"] = {"error": str(exc)}
+
+        # 3) Lifecycle scan (mechanical exits after reformulation)
         try:
             life = await PositionLifecycleService(self._session, self._broker).scan(
                 execute_exits=settings.lifecycle_auto_exit

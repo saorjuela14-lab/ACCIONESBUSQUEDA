@@ -121,6 +121,21 @@ async def lifecycle_scan(
     return await PositionLifecycleService(session).scan(execute_exits=do_exit)
 
 
+@router.post("/ops/holdings/review")
+async def holdings_strategy_review(
+    execute_exits: bool | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Reformulate open-position thesis, raise TP / tighten stops, prefer take-profit exits."""
+    from services.holdings_strategy_review_service import HoldingsStrategyReviewService
+
+    settings = get_settings()
+    do_exit = settings.lifecycle_auto_exit if execute_exits is None else execute_exits
+    review = await HoldingsStrategyReviewService(session).review(execute_exits=do_exit)
+    scan = await PositionLifecycleService(session).scan(execute_exits=do_exit)
+    return {"review": review, "lifecycle": scan}
+
+
 @router.post("/ops/lifecycle/invalidate")
 async def invalidate_thesis(
     body: ThesisInvalidateRequest,
@@ -177,6 +192,7 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
         "paper_promotion": promo or {"promoted": False},
         "lifecycle_enabled": settings.lifecycle_enabled,
         "lifecycle_auto_exit": settings.lifecycle_auto_exit,
+        "holdings_strategy_review_enabled": settings.holdings_strategy_review_enabled,
         "reconcile_auto_sync": settings.reconcile_auto_sync,
         "risk": {
             "max_var_pct": settings.risk_max_var_pct,

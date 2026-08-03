@@ -25,6 +25,8 @@ AuditAction = Literal[
     "risk_block",
     "trailing_update",
     "thesis_invalidate",
+    "thesis_reformulate",
+    "protective_stop_sync",
 ]
 
 
