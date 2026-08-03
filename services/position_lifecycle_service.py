@@ -216,18 +216,14 @@ class PositionLifecycleService:
                 new_stop=effective_stop,
             )
 
-        if mandate.time_stop_days and mandate.opened_at:
-            opened = mandate.opened_at
-            if opened.tzinfo is None:
-                opened = opened.replace(tzinfo=timezone.utc)
-            age_days = (now - opened).total_seconds() / 86400.0
-            if age_days >= mandate.time_stop_days:
-                return LifecycleAction(
-                    symbol=mandate.symbol,
-                    action="exit",
-                    reason=f"Time-stop {mandate.time_stop_days}d alcanzado ({age_days:.1f}d)",
-                    new_stop=effective_stop,
-                )
+        # Prefer take-profit over calendar stops — strategy aims to bank gains
+        if mandate.take_profit and price >= mandate.take_profit:
+            return LifecycleAction(
+                symbol=mandate.symbol,
+                action="exit",
+                reason=f"Take-profit @ {price:.4f} ≥ {mandate.take_profit:.4f}",
+                new_stop=effective_stop,
+            )
 
         if effective_stop and price <= effective_stop:
             return LifecycleAction(
@@ -237,13 +233,24 @@ class PositionLifecycleService:
                 new_stop=effective_stop,
             )
 
-        if mandate.take_profit and price >= mandate.take_profit:
-            return LifecycleAction(
-                symbol=mandate.symbol,
-                action="exit",
-                reason=f"Take-profit @ {price:.4f} ≥ {mandate.take_profit:.4f}",
-                new_stop=effective_stop,
-            )
+        # Time-stop is last resort: only when underwater / flat (never cut winners by calendar)
+        if mandate.time_stop_days and mandate.opened_at:
+            opened = mandate.opened_at
+            if opened.tzinfo is None:
+                opened = opened.replace(tzinfo=timezone.utc)
+            age_days = (now - opened).total_seconds() / 86400.0
+            entry = float(mandate.entry_price or 0)
+            underwater = entry <= 0 or price <= entry * 0.995
+            if age_days >= mandate.time_stop_days and underwater:
+                return LifecycleAction(
+                    symbol=mandate.symbol,
+                    action="exit",
+                    reason=(
+                        f"Time-stop último recurso {mandate.time_stop_days}d "
+                        f"({age_days:.1f}d) · sin avance / en pérdida"
+                    ),
+                    new_stop=effective_stop,
+                )
 
         if trail_stop and mandate.stop_loss and trail_stop > (mandate.stop_loss or 0):
             return LifecycleAction(

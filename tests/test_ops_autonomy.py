@@ -14,6 +14,7 @@ from services.position_lifecycle_service import PositionLifecycleService
 def test_lifecycle_trailing_and_time_stop():
     svc = PositionLifecycleService.__new__(PositionLifecycleService)
     now = utc_now()
+    # Time-stop only fires when underwater (last resort) — winners wait for TP
     m = PositionMandate(
         symbol="ABC",
         qty=1,
@@ -24,10 +25,13 @@ def test_lifecycle_trailing_and_time_stop():
         time_stop_days=5,
         opened_at=now - timedelta(days=6),
     )
-    # time-stop should fire first
-    action = PositionLifecycleService._evaluate(svc, m, price=11.5, now=now)
+    action_winner = PositionLifecycleService._evaluate(svc, m, price=11.5, now=now)
+    assert action_winner.action != "exit" or "Take-profit" in action_winner.reason
+
+    m_under = m.model_copy(update={"peak_price": 10.0})
+    action = PositionLifecycleService._evaluate(svc, m_under, price=9.7, now=now)
     assert action.action == "exit"
-    assert "Time-stop" in action.reason
+    assert "Time-stop" in action.reason or "Stop" in action.reason
 
     m2 = PositionMandate(
         symbol="ABC",
@@ -69,7 +73,7 @@ def test_lifecycle_take_profit_fires():
     assert "Take-profit" in action.reason
 
 
-def test_lifecycle_micro_time_stop_three_days():
+def test_lifecycle_tp_preferred_over_time_stop_when_green():
     svc = PositionLifecycleService.__new__(PositionLifecycleService)
     now = utc_now()
     m = PositionMandate(
@@ -81,9 +85,35 @@ def test_lifecycle_micro_time_stop_three_days():
         trailing_pct=0.05,
         peak_price=2.86,
         time_stop_days=3,
+        opened_at=now - timedelta(days=10),
+    )
+    # Green and aged — must NOT calendar-exit; hold or TP if hit
+    action = PositionLifecycleService._evaluate(svc, m, price=2.79, now=now)
+    assert action.action in ("hold", "tighten_stop")
+    assert "Time-stop" not in action.reason
+
+    # Hit TP even if aged
+    action_tp = PositionLifecycleService._evaluate(svc, m, price=2.86, now=now)
+    assert action_tp.action == "exit"
+    assert "Take-profit" in action_tp.reason
+
+
+def test_lifecycle_micro_time_stop_three_days():
+    svc = PositionLifecycleService.__new__(PositionLifecycleService)
+    now = utc_now()
+    m = PositionMandate(
+        symbol="AMC",
+        qty=2,
+        entry_price=2.69,
+        stop_loss=2.40,
+        take_profit=3.20,
+        trailing_pct=0.05,
+        peak_price=2.70,
+        time_stop_days=3,
         opened_at=now - timedelta(days=3, hours=1),
     )
-    action = PositionLifecycleService._evaluate(svc, m, price=2.79, now=now)
+    # Underwater + aged → last-resort time-stop
+    action = PositionLifecycleService._evaluate(svc, m, price=2.60, now=now)
     assert action.action == "exit"
     assert "Time-stop" in action.reason
 

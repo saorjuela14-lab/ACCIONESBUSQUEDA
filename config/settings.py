@@ -126,13 +126,20 @@ class Settings(BaseSettings):
     lifecycle_default_stop_pct: float = 0.08
     lifecycle_default_target_pct: float = 0.12
     lifecycle_auto_exit: bool = True
-    # Ultra-micro books need faster autonomous rotation (not 10-day holds)
+    # Ultra-micro books: tighter protective levels; time-stop only as last resort when underwater
     lifecycle_micro_equity_usd: float = 50.0
-    lifecycle_micro_time_stop_days: int = 3
+    lifecycle_micro_time_stop_days: int = 7
     lifecycle_micro_trailing_pct: float = 0.05
     lifecycle_micro_default_stop_pct: float = 0.05
     lifecycle_micro_default_target_pct: float = 0.06
     lifecycle_sync_broker_stops: bool = True
+
+    # Continuous holdings strategy review (reformulate thesis → prefer take-profit)
+    holdings_strategy_review_enabled: bool = True
+    holdings_review_max_positions: int = 4
+    holdings_review_concurrency: int = 2
+    holdings_tp_near_pct: float = 0.98  # exit when price ≥ 98% of TP
+    holdings_min_tp_pnl_pct: float = 3.0  # require ≥3% gain to harvest near TP / fade
 
     # Continuous reconcile
     reconcile_interval_minutes: int = 20
