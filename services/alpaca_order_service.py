@@ -244,13 +244,18 @@ class AlpacaOrderService:
                     await self.cancel_order(od.id)
                 except Exception:
                     pass
+        settings = get_settings()
+        allow_overnight_carry = bool(
+            settings.intraday_only_enabled and settings.intraday_flat_winners_only
+        )
+        tif = "gtc" if (not settings.intraday_only_enabled or allow_overnight_carry) else "day"
         return await self.submit_one(
             BrokerOrderRequest(
                 symbol=sym,
                 qty=float(qty),
                 side="sell",
                 order_type="stop",
-                time_in_force="day" if get_settings().intraday_only_enabled else "gtc",
+                time_in_force=tif,
                 stop_price=round(float(stop_price), 2),
                 client_order_id=f"nexbuy-trail-{sym.lower()}-{uuid4().hex[:8]}",
             )
@@ -574,15 +579,21 @@ class AlpacaOrderService:
                     except Exception as exc:
                         warnings.append(f"{line.ticker}: sector gate skip ({exc})")
 
-            # Protective legs: day TIF under intraday-only (book flats before close).
-            # GTC only when overnight holds are allowed.
+            # Bracket TIF: GTC when red names may carry overnight (winners-only EOD).
+            # Pure day-flat mode keeps day TIF.
+            settings = get_settings()
             want_bracket = bool(
                 line.side == "buy"
                 and line.stop_loss
                 and line.take_profit
                 and line.order_type == "market"
             )
-            use_gtc = want_bracket and not bool(get_settings().intraday_only_enabled)
+            allow_overnight_carry = bool(
+                settings.intraday_only_enabled and settings.intraday_flat_winners_only
+            )
+            use_gtc = want_bracket and (
+                not settings.intraday_only_enabled or allow_overnight_carry
+            )
             order_req = BrokerOrderRequest(
                 symbol=line.ticker.upper().strip(),
                 qty=line.shares,

@@ -132,6 +132,23 @@ class HoldingsStrategyReviewService:
         new_stop = levels.get("stop_loss")
         new_tp = levels.get("take_profit_1") or levels.get("take_profit")
 
+        # Overnight carry that recovered → bank the rebound (last week's lesson)
+        opened = mandate.opened_at
+        is_overnight = False
+        if opened is not None:
+            from datetime import timezone
+
+            from utils.market_hours import US_EASTERN, now_et
+
+            if opened.tzinfo is None:
+                opened = opened.replace(tzinfo=timezone.utc)
+            is_overnight = opened.astimezone(US_EASTERN).date() < now_et().date()
+        recovery_harvest = (
+            is_overnight
+            and pnl_pct >= float(self._settings.intraday_flat_min_pnl_pct)
+            and rec in ("buy", "hold", "strong_buy")
+        )
+
         # --- Sell / invalidate: strategy says leave ---
         if rec in ("sell", "strong_sell"):
             reason = f"Revisión continua: {rec.upper()} · {thesis_txt[:160]}"
@@ -168,11 +185,17 @@ class HoldingsStrategyReviewService:
             )
             and rec == "hold"
         )
-        if harvest or fade:
+        if harvest or fade or recovery_harvest:
             reason = (
-                f"Take-profit estratégico @ {price:.4f}"
-                + (f" (cerca TP {tp:.4f})" if near_tp else "")
-                + f" · PnL {pnl_pct:+.1f}% · bias={rec}"
+                (
+                    f"Recuperación overnight → asegurar @ {price:.4f} · PnL {pnl_pct:+.1f}%"
+                    if recovery_harvest and not (harvest or fade)
+                    else (
+                        f"Take-profit estratégico @ {price:.4f}"
+                        + (f" (cerca TP {tp:.4f})" if near_tp else "")
+                        + f" · PnL {pnl_pct:+.1f}% · bias={rec}"
+                    )
+                )
             )
             await self._life.invalidate_thesis(mandate.symbol, reason)
             exited = False
@@ -184,13 +207,18 @@ class HoldingsStrategyReviewService:
                 symbol=mandate.symbol,
                 message=reason,
                 actor="holdings_review",
-                payload={"recommendation": rec, "price": price, "pnl_pct": pnl_pct},
+                payload={
+                    "recommendation": rec,
+                    "price": price,
+                    "pnl_pct": pnl_pct,
+                    "overnight_recovery": recovery_harvest,
+                },
             )
             return {
                 "exited": exited,
                 "update": {
                     "symbol": mandate.symbol,
-                    "action": "take_profit",
+                    "action": "overnight_recovery" if recovery_harvest and not (harvest or fade) else "take_profit",
                     "recommendation": rec,
                     "price": price,
                     "pnl_pct": round(pnl_pct, 2),

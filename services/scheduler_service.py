@@ -230,16 +230,18 @@ class SchedulerService:
                 "scheduler.intraday_flat",
                 skipped=result.get("skipped"),
                 closed=len(result.get("closed") or []),
+                carried=len(result.get("carried") or []),
                 reason=result.get("reason"),
                 message=result.get("message"),
             )
-            if (result.get("closed") or []) and self._settings.push_daily_trades:
+            if ((result.get("closed") or []) or (result.get("carried") or [])) and self._settings.push_daily_trades:
                 push = PushNotificationService()
                 if push.any_channel_configured:
-                    syms = ", ".join(c.get("symbol", "?") for c in result["closed"])
+                    closed_syms = ", ".join(c.get("symbol", "?") for c in (result.get("closed") or [])) or "—"
+                    carry_syms = ", ".join(c.get("symbol", "?") for c in (result.get("carried") or [])) or "—"
                     await push.notify_message(
-                        "Intraday flat",
-                        f"Cierre de sesión — posiciones cerradas: {syms}",
+                        "EOD smart flat",
+                        f"Aseguradas: {closed_syms} · Carry rojo overnight: {carry_syms}",
                     )
             break
 

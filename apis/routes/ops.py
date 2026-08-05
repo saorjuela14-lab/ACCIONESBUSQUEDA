@@ -211,6 +211,9 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
         "intraday_only_enabled": settings.intraday_only_enabled,
         "intraday_flat_minutes_before_close": settings.intraday_flat_minutes_before_close,
         "intraday_flat_cron": settings.intraday_flat_cron,
+        "intraday_flat_winners_only": settings.intraday_flat_winners_only,
+        "intraday_flat_min_pnl_pct": settings.intraday_flat_min_pnl_pct,
+        "intraday_carry_max_loss_pct": settings.intraday_carry_max_loss_pct,
         "reconcile_auto_sync": settings.reconcile_auto_sync,
         "risk": {
             "max_var_pct": settings.risk_max_var_pct,

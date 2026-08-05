@@ -141,10 +141,13 @@ class Settings(BaseSettings):
     holdings_tp_near_pct: float = 0.98  # exit when price ≥ 98% of TP
     holdings_min_tp_pnl_pct: float = 3.0  # require ≥3% gain to harvest near TP / fade
 
-    # Intraday-only: no overnight equity risk (flatten before regular close)
+    # Intraday / EOD: bank winners before close; optionally carry red overnight
     intraday_only_enabled: bool = True
-    intraday_flat_minutes_before_close: int = 20  # flatten from 15:40 ET
+    intraday_flat_minutes_before_close: int = 20  # decision window from 15:40 ET
     intraday_flat_cron: str = "15:40"  # dedicated ET cron (HH:MM)
+    intraday_flat_winners_only: bool = True  # do not force-close red into a loss at EOD
+    intraday_flat_min_pnl_pct: float = 0.0  # close if PnL% >= this (0 = flat/green)
+    intraday_carry_max_loss_pct: float = 8.0  # still cut if worse than this overnight risk
 
     # Continuous reconcile
     reconcile_interval_minutes: int = 20
