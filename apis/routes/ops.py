@@ -136,6 +136,21 @@ async def holdings_strategy_review(
     return {"review": review, "lifecycle": scan}
 
 
+@router.post("/ops/intraday/flat")
+async def intraday_flat(
+    force: bool = True,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Cierra todas las acciones para no llevar riesgo overnight (política intraday-only)."""
+    from services.intraday_flat_service import IntradayFlatService
+
+    return await IntradayFlatService(session).run(
+        force=force,
+        reason="manual_api" if force else None,
+        actor="user",
+    )
+
+
 @router.post("/ops/lifecycle/invalidate")
 async def invalidate_thesis(
     body: ThesisInvalidateRequest,
@@ -193,6 +208,9 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
         "lifecycle_enabled": settings.lifecycle_enabled,
         "lifecycle_auto_exit": settings.lifecycle_auto_exit,
         "holdings_strategy_review_enabled": settings.holdings_strategy_review_enabled,
+        "intraday_only_enabled": settings.intraday_only_enabled,
+        "intraday_flat_minutes_before_close": settings.intraday_flat_minutes_before_close,
+        "intraday_flat_cron": settings.intraday_flat_cron,
         "reconcile_auto_sync": settings.reconcile_auto_sync,
         "risk": {
             "max_var_pct": settings.risk_max_var_pct,

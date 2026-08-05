@@ -213,6 +213,36 @@ class SchedulerService:
                 await StatusBriefingCatchupService(session).catch_up(via="reconcile_catchup")
             break
 
+    async def _run_intraday_flat(self) -> None:
+        if not self._settings.intraday_only_enabled:
+            return
+        if not should_run_automation():
+            return
+        async for session in get_session():
+            from services.intraday_flat_service import IntradayFlatService
+
+            result = await IntradayFlatService(session).run(
+                force=True,
+                reason="scheduled_eod_flat",
+                actor="scheduler_eod",
+            )
+            logger.info(
+                "scheduler.intraday_flat",
+                skipped=result.get("skipped"),
+                closed=len(result.get("closed") or []),
+                reason=result.get("reason"),
+                message=result.get("message"),
+            )
+            if (result.get("closed") or []) and self._settings.push_daily_trades:
+                push = PushNotificationService()
+                if push.any_channel_configured:
+                    syms = ", ".join(c.get("symbol", "?") for c in result["closed"])
+                    await push.notify_message(
+                        "Intraday flat",
+                        f"Cierre de sesión — posiciones cerradas: {syms}",
+                    )
+            break
+
     async def _run_autopilot(self) -> None:
         if not should_run_automation():
             return
@@ -383,6 +413,22 @@ class SchedulerService:
                 id="lifecycle_scan",
                 replace_existing=True,
             )
+
+        # Intraday-only EOD flatten (default 15:40 ET) + misfire grace for host sleep
+        if self._settings.intraday_only_enabled:
+            flat_hhmm = (self._settings.intraday_flat_cron or "15:40").strip()
+            try:
+                fh, fm = flat_hhmm.split(":")
+                self._scheduler.add_job(
+                    self._run_intraday_flat,
+                    CronTrigger(hour=int(fh), minute=int(fm), timezone=tz),
+                    id="intraday_eod_flat",
+                    replace_existing=True,
+                    misfire_grace_time=45 * 60,
+                    coalesce=True,
+                )
+            except Exception as exc:
+                logger.warning("scheduler.intraday_flat_cron_invalid", value=flat_hhmm, error=str(exc))
 
         # Continuous Alpaca ↔ DB reconcile
         self._scheduler.add_job(

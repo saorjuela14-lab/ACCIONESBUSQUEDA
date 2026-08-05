@@ -52,3 +52,27 @@ def should_run_automation(dt: datetime | None = None) -> bool:
         return False
     t = dt.time()
     return PRE_MARKET_START <= t < POST_MARKET_END
+
+
+def minutes_to_regular_close(dt: datetime | None = None) -> float | None:
+    """Minutes until 16:00 ET on a trading day; None if not a session day."""
+    dt = dt or now_et()
+    if not is_trading_day(dt):
+        return None
+    close_dt = datetime.combine(dt.date(), MARKET_CLOSE, tzinfo=US_EASTERN)
+    return (close_dt - dt).total_seconds() / 60.0
+
+
+def in_eod_flat_window(minutes_before_close: float = 20.0, dt: datetime | None = None) -> bool:
+    """True when we should flatten and stop opening new equity risk before the close."""
+    dt = dt or now_et()
+    mins = minutes_to_regular_close(dt)
+    if mins is None:
+        return False
+    # After the open and within N minutes of (or past) the regular close
+    if not is_trading_day(dt):
+        return False
+    t = dt.time()
+    if t < MARKET_OPEN:
+        return False
+    return mins <= float(minutes_before_close)

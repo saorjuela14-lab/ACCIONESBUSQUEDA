@@ -27,6 +27,7 @@ AuditAction = Literal[
     "thesis_invalidate",
     "thesis_reformulate",
     "protective_stop_sync",
+    "intraday_flat",
 ]
 
 

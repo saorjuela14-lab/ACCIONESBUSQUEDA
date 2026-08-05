@@ -141,6 +141,11 @@ class Settings(BaseSettings):
     holdings_tp_near_pct: float = 0.98  # exit when price ≥ 98% of TP
     holdings_min_tp_pnl_pct: float = 3.0  # require ≥3% gain to harvest near TP / fade
 
+    # Intraday-only: no overnight equity risk (flatten before regular close)
+    intraday_only_enabled: bool = True
+    intraday_flat_minutes_before_close: int = 20  # flatten from 15:40 ET
+    intraday_flat_cron: str = "15:40"  # dedicated ET cron (HH:MM)
+
     # Continuous reconcile
     reconcile_interval_minutes: int = 20
     reconcile_auto_sync: bool = True
