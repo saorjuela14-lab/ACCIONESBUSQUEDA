@@ -119,6 +119,16 @@ class AutopilotService:
         except Exception as exc:
             steps["cash_sweep"] = {"error": str(exc)}
 
+        # 1c) Intraday-only: flatten before close / clear overnight leftovers
+        try:
+            from services.intraday_flat_service import IntradayFlatService
+
+            steps["intraday_flat"] = await IntradayFlatService(
+                self._session, self._broker
+            ).run(actor=actor)
+        except Exception as exc:
+            steps["intraday_flat"] = {"error": str(exc)}
+
         # 2) Risk / macro status
         try:
             risk = await RiskPolicyService().status()

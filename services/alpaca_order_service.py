@@ -250,8 +250,8 @@ class AlpacaOrderService:
                 qty=float(qty),
                 side="sell",
                 order_type="stop",
-                time_in_force="gtc",
-                stop_price=round(float(stop_price), 4),
+                time_in_force="day" if get_settings().intraday_only_enabled else "gtc",
+                stop_price=round(float(stop_price), 2),
                 client_order_id=f"nexbuy-trail-{sym.lower()}-{uuid4().hex[:8]}",
             )
         )
@@ -574,14 +574,15 @@ class AlpacaOrderService:
                     except Exception as exc:
                         warnings.append(f"{line.ticker}: sector gate skip ({exc})")
 
-            # Protective legs must survive overnight — day TIF expires same session
-            # (AMC Jul 29: stop canceled / TP expired → only soft software stops left).
-            use_gtc = bool(
+            # Protective legs: day TIF under intraday-only (book flats before close).
+            # GTC only when overnight holds are allowed.
+            want_bracket = bool(
                 line.side == "buy"
                 and line.stop_loss
                 and line.take_profit
                 and line.order_type == "market"
             )
+            use_gtc = want_bracket and not bool(get_settings().intraday_only_enabled)
             order_req = BrokerOrderRequest(
                 symbol=line.ticker.upper().strip(),
                 qty=line.shares,

@@ -125,6 +125,16 @@ class AutoExecuteService:
             except Exception as exc:
                 return {"skipped": True, "reason": f"clock_failed:{exc}"}
 
+        # Intraday-only: do not open new risk inside the EOD flatten window
+        if self._settings.intraday_only_enabled:
+            from utils.market_hours import in_eod_flat_window
+
+            if in_eod_flat_window(float(self._settings.intraday_flat_minutes_before_close)):
+                return {
+                    "skipped": True,
+                    "reason": "eod_flat_window_no_new_buys",
+                }
+
         max_n = float(self._settings.auto_execute_max_notional)
         cash = 0.0
         equity = 0.0
