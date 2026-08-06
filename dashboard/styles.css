@@ -17,7 +17,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   background:
-    radial-gradient(ellipse 70% 40% at 80% 0%, rgba(45, 74, 64, 0.35), transparent 55%),
+    radial-gradient(ellipse 70% 40% at 80% 0%, rgba(197, 165, 114, 0.08), transparent 55%),
     var(--bg);
   color: var(--text);
   font-size: 14px;
@@ -562,7 +562,6 @@ body.tech-chart-fs { overflow: hidden; }
 
 .tab-bar { display: flex; gap: 4px; margin-bottom: 0.5rem; flex-wrap: wrap; }
 .tab { background: transparent; border: 1px solid var(--border); color: var(--muted); padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; }
-.tab.active { background: var(--accent); border-color: var(--accent); color: #08110e; }
 .tab-pane { display: none; }
 .tab-pane.active { display: block; }
 
@@ -601,7 +600,7 @@ body.tech-chart-fs { overflow: hidden; }
   font-size: 0.82rem; font-family: var(--sans); font-weight: 500;
 }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #012622; font-weight: 600; }
-.tab.active { color: #012622 !important; }
+.tab.active { background: var(--accent); border-color: var(--accent); color: #012622; }
 .btn:hover { border-color: rgba(196,165,116,0.45); }
 .form-inline { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; align-items: center; font-size: 12px; }
 .form-inline input, .form-inline select { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 0.35rem; border-radius: 4px; }
