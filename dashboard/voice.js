@@ -1,5 +1,5 @@
 /**
- * NexBuy voice assistant — Web Speech API + fallback texto (iOS).
+ * Monarch Capital voice assistant — Web Speech API + fallback texto (iOS).
  */
 (function () {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;

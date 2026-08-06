@@ -1158,7 +1158,7 @@ function renderPortfolioPies(p) {
       type: "doughnut",
       data: {
         labels: sectorLabels,
-        datasets: [{ data: sectorData, backgroundColor: ["#3b82f6","#22c55e","#f59e0b","#ef4444","#8b5cf6","#64748b"] }],
+        datasets: [{ data: sectorData, backgroundColor: ["#c4a574","#3d9b6e","#d4a574","#d45d5d","#2d4a40","#9aaba3"] }],
       },
       options: { plugins: { legend: { position: "bottom", labels: { color: "#7d8fa3", font: { size: 10 } } } }, maintainAspectRatio: false },
     });
@@ -1171,7 +1171,7 @@ function renderPortfolioPies(p) {
       type: "pie",
       data: {
         labels: capLabels,
-        datasets: [{ data: capData, backgroundColor: ["#3b82f6","#22c55e","#f59e0b"] }],
+        datasets: [{ data: capData, backgroundColor: ["#c4a574","#3d9b6e","#d4a574"] }],
       },
       options: { plugins: { legend: { position: "bottom", labels: { color: "#7d8fa3", font: { size: 10 } } } }, maintainAspectRatio: false },
     });
@@ -1714,7 +1714,7 @@ async function loadTechnicalChart(t, techAgentReport) {
       width: rsiEl.clientWidth || undefined,
       height: rsiH,
     });
-    const rsiSeries = lwCharts.rsi.addLineSeries({ color: "#3b82f6", lineWidth: 2, title: "RSI" });
+    const rsiSeries = lwCharts.rsi.addLineSeries({ color: "#c4a574", lineWidth: 2, title: "RSI" });
     rsiSeries.setData(pts.filter((p) => p.rsi != null).map((p) => ({ time: mapTime(p), value: p.rsi })));
     rsiSeries.createPriceLine({ price: 70, color: "rgba(239,68,68,0.6)", lineWidth: 1, lineStyle: 2 });
     rsiSeries.createPriceLine({ price: 30, color: "rgba(34,197,94,0.6)", lineWidth: 1, lineStyle: 2 });
@@ -1939,7 +1939,7 @@ function renderGraph(g) {
   $("#graph-summary").textContent = g.summary + "\n\nBeneficiarios: " + (g.beneficiaries || []).join(", ") + "\nEn riesgo: " + (g.at_risk || []).join(", ");
   const nodes = new vis.DataSet((g.nodes || []).map((n) => ({
     id: n.id, label: n.label?.slice(0, 20) || n.id,
-    color: n.type === "company" ? "#3b82f6" : n.type === "geopolitical" ? "#ef4444" : n.type === "commodity" ? "#f59e0b" : "#64748b",
+    color: n.type === "company" ? "#c4a574" : n.type === "geopolitical" ? "#d45d5d" : n.type === "commodity" ? "#d4a574" : "#9aaba3",
   })));
   const edges = new vis.DataSet((g.edges || []).map((e) => ({
     from: e.source, to: e.target, title: e.relation,
@@ -1975,7 +1975,7 @@ function renderProposalVisual(p) {
       labels: allocs.map((a) => a.ticker),
       datasets: [{
         data: allocs.map((a) => a.allocation_usd),
-        backgroundColor: ["#3b82f6","#22c55e","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#ec4899"],
+        backgroundColor: ["#c4a574","#3d9b6e","#d4a574","#d45d5d","#2d4a40","#6b8f7a","#9aaba3"],
       }],
     },
     options: { plugins: { legend: { position: "right", labels: { color: "#7d8fa3", font: { size: 10 } } } }, maintainAspectRatio: false },
@@ -2136,8 +2136,8 @@ async function loadDemoProjections(portfolioId) {
           {
             label: "Base (p50)",
             data: r.points.map((pt) => pt.base),
-            borderColor: "#3b82f6",
-            backgroundColor: "rgba(59,130,246,0.1)",
+            borderColor: "#c4a574",
+            backgroundColor: "rgba(196,165,116,0.1)",
             fill: true,
             borderWidth: 2,
             pointRadius: 0,

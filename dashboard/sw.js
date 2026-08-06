@@ -1,6 +1,7 @@
-const CACHE = "nexbuy-v18";
+const CACHE = "monarch-v1";
 const ASSETS = [
   "/dashboard/static/styles.css",
+  "/dashboard/static/landing.css",
   "/dashboard/static/voice.js",
   "/dashboard/static/app.js",
   "/dashboard/static/icon.svg",

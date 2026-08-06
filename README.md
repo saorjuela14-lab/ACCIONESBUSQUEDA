@@ -1,16 +1,16 @@
 ---
-title: NexBuy CEO Dashboard
-emoji: 📊
-colorFrom: blue
+title: Monarch Capital
+emoji: 👑
+colorFrom: green
 colorTo: gray
 sdk: docker
 app_port: 8000
 pinned: false
 ---
 
-# NexBuy Investment Committee AI
+# Monarch Capital
 
-Professional multi-agent investment research, portfolio management, and thesis generation platform.
+Autonomous multi-agent investment desk — research, risk discipline, and LIVE execution.
 
 ## Architecture
 

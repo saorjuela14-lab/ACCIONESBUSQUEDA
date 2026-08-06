@@ -17,7 +17,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "NexBuy Investment Committee"
+    app_name: str = "Monarch Capital"
     app_env: Literal["development", "staging", "production"] = "development"
     log_level: str = "INFO"
     api_host: str = "0.0.0.0"

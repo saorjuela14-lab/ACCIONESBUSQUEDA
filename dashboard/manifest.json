@@ -1,11 +1,11 @@
 {
-  "name": "Terminal CEO NexBuy",
-  "short_name": "NexBuy",
-  "description": "Panel de inversión multi-agente",
+  "name": "Monarch Capital — Terminal",
+  "short_name": "Monarch",
+  "description": "Escritorio de inversión autónomo · comité multi-agente",
   "start_url": "/dashboard",
   "display": "standalone",
-  "background_color": "#060a0f",
-  "theme_color": "#060a0f",
+  "background_color": "#08110E",
+  "theme_color": "#08110E",
   "orientation": "any",
   "icons": [
     {

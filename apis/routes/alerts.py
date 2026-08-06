@@ -57,7 +57,7 @@ async def test_push_notification() -> dict:
         ticker="TEST",
         alert_type=AlertType.BREAKOUT,
         severity=AlertSeverity.MEDIUM,
-        title="Alerta de prueba NexBuy",
+        title="Alerta de prueba Monarch Capital",
         description="Si ves esto, las notificaciones push están activas.",
     )
     result = await push.notify_alert(sample)
