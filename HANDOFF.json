@@ -1,0 +1,97 @@
+{
+  "documento": "NexBuy Investment Committee — handoff / memoria del agente",
+  "actualizado": "2026-08-06",
+  "owner": "Sergio Orjuela",
+  "producto": "Terminal CEO NexBuy (Comité de Inversión IA)",
+  "repo": "https://github.com/saorjuela14-lab/ACCIONESBUSQUEDA",
+  "agente_origen": {
+    "nombre": "Comité de inversión IA",
+    "bcId": "bc-019f15ec-e5f5-7517-be9e-9d651e341bd5",
+    "url": "https://cursor.com/agents/bc-019f15ec-e5f5-7517-be9e-9d651e341bd5",
+    "branch_suffix_historico": "-1bd5",
+    "nota": "Ese agente vive en otro environment Cursor; desde PROYECTOS no se puede fetch del transcript. Memoria reconstruida desde PRs #45–#64 + README + estado live local."
+  },
+  "norte": {
+    "rol_humano": "CEO: capital, kill-switch, override",
+    "modelo": "Firma autónoma LIVE con comité multi-agente + Risk Desk",
+    "capital_tipo": "ultra-micro (~$22 equity)",
+    "autopilot": "cada 10 min en horario de mercado",
+    "max_notional_orden_usd": 25,
+    "briefings_whatsapp_et": ["09:35", "12:30", "16:05"]
+  },
+  "politica_actual_eod": {
+    "nombre": "smart EOD (#64, supersede #63 flat-all)",
+    "ventana_cierre_et": "15:40",
+    "verde_o_flat": "cerrar (asegurar)",
+    "rojo_moderado": "carry overnight (pescar recuperación)",
+    "rojo_le_menos_8pct_o_sell": "cerrar",
+    "settings": {
+      "intraday_flat_winners_only": true,
+      "intraday_flat_min_pnl_pct": 0,
+      "intraday_carry_max_loss_pct": 8
+    }
+  },
+  "politica_micro": {
+    "cuando": "equity ≤ $30–$50",
+    "mesa_tecnica_micro": "cotización+RSI/momentum (evita timeout Cloudflare 524 del comité completo)",
+    "caza_continua": true,
+    "var_gate": "soft-warn si equity ≤ $50",
+    "time_stop_dias": 3,
+    "trail_pct": 5,
+    "stop_pct": 5,
+    "target_pct": 6,
+    "brackets": "GTC (sobreviven overnight)"
+  },
+  "hechos_operativos_recientes": [
+    "Firma autonomía autorizada por owner (#45)",
+    "USDT barrido a USD; cash LIVE ~$21–22 (#50)",
+    "Compras micro ejecutadas (ej. AMC×2) vía mesa técnica (#59–#60)",
+    "Posiciones AMC/SNAP quedaron abiertas ~1 semana por time-stop 10d + brackets day; owner hizo manul flat; fix GTC + micro exits (#61)",
+    "Holdings review continuo cada ciclo (#62)",
+    "Último merge: smart EOD #64 (2026-08-05)"
+  ],
+  "stack": {
+    "api": "FastAPI + APScheduler",
+    "db": "SQLite (prod efímero en FastAPI Cloud) — Neon Postgres recomendado",
+    "broker": "Alpaca LIVE",
+    "panel": "/dashboard (PWA)",
+    "host_hobby": "FastAPI Cloud (hiberna)",
+    "host_recomendado": "Railway always-on (Dockerfile + railway.toml listos)"
+  },
+  "urls": {
+    "local_dashboard": "http://127.0.0.1:8000/dashboard",
+    "local_health": "http://127.0.0.1:8000/health",
+    "local_docs": "http://127.0.0.1:8000/docs",
+    "fastapi_cloud_doc": "https://nexbuy-ceo.fastapicloud.dev",
+    "token_ejemplo_readme": "Portafolio111"
+  },
+  "estado_live_local_2026_08_06": {
+    "health": "ok",
+    "broker_alpaca": "NO configurada en este VM (keys vacías)",
+    "portafolio": {"nombre": "Portafolio CEO", "cash": 22, "posiciones": 0},
+    "firm_autonomy": true,
+    "auto_execute_allowed": false,
+    "auto_execute_reason": "Alpaca no configurada",
+    "market_regime": "bearish",
+    "polygon": "401 key inválida",
+    "yfinance": "activo",
+    "whatsapp_telegram": "sin tokens en .env local"
+  },
+  "pendiente_inmediato": [
+    "Cargar ALPACA_API_KEY + ALPACA_SECRET_KEY (LIVE) y reiniciar → Doctor → sync-alpaca",
+    "Restaurar DASHBOARD_ACCESS_TOKEN (+ WhatsApp CallMeBot / Telegram) para alertas 16:05 ET",
+    "Confirmar host always-on (Railway) + RAILWAY_KEEPALIVE_URL; FastAPI Cloud Hobby duerme",
+    "Neon DATABASE_URL si se quiere persistencia real entre redeploys",
+    "Con mercado abierto: verificar Autopilot + smart EOD + holdings review"
+  ],
+  "endpoints_ops_clave": [
+    "GET /api/v1/ops/status",
+    "POST /api/v1/ops/autopilot/run",
+    "POST /api/v1/ops/kill-switch/on",
+    "POST /api/v1/ops/reconcile",
+    "POST /api/v1/ops/holdings/review",
+    "POST /api/v1/ops/intraday/flat",
+    "GET /api/v1/broker/status",
+    "POST /api/v1/alerts/test-push"
+  ]
+}

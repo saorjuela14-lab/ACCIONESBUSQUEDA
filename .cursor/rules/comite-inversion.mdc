@@ -1,0 +1,34 @@
+---
+description: Memoria obligatoria — Terminal CEO / Comité de Inversión NexBuy
+alwaysApply: true
+---
+
+# NexBuy Investment Committee — memoria del agente
+
+Antes de cambiar estrategia o código de trading, lee en este orden:
+1. Este archivo
+2. `HANDOFF.json`
+3. `README.md` (ops + deploy)
+4. `CEO_TERMINAL_NOW.md` si existe (estado de sesión)
+
+## Agente origen
+- Nombre: **Comité de inversión IA**
+- bcId: `bc-019f15ec-e5f5-7517-be9e-9d651e341bd5`
+- Historial de PRs con sufijo de rama `-1bd5` (hasta #64 smart EOD, 2026-08-05)
+- Ese agente puede estar en otro environment Cursor; si el transcript no es accesible, `HANDOFF.json` manda.
+
+## Norte (no negociable sin override del CEO)
+- Firma **autónoma LIVE** (`FIRM_AUTONOMY=true`) con gates: kill-switch, comité/mesa micro, risk desk, mercado abierto, max **$25**/orden.
+- Capital **ultra-micro** (~$22): mesa técnica micro + caza continua (el comité completo de 10 agentes hace timeout en edge).
+- Autopilot ~**10 min** en horario de mercado.
+- WhatsApp briefing **3×/día ET**: 09:35 / 12:30 / 16:05 — no spamear.
+- Smart EOD (#64): a las **15:40 ET** cerrar verdes/flat; carry rojos moderados; cortar ≤−8% o tesis sell.
+
+## Host
+- Preferir **Railway always-on**; FastAPI Cloud Hobby hiberna y pierde crons.
+- SQLite en cloud es efímero → Neon si hay que persistir.
+
+## Pendiente típico al retomar
+1. Keys Alpaca en el entorno activo + sync
+2. Token dashboard + WhatsApp/Telegram
+3. Confirmar prod always-on y Autopilot con mercado abierto
