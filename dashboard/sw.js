@@ -1,4 +1,4 @@
-const CACHE = "monarch-v1";
+const CACHE = "monarch-v2";
 const ASSETS = [
   "/dashboard/static/styles.css",
   "/dashboard/static/landing.css",

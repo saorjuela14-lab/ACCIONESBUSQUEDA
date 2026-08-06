@@ -13,7 +13,7 @@
   <title>Monarch Capital — Terminal</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,500&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/dashboard/static/styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -22,77 +22,95 @@
 <body>
   <div class="terminal">
     <header class="term-header">
-      <div class="term-brand"><span class="logo">MC</span> Monarch Capital <span class="ver">Terminal</span></div>
-      <div class="regime" id="market-regime">MERCADO —</div>
+      <a class="term-brand" href="/">
+        <span class="logo">MC</span>
+        <span class="brand-text">
+          <span class="brand-name">Monarch Capital</span>
+          <span class="ver">Terminal</span>
+        </span>
+      </a>
+      <div class="regime" id="market-regime">Mercado —</div>
       <div class="header-actions">
-        <input id="global-ticker" type="text" placeholder="TICKER" maxlength="10" />
+        <input id="global-ticker" type="text" placeholder="Ej. AAPL" maxlength="10" aria-label="Ticker" />
         <button id="btn-analyze" class="btn primary">Analizar</button>
-        <button id="btn-scan" class="btn">Escanear WL</button>
+        <button id="btn-scan" class="btn">Escanear</button>
         <button id="btn-refresh" class="btn">Actualizar</button>
       </div>
     </header>
 
     <div id="voice-bar" class="voice-bar">
-      <button id="btn-voice" class="btn voice-btn-mic" title="Asistente de voz" type="button">🎙</button>
+      <button id="btn-voice" class="btn voice-btn-mic" title="Asistente de voz" type="button" aria-label="Micrófono">🎙</button>
       <div class="voice-bar-main">
-        <span id="voice-status" class="voice-status">Di: precio NVDA · analiza AAPL · compra 1 AAPL · confirma</span>
+        <span id="voice-status" class="voice-status">Prueba: «precio NVDA» · «analiza AAPL» · «compra 1 AAPL»</span>
         <div class="voice-text-row">
-          <input id="voice-text-input" type="text" placeholder="O escribe: cómo está el mercado, analiza VRT…" autocomplete="off" />
+          <input id="voice-text-input" type="text" placeholder="O escribe aquí en español…" autocomplete="off" />
           <button id="btn-voice-send" class="btn primary" type="button">Enviar</button>
         </div>
       </div>
     </div>
 
-    <section class="ceo-bar" id="ceo-bar">
-      <div class="ceo-kpi"><label>Portafolio</label><div id="ceo-portfolio">—</div></div>
-      <div class="ceo-kpi"><label>Rendimiento</label><div id="ceo-return">—</div></div>
+    <section class="ceo-bar" id="ceo-bar" aria-label="Resumen de tu dinero">
+      <div class="ceo-kpi highlight"><label>Tu dinero</label><div id="ceo-portfolio">—</div></div>
+      <div class="ceo-kpi"><label>Ganancia / pérdida</label><div id="ceo-return">—</div></div>
       <div class="ceo-kpi"><label>Alertas</label><div id="ceo-alerts">—</div></div>
-      <div class="ceo-kpi"><label>Watchlist</label><div id="ceo-watchlist-count">—</div></div>
+      <div class="ceo-kpi"><label>En seguimiento</label><div id="ceo-watchlist-count">—</div></div>
       <div class="ceo-kpi"><label>Actualizado</label><div id="ceo-updated">—</div></div>
     </section>
 
-    <section class="indices-row" id="indices-row"></section>
+    <section class="indices-row" id="indices-row" aria-label="Índices del mercado"></section>
+
+    <section class="panel status-panel" aria-label="Estado del escritorio">
+      <div class="panel-head">
+        <h3>Estado en 3 líneas</h3>
+        <span class="muted hint-pill">Lee esto primero</span>
+      </div>
+      <div class="status-stack">
+        <p id="alpaca-status" class="status-chip muted">Cuenta: comprobando…</p>
+        <div id="risk-desk-status" class="status-chip muted">Riesgo: cargando…</div>
+        <div id="ops-desk-status" class="status-chip muted">Firma: cargando…</div>
+      </div>
+      <details class="controls-drawer">
+        <summary>Controles avanzados <span class="muted">(solo si lo necesitas)</span></summary>
+        <div class="alpaca-actions">
+          <button type="button" id="btn-alpaca-doctor" class="btn">Chequeo</button>
+          <button type="button" id="btn-alpaca-refresh-book" class="btn">Ver órdenes</button>
+          <button type="button" id="btn-alpaca-cancel-all" class="btn">Cancelar órdenes</button>
+          <button type="button" id="btn-risk-refresh" class="btn">Actualizar riesgo</button>
+          <button type="button" id="btn-ops-reconcile" class="btn">Sincronizar</button>
+          <button type="button" id="btn-ops-lifecycle" class="btn">Revisar posiciones</button>
+          <button type="button" id="btn-ops-autopilot" class="btn primary">Autopilot</button>
+          <button type="button" id="btn-ops-audit" class="btn">Historial</button>
+          <button type="button" id="btn-kill-switch" class="btn danger">Parada de emergencia</button>
+        </div>
+        <div id="ops-audit-log" class="alpaca-book muted hidden"></div>
+        <div id="alpaca-book" class="alpaca-book muted">Órdenes y posiciones: pulsa «Ver órdenes»</div>
+      </details>
+    </section>
 
     <section class="panel briefing-panel">
       <div class="panel-head">
-        <h3>Briefing Diario CEO</h3>
+        <h3>Resumen del día</h3>
         <div>
           <a id="btn-export-briefing" class="btn" href="#" target="_blank">Exportar</a>
           <span id="briefing-date" class="muted"></span>
         </div>
       </div>
-      <div id="daily-briefing" class="briefing-body">Cargando briefing…</div>
+      <div id="daily-briefing" class="briefing-body">Cargando resumen…</div>
     </section>
 
     <section class="panel trade-recs-panel" id="trade-recs-panel">
       <div class="panel-head">
-        <h3>Recomendaciones Corto Plazo</h3>
-        <div>
+        <h3>Ideas de operación</h3>
+        <div class="panel-actions">
           <span id="trade-recs-date" class="muted"></span>
-          <button id="btn-manage-capital" class="btn" style="margin-left:6px">Gestionar capital</button>
-          <button id="btn-generate-trades" class="btn primary" style="margin-left:6px">Generar ahora</button>
+          <button id="btn-manage-capital" class="btn">Gestionar capital</button>
+          <button id="btn-generate-trades" class="btn primary">Buscar ideas</button>
         </div>
       </div>
-      <p id="alpaca-status" class="alpaca-status muted">Alpaca: comprobando…</p>
-      <div id="risk-desk-status" class="risk-desk muted">Risk Desk: cargando…</div>
-      <div id="ops-desk-status" class="risk-desk muted">Ops: cargando…</div>
-      <div class="alpaca-actions">
-        <button type="button" id="btn-alpaca-doctor" class="btn" style="font-size:11px">Doctor</button>
-        <button type="button" id="btn-alpaca-refresh-book" class="btn" style="font-size:11px">Ver órdenes</button>
-        <button type="button" id="btn-alpaca-cancel-all" class="btn" style="font-size:11px">Cancelar órdenes</button>
-        <button type="button" id="btn-risk-refresh" class="btn" style="font-size:11px">Risk Desk</button>
-        <button type="button" id="btn-ops-reconcile" class="btn" style="font-size:11px">Reconciliar</button>
-        <button type="button" id="btn-ops-lifecycle" class="btn" style="font-size:11px">Lifecycle</button>
-        <button type="button" id="btn-ops-autopilot" class="btn primary" style="font-size:11px">Autopilot</button>
-        <button type="button" id="btn-ops-audit" class="btn" style="font-size:11px">Audit</button>
-        <button type="button" id="btn-kill-switch" class="btn" style="font-size:11px;color:#b91c1c">KILL SWITCH</button>
-      </div>
-      <div id="ops-audit-log" class="alpaca-book muted hidden"></div>
-      <div id="alpaca-book" class="alpaca-book muted">Órdenes/posiciones Alpaca: pulsa «Ver órdenes»</div>
-      <p id="trade-recs-summary" class="prose" style="font-size:12px;margin:0 0 0.5rem"></p>
+      <p id="trade-recs-summary" class="prose digest-summary"></p>
       <div id="micro-plan-panel" class="micro-plan-panel hidden"></div>
-      <div id="trade-recs-grid" class="trade-recs-grid">Cargando recomendaciones…</div>
-      <p id="trade-recs-disclaimer" class="muted" style="font-size:10px;margin-top:0.5rem"></p>
+      <div id="trade-recs-grid" class="trade-recs-grid">Cargando ideas…</div>
+      <p id="trade-recs-disclaimer" class="muted digest-disclaimer"></p>
     </section>
 
     <section class="panel" id="watchlist-matrix-panel">
@@ -360,10 +378,10 @@
 
     <nav class="mobile-nav" id="mobile-nav" aria-label="Navegación móvil">
       <button type="button" data-scroll="ceo-bar" class="mob-nav-btn active">Inicio</button>
-      <button type="button" id="mob-tech" class="mob-nav-btn">Técnico</button>
+      <button type="button" id="mob-tech" class="mob-nav-btn">Gráfico</button>
       <button type="button" id="mob-analyze" class="mob-nav-btn primary">Analizar</button>
-      <button type="button" data-scroll="trade-recs-panel" class="mob-nav-btn">Trades</button>
-      <button type="button" data-scroll="portfolio-panel" class="mob-nav-btn">Portafolio</button>
+      <button type="button" data-scroll="trade-recs-panel" class="mob-nav-btn">Ideas</button>
+      <button type="button" data-scroll="portfolio-panel" class="mob-nav-btn">Dinero</button>
     </nav>
   </div>
   <div id="toast" class="toast hidden"></div>
