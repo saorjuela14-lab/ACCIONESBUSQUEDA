@@ -1,9 +1,30 @@
-# Monarch Capital — Guion Shark Tank
+# Monarch Capital — Guion Shark Tank (ES)
 
-**Tiempo objetivo:** 2:30–3:00 + Q&A  
-**Deck Canva:** [Ver](https://www.canva.com/d/AP29U3Sbgpv5tIZ) · [Editar](https://www.canva.com/d/8EPmsWB3wkmQYHk)  
-**Logo Canva:** [Ver](https://www.canva.com/d/IAoEh0yNiqepJ_1) · [Editar](https://www.canva.com/d/FKv4zrJAyPOTVpX)  
-**Producto LIVE:** terminal autónomo con broker Alpaca (cuenta real)
+**Actualizado:** 6 ago 2026 (datos LIVE Alpaca)  
+**Tiempo:** 2:45–3:15 + Q&A  
+**Deck Canva:** [Ver](https://www.canva.com/d/Okhpj0q7BYqRTFM) · [Editar](https://www.canva.com/d/FqQgkNCyk_R8qwD)  
+**Logo:** [Ver](https://www.canva.com/d/IAoEh0yNiqepJ_1) · [Editar](https://www.canva.com/d/FKv4zrJAyPOTVpX)
+
+---
+
+## Estado del capital (decir en voz alta — cifras reales)
+
+| Métrica | Valor |
+|--------|------:|
+| Capital inicial (libro) | **USD 21.74** |
+| Equity actual | **USD 22.06** |
+| Retorno vs inicial | **≈ +1.5%** |
+| Equity cierre ayer | USD 22.56 |
+| Variación vs ayer | **≈ −2.2%** |
+| Cash | USD 14.97 (~68%) |
+| Invertido | ~USD 7.09 (~32%) |
+| Posición | **SOUN ×1** · entrada 7.16 · mark ~7.09 (−0.9%) |
+| Orden abierta | Take-profit bracket **8.01** (GTC) |
+| Modo | **Alpaca LIVE** (no paper) · autonomía ON · kill switch listo |
+| Cuenta desde | 21 jul 2026 |
+
+**Frase honesta:**  
+> “Con ~22 dólares no vendo milagros de retorno. Vendo un desk que ya opera en dinero real, con pérdidas y aprendizajes convertidos en política.”
 
 ---
 
@@ -12,15 +33,15 @@
 > “Hoy la IA escribe ensayos sobre acciones.  
 > **Monarch Capital las opera** — con comité, riesgo y disciplina de firma.”
 
-Pausa. Nombre en pantalla. Sonrisa. Siguiente.
+Pausa. Nombre en pantalla. Siguiente.
 
 ---
 
 ## 1. El problema (25 s)
 
-- Retail y founders con capital chico **no tienen un desk**: tienen apps de broker y feeds de Twitter.
-- Robo-advisors son lentos y genéricos; chatbots opinan pero **no cargan el riesgo**.
-- El 80% del edge se pierde en: tamaño malo, no cortar perdedoras, no asegurar ganadoras, revenge trading.
+- Retail y founders con capital chico **no tienen un desk**: tienen apps de broker y feeds.
+- Robo-advisors son lentos; chatbots opinan pero **no cargan el riesgo**.
+- El edge se pierde en: tamaño malo, no cortar perdedoras, no asegurar ganadoras, revenge trading.
 
 **Punch:** *“No falta información. Falta un CIO que no duerma y no se enamore del ticker.”*
 
@@ -30,134 +51,89 @@ Pausa. Nombre en pantalla. Sonrisa. Siguiente.
 
 **Monarch Capital** = escritorio de inversión autónomo.
 
-1. **Descubre** nombres asequibles al equity real.  
-2. **Comité multi-agente** (técnico, fundamental, news, macro, risk).  
-3. **Dimensiona** por presupuesto de riesgo en el stop — política **2R** (stop 8% / TP 16%).  
-4. **Ejecuta LIVE** (Alpaca) con brackets y reconcile.  
-5. **Revisa** cada ciclo: trail tras +5%, cooldown 90m post-stop, EOD inteligente (asegura verdes; carry rojo solo si merece recuperación).
+1. Descubre nombres asequibles al equity real.  
+2. Comité multi-agente (técnico, fundamental, news, macro, risk).  
+3. Dimensiona por presupuesto de riesgo en el stop — **2R** (stop 8% / TP 16%).  
+4. Ejecuta LIVE (Alpaca) con brackets y reconcile.  
+5. Revisa: trail tras +5%, cooldown 90m post-stop, EOD inteligente.
 
-No es un chart bonito. Es un **proceso que cierra el loop**.
-
----
-
-## 3. Por qué ahora (15 s)
-
-- LLMs + APIs de broker + datos de mercado ya permiten un desk software-first.
-- El retail profesionaliza: quiere autonomía **con** guardrails, no casino.
-- Competencia: brokers (ejecutan), robo (asignan), copilots (sugieren). Nadie **posee el ciclo completo** con disciplina explícita.
+Autopilot cada **10 min** · tope **USD 25/orden** en fase micro.
 
 ---
 
-## 4. Tracción / prueba (35 s) — ser honestos
+## 3. Cómo vamos con el capital (40 s) — slide clave
 
-**Qué ya está en producción:**
+Mostrar KPIs. Narrar sin maquillaje:
 
-| Pieza | Estado |
-|--------|--------|
-| Autonomía de firma (autopilot) | ON en LIVE |
-| Comité + recomendaciones corto plazo | Operativo |
-| Risk desk (stops, trail, cooldown) | Política 2R desplegada |
-| EOD smart (winners out / losers carry controlado) | Desplegado |
-| Briefings / alertas / voz | En terminal |
-| Kill switch | Disponible |
+1. Entramos con **USD 21.74**. Hoy equity **USD 22.06** (~+1.5% acumulado).  
+2. Ayer cerramos en **22.56**; hoy estamos ~**−2.2%** intradía/sesión — transparencia.  
+3. Posición abierta: **SOUN**, ligeramente roja; TP en **8.01**.  
+4. Cash ~68% — no estamos overexposed.  
+5. Autonomía ON: el sistema compra/protege/cierra sin click; yo soy el CEO con kill switch.
 
-**Narrativa correcta (no inventar AUM):**  
-Probamos el proceso en **cuenta micro LIVE**. El valor no es el equity chico — es que el loop **compró, protegió, cerró y aprendió**. Cada error (stop-out, overnight giveback, revenge) se convirtió en **política de código**.
-
-Frase segura:
-
-> “No vengo a vender backtests. Vengo con un desk que ya opera en dinero real y se endurece con cada ciclo.”
+> “El valor del micro no es el tamaño. Es que el loop **ya corrió en LIVE** y cada error se volvió código.”
 
 ---
 
-## 5. Modelo de negocio (20 s)
+## 4. Riesgos y disciplina (30 s)
 
-**Hoy (fase desk):**
+| Política | Parámetro |
+|----------|-----------|
+| Stop micro | 8% |
+| Take-profit | 16% (2R) |
+| Trail | 10% solo tras +5% |
+| Cooldown post-stop | 90 minutos |
+| Máx. posición | 30% del equity |
+| Tope orden | USD 25 |
+| EOD smart | Verdes out · rojo carry hasta −8% |
+| Risk desk | VaR 8% · beta 1.8 · sector 40% |
 
-- Software de terminal + autonomía para operadores / founders / family offices chicos.
-- Pricing futuro: suscripción por cuenta + % sobre AUM bajo mandato (o seat de desk).
-
-**Mañana (fase firma):**
-
-- Multi-cuenta / white-label para advisors.
-- Data + risk-as-a-service (políticas empaquetadas).
-- Briefings institucionales y compliance trail.
-
-**Ask claro:** capital + intros de distribución (brokers, neobanks, educadores financieros) para pasar de 1 desk → N desks.
+> “El LLM no manda solo. Las reglas de riesgo son código duro.”
 
 ---
 
-## 6. El ask (20 s)
+## 5. Proyecciones (25 s) — escenarios, no promesas de CAGR
 
-Ajusta el número a tu ronda real. Ejemplo de estructura:
+| Escenario | Horizonte | Qué significa |
+|-----------|-----------|---------------|
+| **A — Validación** | 3–6 meses | Seguir micro LIVE endureciendo políticas |
+| **B — Desk operador** | Siguiente hito | Capital **USD 5k–25k** con mismos guardrails |
+| **C — Multi-cuenta** | Escala | Advisors / neobanks white-label |
 
-> “Buscamos **$[X]** para: (1) infraestructura always-on y datos, (2) hardening regulatorio / audit, (3) onboarding multi-cuenta y empaque B2B.  
-> A cambio: equity / partnership según término estándar.  
-> Lo que más necesitamos además del cheque: **distribución**.”
+**Norte:** supervivencia del proceso + drawdown controlado — no ROI teatral con 22 dólares.
 
-Si no hay número cerrado: pide **partnership estratégico** + runway de producto, no humo.
+---
+
+## 6. Modelo y el ask (25 s)
+
+- **Hoy:** software de terminal + autonomía.  
+- **Mañana:** suscripción por cuenta + % AUM / seat de desk.  
+- **Ask:** capital + **distribución** (brokers, neobanks, educadores).  
+- Uso: infra always-on, datos, compliance, onboarding multi-cuenta.
+
+*(Di tu cifra de ronda en una oración si ya la tienes.)*
 
 ---
 
 ## 7. Cierre (15 s)
 
 > “Monarch Capital no promete alfa mágico.  
-> Promete **proceso**: decidir, dimensionar, ejecutar y cosechar — sin drama.  
-> Los modelos sobran. Los desks autónomos con disciplina, no.”
+> Promete **proceso**: decidir, dimensionar, ejecutar y cosechar.  
+> Modelos sobran. Desks autónomos con disciplina, no.”
 
-Mano a los Sharks. Silencio 1 segundo. “Preguntas.”
-
----
-
-## Q&A — respuestas listas
-
-### “¿Cuál es el track record?”
-Cuenta micro LIVE + políticas documentadas. No vendemos CAGR inventado; vendemos **sistema auditable**. Roadmap: paper → micro → capital escalonado con mismos guardrails.
-
-### “¿Cómo ganan dinero?”
-Software + mandato (sub / AUM). Primero producto sticky en el desk; luego distribución B2B.
-
-### “¿Qué pasa si el modelo alucina?”
-El LLM **no manda solo**: risk rules, sizing por stop, cooldown, EOD, kill switch y reconcile con el broker son código duro.
-
-### “¿Regulación?”
-Hoy: herramienta de decisión/ejecución sobre broker regulado (Alpaca). No somos un hedge fund público. Roadmap: compliance pack, logs, roles, y asesoría legal antes de AUM de terceros.
-
-### “¿Moat?”
-Loop cerrado + políticas aprendidas en LIVE + UX de terminal CEO. Datos de decisión propios con el tiempo. Difícil de copiar “bonito”; fácil de subestimar.
-
-### “¿Competidores?”
-Interactive Brokers / Robinhood = pipes. Betterment = allocation. ChatGPT plugins = opinión. Nosotros = **CIO operativo**.
-
-### “¿Por qué Monarch?”
-Marca de soberanía y disciplina — no casino neón. Visual: bosque/ink + champagne. Firma, no tip.
-
-### “¿Qué hiciste mal y qué cambiaste?”
-Ejemplos reales del desk: stop-outs sin cooldown → **90m cooldown**; overnight giveback → **EOD smart**; sizing emocional → **risk budget en el stop**; TP antes que time-stop.
+“Preguntas.”
 
 ---
 
-## Demo en vivo (si hay wifi)
+## Q&A rápido
 
-1. Abrir landing → marca **Monarch Capital**.  
-2. Entrar al terminal → KPIs, risk desk, ops.  
-3. Mostrar `/ops/status` o panel: autonomía, disciplina 2R.  
-4. Una posición / orden reciente (sin overshare de keys).  
-5. Kill switch: “aquí apago la firma en un clic.”
-
----
-
-## Checklist día del pitch
-
-- [ ] Deck Canva abierto en modo presentador  
-- [ ] Terminal login listo (token en password manager)  
-- [ ] Kill switch OFF solo si quieres demo de autonomía; si no, explicar  
-- [ ] Una frase de tracción honestísima memorizada  
-- [ ] Ask en una oración  
-- [ ] Agua. Reloj. Sin jerga de 40 segundos  
+**¿Track record?** Micro LIVE + políticas documentadas. No vendemos CAGR inventado.  
+**¿Regulación?** Herramienta sobre broker regulado (Alpaca). No somos hedge fund público.  
+**¿Moat?** Loop cerrado + políticas aprendidas en LIVE + UX de terminal CEO.  
+**¿Qué salió mal?** Stop-outs sin cooldown → 90m; overnight giveback → EOD smart; sizing emocional → risk budget.
 
 ---
 
-## One-liner de bolsillo
+## One-liner
 
-**Monarch Capital es el CIO autónomo que retail y founders no pueden contratar — con comité, riesgo 2R y ejecución LIVE.**
+**Monarch Capital es el CIO autónomo que el retail no puede contratar — con comité, riesgo 2R y ejecución LIVE.**

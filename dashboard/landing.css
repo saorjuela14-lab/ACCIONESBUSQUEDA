@@ -1,4 +1,4 @@
-/* Monarch Capital — public landing */
+/* Monarch Capital — landing (visión institucional / Stitch-grade) */
 :root {
   --ink: #08110e;
   --forest: #0f1a17;
@@ -9,6 +9,8 @@
   --parchment: #f2ebe0;
   --muted: rgba(242, 235, 224, 0.62);
   --line: rgba(196, 165, 116, 0.22);
+  --up: #3d9b6e;
+  --down: #d45d5d;
   --serif: "Fraunces", Georgia, "Times New Roman", serif;
   --sans: "Outfit", "Segoe UI", sans-serif;
 }
@@ -43,16 +45,16 @@ a {
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(ellipse 90% 70% at 70% 20%, rgba(45, 74, 64, 0.55), transparent 55%),
-    radial-gradient(ellipse 60% 50% at 15% 80%, rgba(196, 165, 116, 0.12), transparent 50%),
-    linear-gradient(165deg, #0a1411 0%, #08110e 45%, #0c1915 100%);
+    radial-gradient(ellipse 90% 70% at 78% 18%, rgba(45, 74, 64, 0.55), transparent 55%),
+    radial-gradient(ellipse 55% 45% at 12% 88%, rgba(196, 165, 116, 0.1), transparent 50%),
+    linear-gradient(165deg, #0a1411 0%, #08110e 48%, #0c1915 100%);
 }
 
 .atmosphere::after {
   content: "";
   position: absolute;
   inset: 0;
-  opacity: 0.35;
+  opacity: 0.28;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
 }
 
@@ -116,7 +118,7 @@ a {
   border-color: rgba(196, 165, 116, 0.45);
 }
 
-/* Hero — one composition */
+/* Hero — una composición: marca + línea + CTA + plano visual */
 .hero {
   min-height: calc(100vh - 5rem);
   display: grid;
@@ -130,22 +132,24 @@ a {
   animation: rise 1s ease 0.1s both;
 }
 
-.brand-hero {
-  margin: 0 0 1.25rem;
-  font-family: var(--serif);
-  font-weight: 400;
-  font-size: clamp(3.4rem, 8vw, 5.6rem);
-  line-height: 0.95;
-  letter-spacing: -0.03em;
+.brand-kicker {
+  margin: 0 0 0.35rem;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: clamp(1.35rem, 3vw, 1.75rem);
+  letter-spacing: 0.04em;
+  color: var(--parchment);
 }
 
-.brand-hero span {
-  display: block;
+.brand-hero {
+  margin: 0 0 1.35rem;
+  font-family: var(--serif);
+  font-weight: 400;
   font-style: italic;
-  font-weight: 300;
+  font-size: clamp(4.2rem, 11vw, 7rem);
+  line-height: 0.9;
+  letter-spacing: -0.03em;
   color: var(--champagne);
-  font-size: 0.72em;
-  margin-top: 0.15em;
 }
 
 .hero-line {
@@ -226,22 +230,36 @@ a {
   animation: drift 18s ease-in-out infinite reverse;
 }
 
-.chart-plane {
+.desk-plane {
   position: absolute;
-  inset: 12% 8% 18% 18%;
+  inset: 10% 6% 16% 14%;
   border: 1px solid var(--line);
-  border-radius: 2px;
-  background: linear-gradient(180deg, rgba(15, 26, 23, 0.4), rgba(8, 17, 14, 0.75));
+  background:
+    linear-gradient(180deg, rgba(15, 26, 23, 0.35), rgba(8, 17, 14, 0.82)),
+    radial-gradient(ellipse 80% 60% at 70% 30%, rgba(196, 165, 116, 0.12), transparent 60%);
   overflow: hidden;
+  box-shadow: 0 40px 80px rgba(0, 0, 0, 0.35);
 }
 
-.chart-plane svg {
-  width: 100%;
-  height: 100%;
-  display: block;
+.desk-glow {
+  position: absolute;
+  top: -20%;
+  right: 10%;
+  width: 55%;
+  height: 70%;
+  background: linear-gradient(160deg, rgba(242, 235, 224, 0.18), transparent 55%);
+  transform: skewX(-12deg);
+  animation: beam 8s ease-in-out infinite alternate;
 }
 
-.chart-plane path {
+.desk-chart {
+  position: absolute;
+  inset: 18% 8% 22% 8%;
+  width: auto;
+  height: auto;
+}
+
+.desk-chart path {
   fill: none;
   stroke: var(--champagne);
   stroke-width: 1.6;
@@ -262,7 +280,7 @@ a {
   color: var(--muted);
 }
 
-/* Sections — one job each */
+/* Secciones */
 .section {
   padding: 4.5rem 0 1rem;
   max-width: 40rem;
@@ -288,6 +306,53 @@ a {
   line-height: 1.65;
   color: var(--muted);
   font-weight: 300;
+}
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-top: 2rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.kpi {
+  min-width: 0;
+}
+
+.kpi-label {
+  display: block;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.45rem;
+}
+
+.kpi-value {
+  display: block;
+  font-family: var(--serif);
+  font-size: clamp(1.35rem, 2.8vw, 1.85rem);
+  font-weight: 500;
+  color: var(--champagne);
+  letter-spacing: -0.02em;
+}
+
+.kpi-value.up {
+  color: var(--up);
+}
+
+.kpi-value.down {
+  color: var(--down);
+}
+
+.capital-note {
+  margin: 1.25rem 0 0;
+  font-size: 0.92rem;
+  color: var(--muted);
+  font-weight: 300;
+  line-height: 1.5;
 }
 
 .pillar-list {
@@ -318,30 +383,6 @@ a {
   line-height: 1.55;
   font-weight: 300;
   max-width: 36rem;
-}
-
-.proof-strip {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1.5rem;
-  margin-top: 2.25rem;
-  padding-top: 1.75rem;
-  border-top: 1px solid var(--line);
-}
-
-.proof-strip strong {
-  display: block;
-  font-family: var(--serif);
-  font-size: 1.65rem;
-  font-weight: 500;
-  color: var(--champagne);
-  margin-bottom: 0.35rem;
-}
-
-.proof-strip span {
-  font-size: 0.88rem;
-  color: var(--muted);
-  line-height: 1.4;
 }
 
 .pitch-block {
@@ -402,6 +443,17 @@ a {
   }
 }
 
+@keyframes beam {
+  from {
+    opacity: 0.55;
+    transform: skewX(-12deg) translateX(0);
+  }
+  to {
+    opacity: 0.9;
+    transform: skewX(-12deg) translateX(-8px);
+  }
+}
+
 @media (max-width: 860px) {
   .nav-links a:not(.nav-cta) {
     display: none;
@@ -418,8 +470,8 @@ a {
     order: -1;
   }
 
-  .proof-strip {
-    grid-template-columns: 1fr;
+  .kpi-grid {
+    grid-template-columns: 1fr 1fr;
     gap: 1.25rem;
   }
 }

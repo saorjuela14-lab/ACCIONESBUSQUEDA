@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#08110E" />
-  <meta name="description" content="Monarch Capital — escritorio de inversión autónomo con comité multi-agente, disciplina de riesgo y ejecución LIVE." />
+  <meta name="description" content="Monarch Capital — escritorio de inversión autónomo. Comité multi-agente, disciplina 2R y ejecución LIVE." />
   <title>Monarch Capital</title>
   <link rel="icon" href="/dashboard/static/icon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -24,8 +24,8 @@
         <span class="wordmark">Monarch Capital</span>
       </a>
       <nav class="nav-links">
-        <a href="#desk">El desk</a>
-        <a href="#discipline">Disciplina</a>
+        <a href="#capital">Capital</a>
+        <a href="#riesgo">Riesgo</a>
         <a href="#ask">Pitch</a>
         <a class="nav-cta" href="/dashboard">Abrir terminal</a>
       </nav>
@@ -33,76 +33,112 @@
 
     <section class="hero">
       <div class="hero-copy">
-        <h1 class="brand-hero">Monarch <span>Capital</span></h1>
+        <p class="brand-kicker">Monarch</p>
+        <h1 class="brand-hero">Capital</h1>
         <p class="hero-line">
           Un CIO en software: comité multi-agente, riesgo con disciplina institucional
           y ejecución LIVE — capital que trabaja con proceso, no por impulso.
         </p>
         <div class="cta-row">
           <a class="btn btn-primary" href="/dashboard">Entrar al terminal</a>
-          <a class="btn btn-ghost" href="#ask">Ver el pitch</a>
+          <a class="btn btn-ghost" href="#capital">Ver el capital LIVE</a>
         </div>
       </div>
       <div class="hero-visual" aria-hidden="true">
         <div class="orb orb-a"></div>
         <div class="orb orb-b"></div>
-        <div class="chart-plane">
-          <svg viewBox="0 0 400 220" preserveAspectRatio="none">
+        <div class="desk-plane">
+          <div class="desk-glow"></div>
+          <svg class="desk-chart" viewBox="0 0 400 220" preserveAspectRatio="none">
             <path d="M20 170 C70 165, 90 120, 130 125 S190 90, 230 95 S300 55, 340 48 S370 70, 390 40" />
           </svg>
-          <p class="plane-caption">Autonomous desk · LIVE</p>
+          <p class="plane-caption">Escritorio autónomo · Alpaca LIVE</p>
         </div>
       </div>
+    </section>
+
+    <section class="section section-wide" id="capital">
+      <h2>Cómo vamos con el capital</h2>
+      <p class="section-lead">
+        Prueba LIVE en cuenta real — no paper. Cifras del libro Alpaca, sin maquillaje.
+      </p>
+      <div class="kpi-grid" id="kpi-grid">
+        <div class="kpi">
+          <span class="kpi-label">Capital inicial</span>
+          <strong class="kpi-value" id="kpi-initial">USD 21.74</strong>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">Equity actual</span>
+          <strong class="kpi-value" id="kpi-equity">—</strong>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">vs inicial</span>
+          <strong class="kpi-value" id="kpi-ret">—</strong>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">vs ayer</span>
+          <strong class="kpi-value" id="kpi-day">—</strong>
+        </div>
+      </div>
+      <p class="capital-note" id="capital-note">Cargando estado LIVE…</p>
     </section>
 
     <section class="section" id="desk">
       <h2>No es otro chart. Es un desk.</h2>
       <p class="section-lead">
         Los brokers ejecutan. Los robo-advisors asignan despacio.
-        Monarch Capital mantiene la tesis viva: reformula stops y take-profit,
+        Monarch mantiene la tesis viva: reformula stops y take-profit,
         asegura ganadoras y solo deja carry overnight cuando el rojo merece recuperación.
       </p>
     </section>
 
-    <section class="section section-wide" id="discipline">
-      <h2>Cómo decide</h2>
-      <p class="section-lead">Cinco pasos. Un loop. Sin FOMO.</p>
+    <section class="section section-wide" id="riesgo">
+      <h2>Riesgos en código</h2>
+      <p class="section-lead">El modelo sugiere. La disciplina ejecuta.</p>
       <ol class="pillar-list">
         <li>
-          <strong>Descubre</strong>
-          <p>Oportunidades asequibles al capital real de la cuenta — no listas genéricas.</p>
+          <strong>2R — Stop 8% · TP 16%</strong>
+          <p>Tamaño por presupuesto de riesgo en el stop, no por FOMO.</p>
         </li>
         <li>
-          <strong>Comité</strong>
-          <p>Técnico, fundamental, news, macro y risk votan antes de tocar el libro.</p>
+          <strong>Trail armado tras +5%</strong>
+          <p>Protege ganancia solo cuando la tesis ya demostró movimiento.</p>
         </li>
         <li>
-          <strong>Dimensiona</strong>
-          <p>Tamaño por presupuesto de riesgo en el stop (2R), no por convicción emocional.</p>
+          <strong>Cooldown 90 min post-stop</strong>
+          <p>Corta el revenge trading antes de que vuelva a golpear el libro.</p>
         </li>
         <li>
-          <strong>Ejecuta</strong>
-          <p>Alpaca LIVE con brackets, reconcile continuo y audit trail.</p>
+          <strong>EOD inteligente</strong>
+          <p>Asegura verdes al close; carry rojo controlado hasta −8%.</p>
         </li>
         <li>
-          <strong>Revisa y cosecha</strong>
-          <p>Trail armado tras +5%, cooldown 90m post-stop, EOD inteligente.</p>
+          <strong>Kill switch + tope USD 25/orden</strong>
+          <p>Autonomía con freno de emergencia del CEO.</p>
         </li>
       </ol>
-      <div class="proof-strip">
-        <div>
-          <strong>2R</strong>
-          <span>Stop 8% · objetivo 16%</span>
-        </div>
-        <div>
-          <strong>LIVE</strong>
-          <span>Autopilot + kill switch</span>
-        </div>
-        <div>
-          <strong>EOD</strong>
-          <span>Verdes out · rojo controlado</span>
-        </div>
-      </div>
+    </section>
+
+    <section class="section" id="proyecciones">
+      <h2>Proyecciones de escala</h2>
+      <p class="section-lead">
+        No proyectamos CAGR mágico con capital micro. Proyectamos el mismo proceso
+        hacia capital serio sin romper la disciplina.
+      </p>
+      <ol class="pillar-list">
+        <li>
+          <strong>A — Validación</strong>
+          <p>3–6 meses micro LIVE endureciendo políticas.</p>
+        </li>
+        <li>
+          <strong>B — Desk operador</strong>
+          <p>USD 5k–25k bajo los mismos guardrails 2R.</p>
+        </li>
+        <li>
+          <strong>C — Multi-cuenta</strong>
+          <p>White-label para advisors y neobanks.</p>
+        </li>
+      </ol>
     </section>
 
     <section class="section pitch-block" id="ask">
@@ -113,7 +149,7 @@
       </p>
       <div class="cta-row">
         <a class="btn btn-primary" href="/dashboard/static/pitch/MONARCH_CAPITAL_SHARK_TANK.md" target="_blank" rel="noopener">Guion completo</a>
-        <a class="btn btn-ghost" href="https://www.canva.com/d/AP29U3Sbgpv5tIZ" target="_blank" rel="noopener">Deck Canva</a>
+        <a class="btn btn-ghost" href="https://www.canva.com/d/Okhpj0q7BYqRTFM" target="_blank" rel="noopener">Deck Canva</a>
       </div>
     </section>
 
@@ -122,5 +158,50 @@
       <a href="/dashboard">Terminal CEO</a>
     </footer>
   </div>
+
+  <script>
+    (async () => {
+      const initial = 21.74;
+      const fmt = (n) => `USD ${n.toFixed(2)}`;
+      const pct = (n) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
+      try {
+        const [acct, ports, pos] = await Promise.all([
+          fetch("/api/v1/broker/account").then((r) => r.json()),
+          fetch("/api/v1/portfolios").then((r) => r.json()),
+          fetch("/api/v1/broker/positions").then((r) => r.json()),
+        ]);
+        const equity = Number(acct.equity ?? acct.portfolio_value ?? 0);
+        const last = Number(acct.raw?.last_equity ?? equity);
+        const cash = Number(acct.cash ?? 0);
+        const bookInit = Number(ports?.[0]?.initial_capital ?? initial);
+        const ret = bookInit > 0 ? ((equity - bookInit) / bookInit) * 100 : 0;
+        const day = last > 0 ? ((equity - last) / last) * 100 : 0;
+        const p = Array.isArray(pos) && pos[0] ? pos[0] : null;
+
+        document.getElementById("kpi-initial").textContent = fmt(bookInit);
+        document.getElementById("kpi-equity").textContent = fmt(equity);
+        const retEl = document.getElementById("kpi-ret");
+        retEl.textContent = pct(ret);
+        retEl.classList.toggle("up", ret >= 0);
+        retEl.classList.toggle("down", ret < 0);
+        const dayEl = document.getElementById("kpi-day");
+        dayEl.textContent = pct(day);
+        dayEl.classList.toggle("up", day >= 0);
+        dayEl.classList.toggle("down", day < 0);
+
+        const posLine = p
+          ? `Posición: ${p.symbol} ×${p.qty} · mark $${Number(p.current_price).toFixed(2)} (${pct(Number(p.unrealized_plpc) * 100)}) · cash ${fmt(cash)}`
+          : `Sin posición abierta · cash ${fmt(cash)}`;
+        document.getElementById("capital-note").textContent =
+          `Alpaca LIVE · autonomía ON · ${posLine}`;
+      } catch {
+        document.getElementById("kpi-equity").textContent = "USD 22.06";
+        document.getElementById("kpi-ret").textContent = "+1.5%";
+        document.getElementById("kpi-day").textContent = "−2.2%";
+        document.getElementById("capital-note").textContent =
+          "SOUN ×1 abierta · cash ~USD 14.97 · datos de respaldo (API no disponible)";
+      }
+    })();
+  </script>
 </body>
 </html>
