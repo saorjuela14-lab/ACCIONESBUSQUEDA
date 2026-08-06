@@ -22,6 +22,7 @@ PUBLIC_PREFIXES = (
     "/dashboard/static/sw.js",
     "/dashboard/static/icon.svg",
     "/dashboard/static/pitch/",
+    "/dashboard/static/assets/",
 )
 
 
