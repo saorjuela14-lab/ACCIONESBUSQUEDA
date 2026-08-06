@@ -1,7 +1,14 @@
 # Monarch Capital — Pitch Shark Tank (proceso completo)
 
 **Producto web:** solo terminal (`/` → `/dashboard`). Este documento y Canva **no** son la entrada de la web.  
-**Deck Canva:** [Ver](https://www.canva.com/d/ymj1_O9wmBPRuuT) · [Editar](https://www.canva.com/d/urYm-7D9I_sV8k0)  
+
+**Deck Canva — proceso completo (10 slides, actualizado):**  
+- [Ver](https://www.canva.com/d/n0xtETeYp_z4J-C) · [Editar](https://www.canva.com/d/XiqOKfFYHtlElP5)  
+
+**Deck Canva — corto (5 slides):**  
+- [Ver](https://www.canva.com/d/eCkvJnAEP1PocNn) · [Editar](https://www.canva.com/d/CD7zTedSFolPzNo)  
+
+Incluye: descubrimiento → comité (10 agentes) → gate de consenso → Risk Desk / 2R → Autopilot LIVE → tracción → ask.  
 **Terminal:** https://accionesbusqueda.fastapicloud.dev  
 **Tiempo oral sugerido:** 3:00–4:00 + Q&A  
 **Datos LIVE:** ago 2026 · Alpaca
@@ -286,4 +293,5 @@ La web **es el terminal**. La presentación vive en Canva / este MD — no en la
 
 - Terminal: `/` → `/dashboard`  
 - Guion/proceso: este archivo  
-- Canva: [Ver](https://www.canva.com/d/ymj1_O9wmBPRuuT) · [Editar](https://www.canva.com/d/urYm-7D9I_sV8k0)
+- Canva 10 slides: [Ver](https://www.canva.com/d/n0xtETeYp_z4J-C) · [Editar](https://www.canva.com/d/XiqOKfFYHtlElP5)  
+- Canva 5 slides: [Ver](https://www.canva.com/d/eCkvJnAEP1PocNn) · [Editar](https://www.canva.com/d/CD7zTedSFolPzNo)
