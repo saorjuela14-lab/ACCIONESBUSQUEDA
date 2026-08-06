@@ -14,10 +14,15 @@ PUBLIC_PREFIXES = (
     "/openapi.json",
     "/redoc",
     "/api/v1/auth/",
+    "/login",
     "/dashboard/static/login.html",
+    "/dashboard/static/landing.html",
+    "/dashboard/static/landing.css",
     "/dashboard/static/manifest.json",
     "/dashboard/static/sw.js",
     "/dashboard/static/icon.svg",
+    "/dashboard/static/pitch/",
+    "/dashboard/static/assets/",
 )
 
 
@@ -40,7 +45,7 @@ class AccessTokenMiddleware(BaseHTTPMiddleware):
         if any(path.startswith(p) for p in PUBLIC_PREFIXES):
             return await call_next(request)
 
-        if path in ("/dashboard", "/") and request.method == "GET":
+        if path in ("/dashboard", "/", "/login") and request.method == "GET":
             return await call_next(request)
 
         token = _extract_token(request)

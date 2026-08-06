@@ -51,7 +51,7 @@ async def run_scheduler() -> None:
 
 
 def cli_main() -> None:
-    parser = argparse.ArgumentParser(description="NexBuy Investment Committee AI")
+    parser = argparse.ArgumentParser(description="Monarch Capital — Investment Desk AI")
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("serve", help="Start API server")

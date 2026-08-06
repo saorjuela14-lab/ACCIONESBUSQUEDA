@@ -39,7 +39,7 @@ class DailyStatusBriefingService:
             "close": "CIERRE",
             "manual": "STATUS",
         }.get(session_kind, "STATUS")
-        title = f"NexBuy {label} · {now.strftime('%d %b %Y %H:%M ET')}"
+        title = f"Monarch Capital {label} · {now.strftime('%d %b %Y %H:%M ET')}"
 
         lines: list[str] = [title, ""]
 
@@ -161,7 +161,7 @@ class DailyStatusBriefingService:
         else:
             lines.append("Gestión: status manual bajo demanda.")
 
-        lines.append("— NexBuy desk")
+        lines.append("— Monarch Capital desk")
         return title, "\n".join(lines)
 
     async def send(

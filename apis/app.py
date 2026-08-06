@@ -72,7 +72,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version="1.0.0",
-        description="Professional multi-agent investment committee platform",
+        description="Monarch Capital — autonomous multi-agent investment desk",
         lifespan=lifespan,
     )
 
@@ -91,6 +91,9 @@ def create_app() -> FastAPI:
 
         @app.get("/")
         async def root():
+            landing = dashboard_dir / "landing.html"
+            if landing.exists():
+                return FileResponse(landing)
             return RedirectResponse(url="/dashboard")
 
         @app.get("/dashboard")

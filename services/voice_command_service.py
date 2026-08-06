@@ -181,8 +181,8 @@ class VoiceCommandService:
         compact = re.sub(r"\s+", " ", norm).strip(" .,!?:;")
 
         if re.search(
-            r"\b(como funciona( la)? (app|panel|nexbuy)|que es nexbuy|"
-            r"ayuda (de |del )?(la )?(app|panel|nexbuy)|app help)\b",
+            r"\b(como funciona( la)? (app|panel|nexbuy|monarch)|que es (nexbuy|monarch( capital)?)|"
+            r"ayuda (de |del )?(la )?(app|panel|nexbuy|monarch)|app help)\b",
             norm,
         ):
             return "app_help", {}
@@ -408,11 +408,11 @@ class VoiceCommandService:
         return VoiceCommandResult(
             intent="app_help",
             speech=(
-                "NexBuy es tu comité de inversión: panel de mercado, análisis multiagente, "
+                "Monarch Capital es tu comité de inversión: panel de mercado, análisis multiagente, "
                 "watchlist, recomendaciones de corto plazo y ejecución Alpaca. "
                 "Usa el micrófono o escribe comandos. Di ayuda para ver frases de voz."
             ),
-            data={"app": "NexBuy"},
+            data={"app": "Monarch Capital"},
         )
 
     async def _market_summary(self, session, params, portfolio_id) -> VoiceCommandResult:

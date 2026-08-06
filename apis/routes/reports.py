@@ -37,7 +37,7 @@ async def export_daily_briefing(db: AsyncSession = Depends(get_session)) -> Plai
         raise HTTPException(status_code=404, detail="No daily reports yet")
     mr = report.market_report
     lines = [
-        f"# NexBuy CEO Briefing — {report.date.date() if hasattr(report.date, 'date') else report.date}",
+        f"# Monarch Capital Briefing — {report.date.date() if hasattr(report.date, 'date') else report.date}",
         "",
         "## Market Summary",
         mr.market_summary,

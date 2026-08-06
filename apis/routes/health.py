@@ -18,7 +18,7 @@ _CATCHUP_MIN_SECONDS = 300  # at most once per 5 minutes via /health
 @router.get("/health")
 async def health_check() -> dict:
     """Liveness + throttled briefing catch-up (keeps cloud hosts from missing close)."""
-    out: dict = {"status": "healthy", "service": "nexbuy-investment-committee"}
+    out: dict = {"status": "healthy", "service": "monarch-capital"}
     settings = get_settings()
     if not settings.whatsapp_briefing_enabled:
         return out
