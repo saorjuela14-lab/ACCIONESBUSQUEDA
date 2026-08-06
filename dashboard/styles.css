@@ -1,16 +1,16 @@
 :root {
-  --bg: #08110e;
-  --surface: #0f1a17;
-  --panel: #142420;
-  --border: rgba(255, 255, 255, 0.08);
+  --bg: #012622;
+  --surface: #0a2f2a;
+  --panel: #08302b;
+  --border: rgba(197, 165, 114, 0.18);
   --text: #f2ebe0;
   --muted: #9aaba3;
-  --accent: #c4a574;
+  --accent: #c5a572;
   --green: #3d9b6e;
   --red: #d45d5d;
-  --amber: #d4a574;
+  --amber: #d4b896;
   --radius: 2px;
-  --serif: "Playfair Display", Georgia, "Times New Roman", serif;
+  --serif: "Cinzel", "Times New Roman", Georgia, serif;
   --sans: "Outfit", "Segoe UI", sans-serif;
   font-family: var(--sans);
 }
@@ -30,20 +30,35 @@ body {
   position: sticky; top: 0; z-index: 50; backdrop-filter: blur(14px);
 }
 .term-brand {
-  font-family: var(--serif); font-weight: 500;
-  display: flex; align-items: center; gap: 0.65rem; color: inherit; text-decoration: none;
+  display: flex; align-items: center; gap: 0.7rem; color: inherit; text-decoration: none;
 }
-.brand-text { display: flex; flex-direction: column; gap: 2px; line-height: 1.1; }
-.brand-name { font-size: 1.05rem; letter-spacing: -0.02em; }
+.logo-mark {
+  width: 36px; height: 36px; border-radius: 8px; display: block; flex-shrink: 0;
+  border: 1px solid rgba(197,165,114,0.28);
+}
+.brand-text { display: flex; flex-direction: column; gap: 2px; line-height: 1.05; }
+.brand-name {
+  font-family: var(--serif); font-size: 0.95rem; font-weight: 500;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent);
+}
+.brand-sub {
+  font-family: var(--sans); font-size: 0.62rem; font-weight: 400;
+  letter-spacing: 0.28em; text-transform: uppercase; color: var(--accent);
+}
 .ver {
   font-size: 10px; color: var(--muted); font-family: var(--sans);
   font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
 }
 .logo {
-  background: linear-gradient(145deg, #1a2e28, #0a1411);
-  border: 1px solid rgba(196,165,116,0.45); color: var(--accent);
+  background: #012622; border: 1px solid rgba(197,165,114,0.45); color: var(--accent);
   width: 32px; height: 32px; border-radius: 4px; display: grid; place-items: center;
   font-size: 11px; font-weight: 700; letter-spacing: 0.02em; font-family: var(--sans);
+}
+.login-brand {
+  display: flex; justify-content: center; margin-bottom: 1rem;
+}
+.login-brand img {
+  width: min(100%, 280px); height: auto; border: 1px solid var(--border);
 }
 .regime {
   flex: 1; text-align: center; font-weight: 600; letter-spacing: 0.04em;
@@ -585,7 +600,8 @@ body.tech-chart-fs { overflow: hidden; }
   padding: 0.5rem 0.9rem; border-radius: var(--radius); cursor: pointer;
   font-size: 0.82rem; font-family: var(--sans); font-weight: 500;
 }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #08110e; font-weight: 600; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #012622; font-weight: 600; }
+.tab.active { color: #012622 !important; }
 .btn:hover { border-color: rgba(196,165,116,0.45); }
 .form-inline { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; align-items: center; font-size: 12px; }
 .form-inline input, .form-inline select { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 0.35rem; border-radius: 4px; }
@@ -651,8 +667,8 @@ body.tech-chart-fs { overflow: hidden; }
 .login-page {
   display: grid; place-items: center; min-height: 100vh; padding: 1rem;
   background:
-    radial-gradient(ellipse 80% 60% at 70% 20%, rgba(45,74,64,0.45), transparent 55%),
-    radial-gradient(ellipse 50% 40% at 20% 85%, rgba(196,165,116,0.1), transparent 50%),
+    radial-gradient(ellipse 80% 60% at 70% 20%, rgba(197,165,114,0.08), transparent 55%),
+    radial-gradient(ellipse 50% 40% at 20% 85%, rgba(10,47,42,0.9), transparent 50%),
     var(--bg);
 }
 .login-card {

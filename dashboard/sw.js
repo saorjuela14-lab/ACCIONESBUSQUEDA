@@ -1,10 +1,12 @@
-const CACHE = "monarch-v2";
+const CACHE = "monarch-v3";
 const ASSETS = [
   "/dashboard/static/styles.css",
   "/dashboard/static/landing.css",
   "/dashboard/static/voice.js",
   "/dashboard/static/app.js",
   "/dashboard/static/icon.svg",
+  "/dashboard/static/assets/mark.svg",
+  "/dashboard/static/assets/logo.svg",
 ];
 
 self.addEventListener("install", (e) => {

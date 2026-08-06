@@ -1,16 +1,16 @@
 /* Monarch Capital — Stitch design system (Playfair + Outfit, forest/champagne) */
 :root {
-  --ink: #08110e;
-  --forest: #0f1a17;
-  --surface: #15130d;
-  --champagne: #c4a574;
+  --ink: #012622;
+  --forest: #0a2f2a;
+  --surface: #08302b;
+  --champagne: #c5a572;
   --gold: #d4b896;
   --parchment: #f2ebe0;
   --muted: rgba(242, 235, 224, 0.62);
-  --line: rgba(255, 255, 255, 0.06);
+  --line: rgba(197, 165, 114, 0.18);
   --up: #b5e4ca;
   --down: #ffb4ab;
-  --serif: "Playfair Display", Georgia, serif;
+  --serif: "Cinzel", "Times New Roman", Georgia, serif;
   --sans: "Outfit", "Segoe UI", sans-serif;
   --max: 1280px;
 }
@@ -63,10 +63,41 @@ a {
 }
 
 .nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.nav-mark {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: block;
+}
+
+.nav-wordmark {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.05;
+}
+
+.wm-monarch {
   font-family: var(--serif);
   font-weight: 500;
-  font-size: 1.15rem;
-  letter-spacing: -0.02em;
+  font-size: 0.95rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--champagne);
+}
+
+.wm-capital {
+  font-family: var(--sans);
+  font-weight: 400;
+  font-size: 0.62rem;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: var(--champagne);
+  margin-top: 0.15rem;
 }
 
 .nav-links {
@@ -107,22 +138,13 @@ a {
   animation: rise 0.9s ease both;
 }
 
-.brand-kicker {
-  margin: 0 0 0.35rem;
-  font-size: 1.15rem;
-  font-weight: 400;
-  color: var(--muted);
-}
-
-.brand-hero {
-  margin: 0 0 1.25rem;
-  font-family: var(--serif);
-  font-style: italic;
-  font-weight: 500;
-  font-size: clamp(4rem, 10vw, 5.75rem);
-  line-height: 0.95;
-  letter-spacing: -0.02em;
-  color: var(--champagne);
+.hero-logo {
+  display: block;
+  width: min(100%, 420px);
+  height: auto;
+  margin: 0 0 1.5rem;
+  border: 1px solid var(--line);
+  animation: rise 1s ease both;
 }
 
 .hero-line {
@@ -413,6 +435,16 @@ a {
   font-size: 0.85rem;
   color: var(--muted);
   border-top: 1px solid var(--line);
+}
+
+.foot-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.foot-brand img {
+  border-radius: 6px;
 }
 
 .foot a:hover {

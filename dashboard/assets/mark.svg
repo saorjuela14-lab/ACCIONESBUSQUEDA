@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Monarch">
+  <rect width="128" height="128" rx="16" fill="#012622"/>
+  <g fill="#C5A572" transform="translate(64 62)">
+    <circle cx="-34" cy="-36" r="3.2"/>
+    <circle cx="0" cy="-44" r="3.2"/>
+    <circle cx="34" cy="-36" r="3.2"/>
+    <path d="M-46 6
+      C-46 -8, -41 -18, -34 -26
+      L-17 8
+      L0 -34
+      L17 8
+      L34 -26
+      C41 -18, 46 -8, 46 6
+      L46 18
+      L-46 18
+      Z"/>
+    <rect x="-52" y="22" width="104" height="5" rx="1"/>
+  </g>
+</svg>

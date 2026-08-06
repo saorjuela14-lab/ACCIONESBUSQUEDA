@@ -4,8 +4,8 @@
   "description": "Escritorio de inversión autónomo · comité multi-agente",
   "start_url": "/dashboard",
   "display": "standalone",
-  "background_color": "#08110E",
-  "theme_color": "#08110E",
+  "background_color": "#012622",
+  "theme_color": "#012622",
   "orientation": "any",
   "icons": [
     {
