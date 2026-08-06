@@ -88,7 +88,7 @@ function trIndex(name) {
 }
 
 function trRegime(regime) {
-  const map = { bullish: "ALCISTA", bearish: "BAJISTA", neutral: "NEUTRAL" };
+  const map = { bullish: "alcista", bearish: "bajista", neutral: "estable" };
   return map[regime?.toLowerCase()] || (regime || "").toUpperCase();
 }
 
@@ -508,12 +508,20 @@ function renderTradeRecommendations(r) {
   $("#trade-recs-date").textContent = r.generated_at
     ? new Date(r.generated_at).toLocaleString(LOCALE)
     : "";
+  const modeEs = {
+    crisis: "cuidado extremo",
+    risk_off: "modo defensivo",
+    risk_on: "modo ofensivo",
+    neutral: "modo equilibrado",
+  }[r.macro_mode] || r.macro_mode;
   const macroBits = [
-    r.macro_mode ? `macro ${r.macro_mode}` : null,
-    r.size_multiplier != null ? `size ×${r.size_multiplier}` : null,
+    modeEs ? `Clima: ${modeEs}` : null,
+    r.size_multiplier != null && r.size_multiplier !== 1
+      ? `tamaño de compra ×${r.size_multiplier}`
+      : null,
   ].filter(Boolean).join(" · ");
   $("#trade-recs-summary").textContent =
-    (macroBits ? `[${macroBits}] ` : "") + (r.summary || "");
+    [macroBits, r.summary].filter(Boolean).join(" — ");
   $("#trade-recs-disclaimer").textContent = r.disclaimer || "";
 
   const picks = r.picks || [];
@@ -613,24 +621,24 @@ function renderAlpacaStatus(st) {
   el.classList.remove("ok", "warn", "err");
   if (!st?.configured) {
     el.classList.add("warn");
-    el.textContent = "Alpaca LIVE: sin keys — añade ALPACA_API_KEY + ALPACA_SECRET_KEY (brokerage) en el entorno";
+    el.textContent = "Cuenta: falta conectar el broker (revisa las claves Alpaca).";
     return;
   }
   if (!st.connected) {
     el.classList.add("err");
-    el.textContent = `Alpaca: ${st.message || "error de conexión"}`;
+    el.textContent = `Cuenta: no conectada — ${st.message || "error de conexión"}`;
     return;
   }
-  const mode = st.paper ? "Paper" : "LIVE";
-  const cash = st.account?.cash != null ? ` · cash $${Number(st.account.cash).toFixed(2)}` : "";
-  const eq = st.account?.equity != null ? ` · equity $${Number(st.account.equity).toFixed(2)}` : "";
-  const mkt = st.market_open === true ? " · mercado abierto" : (st.market_open === false ? " · mercado cerrado" : "");
+  const cash = st.account?.cash != null ? `Efectivo $${Number(st.account.cash).toFixed(2)}` : "";
+  const eq = st.account?.equity != null ? `Total $${Number(st.account.equity).toFixed(2)}` : "";
+  const mkt = st.market_open === true ? "Mercado abierto" : (st.market_open === false ? "Mercado cerrado" : "");
+  const bits = [cash, eq, mkt].filter(Boolean).join(" · ");
   if (st.paper) {
     el.classList.add("ok");
-    el.textContent = `Alpaca Paper conectado${cash}${eq}${mkt}`;
+    el.textContent = `Cuenta de práctica conectada${bits ? ` — ${bits}` : ""}`;
   } else {
     el.classList.add("err");
-    el.textContent = `Alpaca LIVE · dinero real${cash}${eq}${mkt}`;
+    el.textContent = `Cuenta real (dinero de verdad)${bits ? ` — ${bits}` : ""}`;
   }
   const book = alpacaBookCapital();
   if (book) syncCapitalInputsFromBroker(book);
@@ -661,18 +669,25 @@ async function loadRiskDesk() {
     if (mode === "crisis") el.classList.add("err");
     else if (mode === "risk_off") el.classList.add("warn");
     else if (mode === "risk_on") el.classList.add("ok");
-    const vix = m.vix != null ? `VIX ${m.vix}` : "";
-    const cash = r.portfolio ? `cash ${r.portfolio.cash_pct}%` : "";
-    const auto = r.auto_execute_enabled ? "AUTO-ON" : "auto-off";
-    el.textContent =
-      `Risk Desk: ${mode} · sesgo ${m.macro_bias || "—"} · size ×${m.size_multiplier ?? 1}` +
-      (vix ? ` · ${vix}` : "") +
-      (cash ? ` · ${cash}` : "") +
-      ` · ${auto}`;
+    const modeEs = {
+      crisis: "cuidado extremo",
+      risk_off: "modo defensivo",
+      risk_on: "modo ofensivo",
+      neutral: "modo equilibrado",
+    }[mode] || mode;
+    const cash = r.portfolio?.cash_pct != null ? `${Number(r.portfolio.cash_pct).toFixed(0)}% en efectivo` : "";
+    const auto = r.auto_execute_enabled ? "compras automáticas ON" : "compras automáticas OFF";
+    const vix = m.vix != null ? `nerviosismo del mercado ${m.vix}` : "";
+    el.textContent = [
+      `Riesgo: ${modeEs}`,
+      cash,
+      auto,
+      vix,
+    ].filter(Boolean).join(" · ");
     el.title = (m.thesis || "") + "\n" + (r.notes || []).join("\n");
   } catch (e) {
     el.classList.add("warn");
-    el.textContent = "Risk Desk: no disponible";
+    el.textContent = "Riesgo: no disponible ahora";
   }
 }
 
@@ -688,27 +703,24 @@ async function loadOpsDesk() {
     const ks = st.kill_switch?.active;
     if (ks) el.classList.add("err");
     else el.classList.add("ok");
-    const varTxt = metrics?.var_1d_95_pct != null ? `VaR ${metrics.var_1d_95_pct}%` : "VaR —";
-    const betaTxt = metrics?.portfolio_beta != null ? `β ${metrics.portfolio_beta}` : "β —";
-    const sec = metrics?.max_sector
-      ? `${metrics.max_sector} ${metrics.max_sector_pct}%`
-      : "sector —";
-    const autonomy = st.firm_autonomy ? "FIRMA AUTO" : "manual";
-    const ap = st.autopilot_interval_minutes ? `AP ${st.autopilot_interval_minutes}m` : "AP off";
-    el.textContent =
-      `Ops: ${autonomy} · kill ${ks ? "ON ⚠" : "off"} · auto ${st.auto_execute?.allowed ? "READY" : "blocked"}` +
-      ` · ${ap} · ${varTxt} · ${betaTxt} · ${sec}`;
+    const autonomy = st.firm_autonomy ? "la firma opera sola" : "modo manual";
+    const kill = ks ? "parada de emergencia ACTIVADA" : "parada de emergencia apagada";
+    const auto = st.auto_execute?.allowed ? "puede comprar" : "compras bloqueadas";
+    const ap = st.autopilot_interval_minutes
+      ? `revisa cada ${st.autopilot_interval_minutes} min`
+      : "autopilot apagado";
+    el.textContent = `Firma: ${autonomy} · ${kill} · ${auto} · ${ap}`;
     el.title = st.auto_execute?.policy?.promotion_note || st.auto_execute?.reason || "";
   } catch {
     el.classList.add("warn");
-    el.textContent = "Ops: no disponible";
+    el.textContent = "Firma: estado no disponible";
   }
 }
 
 async function runKillSwitch() {
-  if (!confirm("KILL SWITCH: cancela órdenes y cierra TODAS las posiciones. ¿Continuar?")) return;
-  if (!confirm("Confirmación final: esto vende todo en Alpaca.")) return;
-  await withLoading("Activando kill switch…", async () => {
+  if (!confirm("Parada de emergencia: cancela órdenes y cierra TODAS las posiciones. ¿Continuar?")) return;
+  if (!confirm("Confirmación final: esto vende todo en la cuenta real.")) return;
+  await withLoading("Activando parada de emergencia…", async () => {
     try {
       const r = await api(`${API}/ops/kill-switch/on`, {
         method: "POST",
@@ -1265,7 +1277,7 @@ function closeNewsModal() {
 function renderDashboard(d) {
   const regime = $("#market-regime");
   const scoreSign = d.market_regime_score >= 0 ? "+" : "";
-  regime.textContent = `MERCADO ${trRegime(d.market_regime)} (${scoreSign}${d.market_regime_score})`;
+  regime.textContent = `Mercado ${trRegime(d.market_regime)} (${scoreSign}${d.market_regime_score})`;
   regime.className = `regime ${d.market_regime}`;
   renderCeoBar(d);
   renderIndices(d.indices || []);
