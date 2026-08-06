@@ -16,12 +16,12 @@ PUBLIC_PREFIXES = (
     "/api/v1/auth/",
     "/login",
     "/dashboard/static/login.html",
-    "/dashboard/static/landing.html",
-    "/dashboard/static/landing.css",
     "/dashboard/static/manifest.json",
     "/dashboard/static/sw.js",
-    "/dashboard/static/icon.svg",
-    "/dashboard/static/pitch/",
+    "/dashboard/static/icon.png",
+    "/dashboard/static/icon-192.png",
+    "/dashboard/static/icon-512.png",
+    "/dashboard/static/apple-touch-icon.png",
     "/dashboard/static/assets/",
 )
 

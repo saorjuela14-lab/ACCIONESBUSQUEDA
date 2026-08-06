@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 56" role="img" aria-label="Monarch Capital">
-  <g fill="#C5A572" transform="translate(22 28) scale(0.22)">
-    <circle cx="-72" cy="-58" r="5.5"/>
-    <circle cx="0" cy="-72" r="5.5"/>
-    <circle cx="72" cy="-58" r="5.5"/>
-    <path d="M-96 8 C-96 -18,-86 -36,-72 -48 L-36 10 L0 -62 L36 10 L72 -48 C86 -36,96 -18,96 8 L96 28 L-96 28 Z"/>
-    <rect x="-108" y="34" width="216" height="8" rx="1"/>
+  <g fill="#C5A572" transform="translate(22 30) scale(0.28)">
+    <circle cx="-36" cy="-40" r="3.4"/>
+    <circle cx="0" cy="-48" r="3.4"/>
+    <circle cx="36" cy="-40" r="3.4"/>
+    <path d="M-44 10 C-44 -2,-40 -14,-36 -28 L-14 12 L0 -36 L14 12 L36 -28 C40 -14,44 -2,44 10 L44 18 L-44 18 Z"/>
+    <rect x="-50" y="24" width="100" height="5" rx="0.5"/>
   </g>
   <text x="52" y="26" font-family="Cinzel, 'Times New Roman', Georgia, serif"
         font-size="18" font-weight="500" letter-spacing="0.1em" fill="#C5A572">MONARCH</text>

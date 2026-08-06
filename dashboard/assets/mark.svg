@@ -1,19 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Monarch">
-  <rect width="128" height="128" rx="16" fill="#012622"/>
-  <g fill="#C5A572" transform="translate(64 62)">
-    <circle cx="-34" cy="-36" r="3.2"/>
-    <circle cx="0" cy="-44" r="3.2"/>
-    <circle cx="34" cy="-36" r="3.2"/>
-    <path d="M-46 6
-      C-46 -8, -41 -18, -34 -26
-      L-17 8
-      L0 -34
-      L17 8
-      L34 -26
-      C41 -18, 46 -8, 46 6
-      L46 18
-      L-46 18
+  <rect width="128" height="128" fill="#012622"/>
+  <g fill="#C5A572" transform="translate(64 66)">
+    <!-- jewels -->
+    <circle cx="-36" cy="-40" r="3.4"/>
+    <circle cx="0" cy="-48" r="3.4"/>
+    <circle cx="36" cy="-40" r="3.4"/>
+    <!-- crown: center triangle + curved side peaks -->
+    <path d="M-44 10
+      C-44 -2, -40 -14, -36 -28
+      L-14 12
+      L0 -36
+      L14 12
+      L36 -28
+      C40 -14, 44 -2, 44 10
+      L44 18
+      L-44 18
       Z"/>
-    <rect x="-52" y="22" width="104" height="5" rx="1"/>
+    <!-- base bar (gap below crown body) -->
+    <rect x="-50" y="24" width="100" height="5" rx="0.5"/>
   </g>
 </svg>
