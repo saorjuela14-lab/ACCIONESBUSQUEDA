@@ -538,24 +538,22 @@ function renderTradeRecommendations(r) {
     <div class="trade-rec-card">
       <div class="tr-head">
         <span class="tr-ticker">${p.ticker}</span>
-        <span class="tr-action ${p.action === "vigilar" ? "watch" : ""}">${p.action} · ${p.horizon}</span>
+        <span class="tr-action ${p.action === "vigilar" ? "watch" : ""}">${p.action === "vigilar" ? "Solo mirar" : "Idea de compra"}</span>
       </div>
-      <div style="font-size:10px;color:var(--muted)">${(p.company_name || "").slice(0, 32)}</div>
+      <div style="font-size:0.85rem;color:var(--muted);font-weight:300">${(p.company_name || "").slice(0, 40)}</div>
       <div class="tr-levels">
-        <span>Precio: <b>$${p.current_price ?? "—"}</b></span>
-        <span>Objetivo: <b class="up">$${p.target_price ?? "—"}</b></span>
-        <span>Stop: <b class="down">$${p.stop_loss ?? "—"}</b></span>
-        <span>Retorno: <b>${p.expected_return_pct != null ? "+" + p.expected_return_pct + "%" : "—"}</b></span>
-        <span>Δ1d: ${p.change_1d_pct != null ? p.change_1d_pct + "%" : "—"}</span>
-        <span>Score: ${p.score} · ${(p.confidence * 100).toFixed(0)}%</span>
+        <span>Ahora: <b>$${p.current_price ?? "—"}</b></span>
+        <span>Meta: <b class="up">$${p.target_price ?? "—"}</b></span>
+        <span>Salida si baja: <b class="down">$${p.stop_loss ?? "—"}</b></span>
+        <span>Potencial: <b>${p.expected_return_pct != null ? "+" + p.expected_return_pct + "%" : "—"}</b></span>
       </div>
-      <div class="tr-catalysts">${(p.catalysts || []).slice(0, 2).join(" · ") || p.rationale?.slice(0, 100) || ""}</div>
+      <div class="tr-catalysts">${(p.catalysts || []).slice(0, 2).join(" · ") || p.rationale?.slice(0, 120) || ""}</div>
       <div class="tr-btns">
-        <button class="btn tr-analyze-btn" data-t="${p.ticker}">Analizar</button>
-        <button class="btn tr-add-btn" data-t="${p.ticker}">+ WL</button>
+        <button class="btn tr-analyze-btn" data-t="${p.ticker}">Ver análisis</button>
+        <button class="btn tr-add-btn" data-t="${p.ticker}">Seguir</button>
         <button class="btn primary tr-alpaca-btn" data-t="${p.ticker}"
           data-stop="${p.stop_loss ?? ""}" data-target="${p.target_price ?? ""}"
-          data-price="${p.current_price ?? ""}">Alpaca</button>
+          data-price="${p.current_price ?? ""}">Comprar</button>
       </div>
     </div>`).join("");
 
