@@ -30,7 +30,9 @@ body {
   min-height: 100vh;
   font-family: var(--sans);
   color: var(--parchment);
-  background: var(--ink);
+  background:
+    radial-gradient(ellipse 70% 45% at 85% 0%, rgba(197, 165, 114, 0.08), transparent 55%),
+    var(--ink);
   -webkit-font-smoothing: antialiased;
 }
 
