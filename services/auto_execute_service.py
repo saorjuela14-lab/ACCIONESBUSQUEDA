@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from config.settings import get_settings
 from domain.broker import ExecuteLine, ExecuteOrdersRequest
 from domain.ops import AutoExecutePolicy
@@ -135,6 +137,25 @@ class AutoExecuteService:
                     "reason": "eod_flat_window_no_new_buys",
                 }
 
+        # Post-stop cooldown — no immediate rebuy after a protective exit
+        try:
+            from database.repositories.ops_repository import OpsFlagRepository
+
+            cool = await OpsFlagRepository(self._session).get_json("post_stop_cooldown")
+            until = float(cool.get("until") or 0)
+            now_ts = time.time()
+            if until and now_ts < until:
+                remaining = int((until - now_ts) / 60) + 1
+                return {
+                    "skipped": True,
+                    "reason": (
+                        f"post_stop_cooldown_{remaining}m"
+                        f"(last={cool.get('symbol')})"
+                    ),
+                }
+        except Exception as exc:
+            logger.warning("auto_execute.cooldown_check_failed", error=str(exc))
+
         max_n = float(self._settings.auto_execute_max_notional)
         cash = 0.0
         equity = 0.0
@@ -145,17 +166,23 @@ class AutoExecuteService:
         except Exception as exc:
             logger.warning("auto_execute.account_failed", error=str(exc))
 
-        # Micro risk: never spend >80% cash or >35% equity on one order
+        # Concentration + Turtle-style risk budget at the stop
+        pos_pct = float(self._settings.auto_execute_max_position_pct or 0.30)
+        risk_pct = float(self._settings.auto_execute_max_risk_pct or 2.5)
+        if equity > 0 and equity <= 50:
+            risk_pct = float(self._settings.auto_execute_micro_max_risk_pct or risk_pct)
         book_cap = max_n
         if cash > 0:
             book_cap = min(book_cap, cash * 0.80)
         if equity > 0:
-            book_cap = min(book_cap, equity * 0.35)
+            book_cap = min(book_cap, equity * pos_pct)
+        risk_budget = equity * (risk_pct / 100.0) if equity > 0 else book_cap * 0.05
         if book_cap < 1:
             return {"skipped": True, "reason": "insufficient_buying_power"}
 
         lines: list[ExecuteLine] = []
         skipped_no_committee = 0
+        skipped_risk = 0
         for pick in picks[:5]:
             action = getattr(pick, "action", "") or ""
             if action == "vigilar":
@@ -170,9 +197,27 @@ class AutoExecuteService:
             price = getattr(pick, "current_price", None) or getattr(pick, "entry_price", None)
             if not ticker or not price or price <= 0:
                 continue
-            affordable = float(book_cap)
-            shares = int(affordable // float(price))
+            price_f = float(price)
+            stop = getattr(pick, "stop_loss", None)
+            if stop is None or float(stop) <= 0 or float(stop) >= price_f:
+                stop = round(price_f * (1 - float(self._settings.lifecycle_micro_default_stop_pct or 0.08)), 4)
+            else:
+                stop = float(stop)
+            tp = getattr(pick, "target_price", None)
+            if tp is None or float(tp) <= price_f:
+                tp = round(price_f * (1 + float(self._settings.lifecycle_micro_default_target_pct or 0.16)), 4)
+            else:
+                tp = float(tp)
+
+            risk_per_share = max(price_f - float(stop), price_f * 0.01)
+            max_by_risk = int(risk_budget // risk_per_share) if risk_per_share > 0 else 0
+            max_by_notional = int(book_cap // price_f)
+            shares = min(max_by_notional, max_by_risk) if max_by_risk > 0 else 0
+            # Allow 1-lot micro ticket only if that single share's stop risk fits the budget
+            if shares < 1 and max_by_notional >= 1 and risk_per_share <= risk_budget + 0.01:
+                shares = 1
             if shares < 1:
+                skipped_risk += 1
                 continue
             lines.append(
                 ExecuteLine(
@@ -180,18 +225,19 @@ class AutoExecuteService:
                     shares=float(shares),
                     side="buy",
                     order_type="market",
-                    stop_loss=getattr(pick, "stop_loss", None),
-                    take_profit=getattr(pick, "target_price", None),
+                    stop_loss=stop,
+                    take_profit=tp,
                 )
             )
             if len(lines) >= 2:
                 break
         if not lines:
-            reason_out = (
-                "no_committee_consensus"
-                if skipped_no_committee
-                else "no_affordable_lines"
-            )
+            if skipped_no_committee:
+                reason_out = "no_committee_consensus"
+            elif skipped_risk:
+                reason_out = "risk_budget_blocks_size"
+            else:
+                reason_out = "no_affordable_lines"
             return {"skipped": True, "reason": reason_out}
 
         result = await self._broker.execute(
