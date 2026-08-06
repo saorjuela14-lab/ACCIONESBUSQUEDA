@@ -91,9 +91,7 @@ def create_app() -> FastAPI:
 
         @app.get("/")
         async def root():
-            landing = dashboard_dir / "landing.html"
-            if landing.exists():
-                return FileResponse(landing)
+            # Product surface = terminal only (pitch deck lives in Canva / repo docs)
             return RedirectResponse(url="/dashboard")
 
         @app.get("/dashboard")

@@ -1,28 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 420" role="img" aria-label="Monarch Capital">
-  <rect width="640" height="420" fill="#012622"/>
-  <g fill="#C5A572" transform="translate(320 78)">
-    <!-- jewel dots -->
-    <circle cx="-72" cy="-58" r="5.5"/>
-    <circle cx="0" cy="-72" r="5.5"/>
-    <circle cx="72" cy="-58" r="5.5"/>
-    <!-- crown -->
-    <path d="M-96 8
-      C-96 -18, -86 -36, -72 -48
-      L-36 10
-      L0 -62
-      L36 10
-      L72 -48
-      C86 -36, 96 -18, 96 8
-      L96 28
-      L-96 28
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" role="img" aria-label="Monarch Capital">
+  <rect width="640" height="640" fill="#012622"/>
+  <g fill="#C5A572" transform="translate(320 210)">
+    <circle cx="-72" cy="-78" r="6.5"/>
+    <circle cx="0" cy="-94" r="6.5"/>
+    <circle cx="72" cy="-78" r="6.5"/>
+    <path d="M-88 16
+      C-88 -6, -80 -28, -72 -54
+      L-28 22
+      L0 -70
+      L28 22
+      L72 -54
+      C80 -28, 88 -6, 88 16
+      L88 32
+      L-88 32
       Z"/>
-    <!-- crown base bar -->
-    <rect x="-108" y="34" width="216" height="8" rx="1"/>
+    <rect x="-100" y="44" width="200" height="9" rx="1"/>
   </g>
-  <text x="320" y="250" text-anchor="middle"
+  <text x="320" y="390" text-anchor="middle"
         font-family="Cinzel, 'Times New Roman', Georgia, serif"
-        font-size="72" font-weight="500" letter-spacing="0.08em" fill="#C5A572">MONARCH</text>
-  <text x="320" y="310" text-anchor="middle"
+        font-size="68" font-weight="500" letter-spacing="0.1em" fill="#C5A572">MONARCH</text>
+  <text x="320" y="450" text-anchor="middle"
         font-family="Outfit, 'Segoe UI', sans-serif"
-        font-size="28" font-weight="400" letter-spacing="0.55em" fill="#C5A572">CAPITAL</text>
+        font-size="26" font-weight="400" letter-spacing="0.55em" fill="#C5A572">CAPITAL</text>
 </svg>
