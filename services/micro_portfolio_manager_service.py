@@ -240,7 +240,7 @@ class MicroPortfolioManagerService:
             spent += cost
             pct = round(cost / capital * 100, 1)
             stop = round(price * 0.92, 2)
-            target = round(price * 1.12, 2)
+            target = round(price * 1.16, 2)
             verdict = c.get("consensus")
             tag = verdict.source_tag if verdict else SOURCE_TAG
             label = "mayoría" if tag == SOURCE_TAG_SOFT else "unánime"

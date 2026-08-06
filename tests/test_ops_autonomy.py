@@ -13,6 +13,7 @@ from services.position_lifecycle_service import PositionLifecycleService
 
 def test_lifecycle_trailing_and_time_stop():
     svc = PositionLifecycleService.__new__(PositionLifecycleService)
+    svc._settings = type("S", (), {"lifecycle_trail_arm_profit_pct": 0.05})()
     now = utc_now()
     # Time-stop only fires when underwater (last resort) — winners wait for TP
     m = PositionMandate(
@@ -43,7 +44,7 @@ def test_lifecycle_trailing_and_time_stop():
         time_stop_days=30,
         opened_at=now - timedelta(days=1),
     )
-    # price below trailing stop from peak 12 * 0.9 = 10.8
+    # price below trailing stop from peak 12 * 0.9 = 10.8 — trail armed (+20% peak)
     action2 = PositionLifecycleService._evaluate(svc, m2, price=10.5, now=now)
     assert action2.action == "exit"
     assert "Stop" in action2.reason or "trailing" in action2.reason.lower()
@@ -54,35 +55,60 @@ def test_lifecycle_trailing_and_time_stop():
     assert "invalidada" in action3.reason.lower()
 
 
+def test_lifecycle_trail_not_armed_before_profit():
+    svc = PositionLifecycleService.__new__(PositionLifecycleService)
+    svc._settings = type("S", (), {"lifecycle_trail_arm_profit_pct": 0.05})()
+    now = utc_now()
+    # Peak only +2% — trail must NOT tighten / cut on noise
+    m = PositionMandate(
+        symbol="CLOV",
+        qty=1,
+        entry_price=5.0,
+        stop_loss=4.60,
+        trailing_pct=0.05,
+        peak_price=5.10,
+        time_stop_days=7,
+        opened_at=now - timedelta(hours=2),
+    )
+    action = PositionLifecycleService._evaluate(svc, m, price=4.90, now=now)
+    assert action.action == "hold"
+    # If trail had armed at 5%, stop would be 5.10*0.95=4.845 and 4.90 would still hold;
+    # drop to 4.80 would exit if armed — ensure unarmed keeps initial stop only
+    action2 = PositionLifecycleService._evaluate(svc, m, price=4.80, now=now)
+    assert action2.action == "hold"
+
+
 def test_lifecycle_take_profit_fires():
     svc = PositionLifecycleService.__new__(PositionLifecycleService)
+    svc._settings = type("S", (), {"lifecycle_trail_arm_profit_pct": 0.05})()
     now = utc_now()
     m = PositionMandate(
         symbol="SNAP",
         qty=1,
         entry_price=4.78,
-        stop_loss=4.54,
-        take_profit=5.07,  # ~+6% micro target
-        trailing_pct=0.05,
+        stop_loss=4.40,
+        take_profit=5.54,  # ~+16% 2R
+        trailing_pct=0.10,
         peak_price=4.78,
         time_stop_days=3,
         opened_at=now - timedelta(days=1),
     )
-    action = PositionLifecycleService._evaluate(svc, m, price=5.10, now=now)
+    action = PositionLifecycleService._evaluate(svc, m, price=5.55, now=now)
     assert action.action == "exit"
     assert "Take-profit" in action.reason
 
 
 def test_lifecycle_tp_preferred_over_time_stop_when_green():
     svc = PositionLifecycleService.__new__(PositionLifecycleService)
+    svc._settings = type("S", (), {"lifecycle_trail_arm_profit_pct": 0.05})()
     now = utc_now()
     m = PositionMandate(
         symbol="AMC",
         qty=2,
         entry_price=2.69,
         stop_loss=2.55,
-        take_profit=2.85,
-        trailing_pct=0.05,
+        take_profit=3.12,
+        trailing_pct=0.10,
         peak_price=2.86,
         time_stop_days=3,
         opened_at=now - timedelta(days=10),
@@ -93,13 +119,14 @@ def test_lifecycle_tp_preferred_over_time_stop_when_green():
     assert "Time-stop" not in action.reason
 
     # Hit TP even if aged
-    action_tp = PositionLifecycleService._evaluate(svc, m, price=2.86, now=now)
+    action_tp = PositionLifecycleService._evaluate(svc, m, price=3.15, now=now)
     assert action_tp.action == "exit"
     assert "Take-profit" in action_tp.reason
 
 
 def test_lifecycle_micro_time_stop_three_days():
     svc = PositionLifecycleService.__new__(PositionLifecycleService)
+    svc._settings = type("S", (), {"lifecycle_trail_arm_profit_pct": 0.05})()
     now = utc_now()
     m = PositionMandate(
         symbol="AMC",
@@ -107,7 +134,7 @@ def test_lifecycle_micro_time_stop_three_days():
         entry_price=2.69,
         stop_loss=2.40,
         take_profit=3.20,
-        trailing_pct=0.05,
+        trailing_pct=0.10,
         peak_price=2.70,
         time_stop_days=3,
         opened_at=now - timedelta(days=3, hours=1),

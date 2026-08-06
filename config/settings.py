@@ -124,14 +124,15 @@ class Settings(BaseSettings):
     lifecycle_trailing_pct: float = 0.08
     lifecycle_time_stop_days: int = 10
     lifecycle_default_stop_pct: float = 0.08
-    lifecycle_default_target_pct: float = 0.12
+    lifecycle_default_target_pct: float = 0.16  # ≥2R vs 8% stop (Turtle/Livermore R:R)
     lifecycle_auto_exit: bool = True
-    # Ultra-micro books: tighter protective levels; time-stop only as last resort when underwater
+    # Ultra-micro: wider stops (noise ≠ thesis fail); trail only after profit
     lifecycle_micro_equity_usd: float = 50.0
     lifecycle_micro_time_stop_days: int = 7
-    lifecycle_micro_trailing_pct: float = 0.05
-    lifecycle_micro_default_stop_pct: float = 0.05
-    lifecycle_micro_default_target_pct: float = 0.06
+    lifecycle_micro_trailing_pct: float = 0.10  # 10% from peak once armed
+    lifecycle_micro_default_stop_pct: float = 0.08  # ~1–2N room vs 5% noise stops
+    lifecycle_micro_default_target_pct: float = 0.16  # 2R
+    lifecycle_trail_arm_profit_pct: float = 0.05  # no trail until +5% (don't choke winners)
     lifecycle_sync_broker_stops: bool = True
 
     # Continuous holdings strategy review (reformulate thesis → prefer take-profit)
@@ -148,6 +149,12 @@ class Settings(BaseSettings):
     intraday_flat_winners_only: bool = True  # do not force-close red into a loss at EOD
     intraday_flat_min_pnl_pct: float = 0.0  # close if PnL% >= this (0 = flat/green)
     intraday_carry_max_loss_pct: float = 8.0  # still cut if worse than this overnight risk
+
+    # Investor risk discipline (Turtle-style % risk + post-stop cooldown)
+    auto_execute_max_risk_pct: float = 2.5  # max loss at stop as % equity (≤2–3%)
+    auto_execute_micro_max_risk_pct: float = 4.0  # tiny books: 1-lot may need slightly more
+    auto_execute_post_stop_cooldown_minutes: int = 90  # no revenge rebuy after stop-out
+    auto_execute_max_position_pct: float = 0.30  # concentration cap per name
 
     # Continuous reconcile
     reconcile_interval_minutes: int = 20

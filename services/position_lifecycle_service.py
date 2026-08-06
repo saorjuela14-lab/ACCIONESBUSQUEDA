@@ -198,9 +198,14 @@ class PositionLifecycleService:
         if price > peak:
             peak = price
 
-        # Trailing stop from peak
+        entry = float(mandate.entry_price or 0)
+        arm_pct = float(self._settings.lifecycle_trail_arm_profit_pct or 0)
+        # Turtle/Livermore: do not trail from entry noise — arm only after real profit
+        trail_armed = entry > 0 and peak >= entry * (1.0 + max(0.0, arm_pct))
+
+        # Trailing stop from peak (only once armed)
         trail_stop = None
-        if mandate.trailing_pct and peak > 0:
+        if trail_armed and mandate.trailing_pct and peak > 0:
             trail_stop = peak * (1 - mandate.trailing_pct)
 
         effective_stop = mandate.stop_loss
@@ -239,7 +244,6 @@ class PositionLifecycleService:
             if opened.tzinfo is None:
                 opened = opened.replace(tzinfo=timezone.utc)
             age_days = (now - opened).total_seconds() / 86400.0
-            entry = float(mandate.entry_price or 0)
             underwater = entry <= 0 or price <= entry * 0.995
             if age_days >= mandate.time_stop_days and underwater:
                 return LifecycleAction(
@@ -252,15 +256,39 @@ class PositionLifecycleService:
                     new_stop=effective_stop,
                 )
 
-        if trail_stop and mandate.stop_loss and trail_stop > (mandate.stop_loss or 0):
+        if (
+            trail_armed
+            and trail_stop
+            and mandate.stop_loss
+            and trail_stop > (mandate.stop_loss or 0)
+        ):
             return LifecycleAction(
                 symbol=mandate.symbol,
                 action="tighten_stop",
-                reason=f"Trailing sube stop a {trail_stop:.4f}",
+                reason=f"Trailing armado (+{arm_pct*100:.0f}%) sube stop a {trail_stop:.4f}",
                 new_stop=trail_stop,
             )
 
         return LifecycleAction(symbol=mandate.symbol, action="hold", reason="OK", new_stop=effective_stop)
+
+    async def _record_stop_cooldown(self, symbol: str, reason: str, price: float) -> None:
+        """Block revenge re-entries (investor discipline / prop-desk cool-off)."""
+        mins = int(self._settings.auto_execute_post_stop_cooldown_minutes or 0)
+        if mins <= 0:
+            return
+        from database.repositories.ops_repository import OpsFlagRepository
+
+        await OpsFlagRepository(self._session).set_json(
+            "post_stop_cooldown",
+            {
+                "symbol": symbol.upper(),
+                "reason": reason[:240],
+                "price": price,
+                "until": (utc_now().timestamp() + mins * 60),
+                "minutes": mins,
+                "set_at": utc_now().isoformat(),
+            },
+        )
 
     async def scan(self, *, execute_exits: bool = True) -> LifecycleScanReport:
         now = utc_now()
@@ -337,8 +365,16 @@ class PositionLifecycleService:
                 )
                 decision.executed = executed
                 decision.detail = detail
-                if executed:
+                # Broker may have already filled the protective stop (403 qty=0) — still cool down
+                already_flat = "insufficient qty" in (detail or "").lower()
+                if executed or already_flat:
                     exits.append(m.symbol)
+                    protective = any(
+                        k in (decision.reason or "")
+                        for k in ("Stop", "trailing", "Tesis invalidada", "Time-stop", "perdida")
+                    )
+                    if protective and "Take-profit" not in (decision.reason or ""):
+                        await self._record_stop_cooldown(m.symbol, decision.reason, price)
             else:
                 await self._mandates.save(m)
 

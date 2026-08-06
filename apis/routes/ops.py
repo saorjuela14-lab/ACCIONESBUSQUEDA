@@ -214,6 +214,16 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
         "intraday_flat_winners_only": settings.intraday_flat_winners_only,
         "intraday_flat_min_pnl_pct": settings.intraday_flat_min_pnl_pct,
         "intraday_carry_max_loss_pct": settings.intraday_carry_max_loss_pct,
+        "risk_discipline": {
+            "max_risk_pct": settings.auto_execute_max_risk_pct,
+            "micro_max_risk_pct": settings.auto_execute_micro_max_risk_pct,
+            "post_stop_cooldown_minutes": settings.auto_execute_post_stop_cooldown_minutes,
+            "max_position_pct": settings.auto_execute_max_position_pct,
+            "trail_arm_profit_pct": settings.lifecycle_trail_arm_profit_pct,
+            "micro_stop_pct": settings.lifecycle_micro_default_stop_pct,
+            "micro_target_pct": settings.lifecycle_micro_default_target_pct,
+            "micro_trailing_pct": settings.lifecycle_micro_trailing_pct,
+        },
         "reconcile_auto_sync": settings.reconcile_auto_sync,
         "risk": {
             "max_var_pct": settings.risk_max_var_pct,
