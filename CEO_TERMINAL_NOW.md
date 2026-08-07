@@ -1,21 +1,22 @@
-# Terminal CEO NexBuy — estado de sesión
+# Terminal CEO Monarch Capital — estado de sesión
 
-Ver memoria completa: [`HANDOFF.json`](./HANDOFF.json) · regla [`.cursor/rules/comite-inversion.mdc`](./.cursor/rules/comite-inversion.mdc)
+Ver memoria completa: [`PROJECT_MEMORY.json`](./PROJECT_MEMORY.json) · corto: [`HANDOFF.json`](./HANDOFF.json) · regla [`.cursor/rules/comite-inversion.mdc`](./.cursor/rules/comite-inversion.mdc)
 
-## Conectado al agente origen
-- **Comité de inversión IA** → `bc-019f15ec-e5f5-7517-be9e-9d651e341bd5`
-- Último trabajo mergeado: **#64 smart EOD** (2026-08-05)
-- Transcript no accesible desde environment PROYECTOS → memoria reconstruida en `HANDOFF.json`
+## Producto
+- **Monarch Capital** — escritorio autónomo LIVE (comités + Risk Desk + Autopilot)
+- Web = **solo terminal** (`/` → `/dashboard`)
+- Pitch: Canva + `dashboard/pitch/MONARCH_CAPITAL_SHARK_TANK.md`
 
-## Abrir ahora (este VM)
-- http://127.0.0.1:8000/dashboard
-- Health OK · Alpaca **sin keys** · cash $22 · 0 posiciones · Autopilot bloqueado
+## Live (refrescar siempre)
+- Prod: https://accionesbusqueda.fastapicloud.dev/dashboard
+- Snapshot tipificado en `PROJECT_MEMORY.json` → `live_snapshot` (equity, posición, gates)
 
 ## Por dónde vamos
-1. Firma autónoma LIVE ya autorizada y codificada (PRs #45–#64).
-2. Desk ultra-micro operativa en código (mesa técnica, caza continua, GTC, holdings review, smart EOD).
-3. **Bloqueo actual:** credenciales Alpaca (+ alertas) no están en este environment.
-4. Host prod: Railway always-on preferido; FastAPI Cloud Hobby hiberna.
+1. Firma autónoma LIVE + disciplina 2R + smart EOD en código.
+2. Brand Monarch + terminal fácil + pitch centrado en proceso de escogencia/comités.
+3. Memoria portable para otros: **`PROJECT_MEMORY.json`**.
+4. Host: preferir Railway always-on; Neon si hace falta persistencia.
 
-## Recordatorio
-- 16:00 America/Bogota (programado en sesión)
+## Abrir ahora
+- https://accionesbusqueda.fastapicloud.dev/dashboard
+- Local: http://127.0.0.1:8000/dashboard
