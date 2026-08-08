@@ -181,10 +181,13 @@ class OrganizationORM(Base):
     # Company WhatsApp inbox (E.164 digits / +prefix). Optional CallMeBot key.
     notify_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     notify_whatsapp_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    # Client deposit intent (mesa invests; client only requests / monitors)
-    deposit_status: Mapped[str] = mapped_column(String(24), default="none")  # none|requested|received
+    # Latest deposit/withdrawal mirror (detail lives in capital_requests)
+    deposit_status: Mapped[str] = mapped_column(String(24), default="none")  # none|requested|client_confirmed|received
     deposit_requested_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     deposit_note: Mapped[str | None] = mapped_column(String(280), nullable=True)
+    withdrawal_status: Mapped[str] = mapped_column(String(24), default="none")  # none|requested|approved|rejected|paid
+    withdrawal_requested_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    withdrawal_note: Mapped[str | None] = mapped_column(String(280), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
@@ -236,6 +239,27 @@ class PasswordResetORM(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class CapitalRequestORM(Base):
+    """Client deposit/withdrawal requests against the shared firm Alpaca book."""
+
+    __tablename__ = "capital_requests"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    org_id: Mapped[str] = mapped_column(String(36), index=True)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    email: Mapped[str] = mapped_column(String(255), index=True)
+    # deposit | withdrawal
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    amount_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    note: Mapped[str | None] = mapped_column(String(280), nullable=True)
+    # deposit: requested | client_confirmed | received | rejected
+    # withdrawal: requested | approved | rejected | paid
+    status: Mapped[str] = mapped_column(String(24), default="requested", index=True)
+    desk_note: Mapped[str | None] = mapped_column(String(280), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class PositionMandateORM(Base):

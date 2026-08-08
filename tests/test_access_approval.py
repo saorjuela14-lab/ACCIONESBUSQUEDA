@@ -195,7 +195,9 @@ async def test_client_deposit_request_notifies_flow():
             json={"amount_usd": 500, "note": "wire lunes"},
         )
         assert req.status_code == 200, req.text
-        assert req.json()["deposit_status"] == "requested"
+        body = req.json()
+        assert body["request"]["status"] == "requested"
+        assert body["funding"]["memo_reference"] == "dep@test.com"
 
         mark = await client.post(
             f"/api/v1/auth/companies/{org_id}/deposit-received",
@@ -203,4 +205,4 @@ async def test_client_deposit_request_notifies_flow():
             json={"amount_usd": 500},
         )
         assert mark.status_code == 200
-        assert mark.json()["deposit_status"] == "received"
+        assert mark.json()["request"]["status"] == "received"

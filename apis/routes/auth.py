@@ -40,6 +40,15 @@ class DepositReceivedBody(BaseModel):
     amount_usd: float | None = Field(default=None, gt=0, le=1_000_000_000)
 
 
+class CapitalAmountBody(BaseModel):
+    amount_usd: float = Field(gt=0, le=1_000_000_000)
+    note: str = Field(default="", max_length=280)
+
+
+class CapitalDeskActionBody(BaseModel):
+    desk_note: str = Field(default="", max_length=280)
+
+
 class ForgotPasswordRequest(BaseModel):
     email: str = Field(min_length=3, max_length=255)
 
@@ -269,43 +278,267 @@ async def reject_company(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+def _require_client(resolved: dict | None) -> dict:
+    if not resolved or resolved.get("role") == "desk":
+        raise HTTPException(status_code=403, detail="Solo un cliente autorizado puede hacer esto")
+    if not resolved.get("org_id") or not resolved.get("user_id"):
+        raise HTTPException(status_code=403, detail="Sesión sin empresa")
+    return resolved
+
+
+def _require_desk(resolved: dict | None) -> dict:
+    if not resolved or resolved.get("role") != "desk":
+        raise HTTPException(status_code=403, detail="Solo la mesa Monarch puede hacer esto")
+    return resolved
+
+
+async def _notify_mesa(title: str, body: str) -> None:
+    try:
+        from services.push_notification_service import PushNotificationService
+
+        await PushNotificationService().notify_message(title, body)
+    except Exception:
+        pass
+
+
+@router.get("/auth/capital/funding")
+async def capital_funding_info(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Funding links/instructions for the shared firm Alpaca account."""
+    from services.capital_request_service import funding_package
+
+    svc = CompanyAuthService(session)
+    token = _extract_bearer(request)
+    resolved = await svc.resolve_bearer(token) if token else None
+    _require_client(resolved)
+    return {"ok": True, "funding": funding_package(client_email=resolved.get("email") or "")}
+
+
+@router.post("/auth/capital/deposit")
+async def capital_deposit(
+    body: CapitalAmountBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Client starts a deposit → gets Alpaca funding instructions for the firm account."""
+    from services.capital_request_service import CapitalRequestService
+
+    auth = CompanyAuthService(session)
+    token = _extract_bearer(request)
+    resolved = _require_client(await auth.resolve_bearer(token) if token else None)
+    try:
+        result = await CapitalRequestService(session).request_deposit(
+            org_id=resolved["org_id"],
+            user_id=resolved["user_id"],
+            amount_usd=body.amount_usd,
+            note=body.note,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await _notify_mesa(
+        "Depósito solicitado → fondear Alpaca",
+        (
+            f"Cliente: {resolved.get('email')}\n"
+            f"Monto: ${body.amount_usd:,.2f}\n"
+            f"Ref/memo: {resolved.get('email')}\n"
+            f"{(body.note or '')[:200]}\n"
+            f"El cliente recibió el enlace de fondeo de la cuenta Alpaca de la mesa."
+        ),
+    )
+    metrics.inc("capital_deposit_requested")
+    return result
+
+
+@router.post("/auth/capital/deposit/{request_id}/confirm")
+async def capital_deposit_confirm(
+    request_id: str,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Client says funds were sent — mesa gets confirmation to verify in Alpaca."""
+    from services.capital_request_service import CapitalRequestService
+
+    auth = CompanyAuthService(session)
+    token = _extract_bearer(request)
+    resolved = _require_client(await auth.resolve_bearer(token) if token else None)
+    try:
+        result = await CapitalRequestService(session).client_confirm_deposit(
+            org_id=resolved["org_id"],
+            user_id=resolved["user_id"],
+            request_id=request_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    req = result.get("request") or {}
+    await _notify_mesa(
+        "Cliente confirma depósito enviado",
+        (
+            f"Cliente: {resolved.get('email')}\n"
+            f"Monto: ${float(req.get('amount_usd') or 0):,.2f}\n"
+            f"Revisa Alpaca y marca «Recibido» en Capital si ya entró el dinero."
+        ),
+    )
+    metrics.inc("capital_deposit_client_confirmed")
+    return result
+
+
+@router.post("/auth/capital/withdraw")
+async def capital_withdraw(
+    body: CapitalAmountBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Client requests a withdrawal — mesa must approve before paying out."""
+    from services.capital_request_service import CapitalRequestService
+
+    auth = CompanyAuthService(session)
+    token = _extract_bearer(request)
+    resolved = _require_client(await auth.resolve_bearer(token) if token else None)
+    try:
+        result = await CapitalRequestService(session).request_withdrawal(
+            org_id=resolved["org_id"],
+            user_id=resolved["user_id"],
+            amount_usd=body.amount_usd,
+            note=body.note,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await _notify_mesa(
+        "Retiro solicitado — requiere tu aprobación",
+        (
+            f"Cliente: {resolved.get('email')}\n"
+            f"Monto: ${body.amount_usd:,.2f}\n"
+            f"{(body.note or '')[:200]}\n"
+            f"Revisa en Accesos → Capital y Aprueba o Rechaza."
+        ),
+    )
+    metrics.inc("capital_withdrawal_requested")
+    return result
+
+
+@router.get("/auth/capital/mine")
+async def capital_mine(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from services.capital_request_service import CapitalRequestService
+
+    auth = CompanyAuthService(session)
+    token = _extract_bearer(request)
+    resolved = _require_client(await auth.resolve_bearer(token) if token else None)
+    items = await CapitalRequestService(session).list_mine(
+        org_id=resolved["org_id"],
+        user_id=resolved["user_id"],
+    )
+    return {"ok": True, "items": items}
+
+
+@router.get("/auth/capital/requests")
+async def capital_requests_desk(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from services.capital_request_service import CapitalRequestService
+
+    auth = CompanyAuthService(session)
+    token = _extract_bearer(request)
+    _require_desk(await auth.resolve_bearer(token) if token else None)
+    items = await CapitalRequestService(session).list_all(limit=80)
+    return {"ok": True, "items": items}
+
+
+@router.post("/auth/capital/{request_id}/approve")
+async def capital_approve(
+    request_id: str,
+    body: CapitalDeskActionBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from services.capital_request_service import CapitalRequestService
+
+    auth = CompanyAuthService(session)
+    token = _extract_bearer(request)
+    _require_desk(await auth.resolve_bearer(token) if token else None)
+    try:
+        return await CapitalRequestService(session).desk_set_status(
+            request_id=request_id, status="approved", desk_note=body.desk_note
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/auth/capital/{request_id}/reject")
+async def capital_reject(
+    request_id: str,
+    body: CapitalDeskActionBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    from services.capital_request_service import CapitalRequestService
+
+    auth = CompanyAuthService(session)
+    token = _extract_bearer(request)
+    _require_desk(await auth.resolve_bearer(token) if token else None)
+    try:
+        return await CapitalRequestService(session).desk_set_status(
+            request_id=request_id, status="rejected", desk_note=body.desk_note
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/auth/capital/{request_id}/received")
+async def capital_mark_received(
+    request_id: str,
+    body: CapitalDeskActionBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Desk confirms deposit landed in the firm Alpaca account."""
+    from services.capital_request_service import CapitalRequestService
+
+    auth = CompanyAuthService(session)
+    token = _extract_bearer(request)
+    _require_desk(await auth.resolve_bearer(token) if token else None)
+    try:
+        return await CapitalRequestService(session).desk_set_status(
+            request_id=request_id, status="received", desk_note=body.desk_note
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/auth/capital/{request_id}/paid")
+async def capital_mark_paid(
+    request_id: str,
+    body: CapitalDeskActionBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Desk confirms withdrawal was paid out from Alpaca."""
+    from services.capital_request_service import CapitalRequestService
+
+    auth = CompanyAuthService(session)
+    token = _extract_bearer(request)
+    _require_desk(await auth.resolve_bearer(token) if token else None)
+    try:
+        return await CapitalRequestService(session).desk_set_status(
+            request_id=request_id, status="paid", desk_note=body.desk_note
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/auth/deposit-request")
 async def deposit_request(
     body: DepositRequestBody,
     request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Cliente aprobado solicita depositar; la mesa invierte el capital."""
-    svc = CompanyAuthService(session)
-    token = _extract_bearer(request)
-    resolved = await svc.resolve_bearer(token) if token else None
-    if not resolved or resolved.get("role") == "desk":
-        raise HTTPException(status_code=403, detail="Solo un cliente autorizado puede solicitar depósito")
-    org_id = resolved.get("org_id")
-    if not org_id:
-        raise HTTPException(status_code=403, detail="Sesión sin empresa")
-    try:
-        result = await svc.request_deposit(
-            org_id=org_id,
-            amount_usd=body.amount_usd,
-            note=body.note,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    try:
-        from services.push_notification_service import PushNotificationService
-
-        await PushNotificationService().notify_message(
-            "Depósito solicitado",
-            (
-                f"Cliente: {resolved.get('email')}\n"
-                f"Monto: ${body.amount_usd:,.2f}\n"
-                f"{(body.note or '')[:200]}"
-            ),
-        )
-    except Exception:
-        pass
-    return result
+    """Compat alias → /auth/capital/deposit."""
+    return await capital_deposit(body=CapitalAmountBody(amount_usd=body.amount_usd, note=body.note), request=request, session=session)
 
 
 @router.post("/auth/companies/{org_id}/deposit-received")
@@ -315,13 +548,32 @@ async def deposit_received(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    svc = CompanyAuthService(session)
+    """Compat: mark latest requested/confirmed deposit for org as received."""
+    from services.capital_request_service import CapitalRequestService
+    from sqlalchemy import select
+    from database.models import CapitalRequestORM
+
+    auth = CompanyAuthService(session)
     token = _extract_bearer(request)
-    resolved = await svc.resolve_bearer(token) if token else None
-    if not resolved or resolved.get("role") != "desk":
-        raise HTTPException(status_code=403, detail="Solo la mesa puede confirmar depósitos")
+    _require_desk(await auth.resolve_bearer(token) if token else None)
+    r = await session.execute(
+        select(CapitalRequestORM)
+        .where(
+            CapitalRequestORM.org_id == org_id,
+            CapitalRequestORM.kind == "deposit",
+            CapitalRequestORM.status.in_(("requested", "client_confirmed")),
+        )
+        .order_by(CapitalRequestORM.created_at.desc())
+        .limit(1)
+    )
+    row = r.scalar_one_or_none()
+    if row:
+        return await CapitalRequestService(session).desk_set_status(
+            request_id=row.id, status="received", desk_note=""
+        )
+    # Fallback to legacy org flag
     try:
-        return await svc.mark_deposit_received(org_id, body.amount_usd)
+        return await auth.mark_deposit_received(org_id, body.amount_usd)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

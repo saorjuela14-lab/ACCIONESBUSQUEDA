@@ -1611,9 +1611,10 @@ async function loadDashboard() {
         loadOpsDesk(),
         loadAccessRequests(),
         loadPasswordResets(),
+        loadDeskCapitalRequests(),
       );
     } else {
-      refreshClientDepositStatus();
+      loadClientCapital();
     }
     await Promise.all(jobs);
   } catch (e) {
@@ -1771,18 +1772,114 @@ async function deskSetClientPassword(email) {
   }
 }
 
-function refreshClientDepositStatus() {
-  const el = document.getElementById("deposit-status-msg");
-  if (!el) return;
-  const p = window.__monarchPrincipal || {};
-  const st = p.deposit_status || "none";
-  const amt = p.deposit_requested_usd;
-  if (st === "requested") {
-    el.textContent = `Depósito solicitado${amt ? `: $${Number(amt).toLocaleString()} USD` : ""}. La mesa lo confirmará.`;
-  } else if (st === "received") {
-    el.textContent = "Depósito recibido. La mesa Monarch gestiona la inversión; tú solo monitoreas.";
-  } else {
-    el.textContent = "Aún no hay depósito solicitado.";
+function renderFundingBox(funding) {
+  const box = document.getElementById("funding-box");
+  if (!box || !funding) return;
+  const steps = (funding.steps || []).map((s) => `<li>${s}</li>`).join("");
+  const wire = funding.wire_details
+    ? `<pre style="white-space:pre-wrap;margin:0.5rem 0 0;font-size:11px">${funding.wire_details}</pre>`
+    : "";
+  const paperNote = funding.paper
+    ? `<p class="muted" style="margin:0.4rem 0 0">Nota: la cuenta está en modo paper — el fondeo real aplica a la cuenta live de Alpaca.</p>`
+    : "";
+  box.innerHTML = `
+    <strong>Conexión para depositar en Alpaca — ${funding.account_name || "Monarch Capital"}</strong>
+    <p style="margin:0.35rem 0 0">Enlace de fondeo:
+      <a href="${funding.funding_url}" target="_blank" rel="noopener">${funding.funding_url}</a>
+    </p>
+    <ol>${steps}</ol>
+    <p>Referencia / memo: <span class="memo">${funding.memo_reference || ""}</span></p>
+    ${funding.instructions ? `<p style="margin:0.45rem 0 0;white-space:pre-wrap">${funding.instructions}</p>` : ""}
+    ${wire}
+    ${paperNote}
+    <div style="margin-top:0.65rem">
+      <button type="button" class="btn primary" id="btn-deposit-confirm">Ya deposité — avisar a la mesa</button>
+    </div>
+  `;
+  box.classList.remove("hidden");
+  const confirmBtn = document.getElementById("btn-deposit-confirm");
+  if (confirmBtn && window.__pendingDepositId) {
+    confirmBtn.onclick = () => confirmClientDeposit(window.__pendingDepositId);
+  }
+}
+
+function _capitalStatusLabel(kind, status) {
+  const map = {
+    deposit: {
+      requested: "depósito: pendiente de envío",
+      client_confirmed: "depósito: cliente confirma envío",
+      received: "depósito: recibido en Alpaca",
+      rejected: "depósito: rechazado",
+    },
+    withdrawal: {
+      requested: "retiro: pendiente de aprobación",
+      approved: "retiro: aprobado (en proceso)",
+      paid: "retiro: pagado",
+      rejected: "retiro: rechazado",
+    },
+  };
+  return (map[kind] && map[kind][status]) || status;
+}
+
+async function loadClientCapital() {
+  const list = document.getElementById("client-capital-list");
+  const depMsg = document.getElementById("deposit-status-msg");
+  const wMsg = document.getElementById("withdraw-status-msg");
+  try {
+    const data = await api(`${API}/auth/capital/mine`);
+    const items = data.items || [];
+    if (list) {
+      if (!items.length) {
+        list.innerHTML = `<p class="muted">Sin movimientos todavía.</p>`;
+      } else {
+        list.innerHTML = items.map((r) => `
+          <div class="access-card">
+            <div class="meta">
+              <strong>${r.kind === "withdrawal" ? "Retiro" : "Depósito"} $${Number(r.amount_usd || 0).toLocaleString()}</strong>
+              <span class="pill ${r.status === "requested" || r.status === "client_confirmed" ? "pending" : r.status === "rejected" ? "rejected" : "approved"}">
+                ${_capitalStatusLabel(r.kind, r.status)}
+              </span>
+              <div class="muted" style="font-size:12px;margin-top:0.2rem">${r.note || "—"} · ${r.created_at ? new Date(r.created_at).toLocaleString() : ""}</div>
+            </div>
+            <div class="actions">
+              ${r.kind === "deposit" && r.status === "requested"
+                ? `<button type="button" class="btn primary" data-confirm-deposit="${r.id}">Ya deposité</button>`
+                : ""}
+            </div>
+          </div>
+        `).join("");
+        list.querySelectorAll("[data-confirm-deposit]").forEach((btn) => {
+          btn.onclick = () => confirmClientDeposit(btn.getAttribute("data-confirm-deposit"));
+        });
+      }
+    }
+    const openDep = items.find((r) => r.kind === "deposit" && (r.status === "requested" || r.status === "client_confirmed"));
+    if (openDep) {
+      window.__pendingDepositId = openDep.id;
+      if (depMsg) {
+        depMsg.textContent = openDep.status === "client_confirmed"
+          ? `Aviso enviado. Monto $${Number(openDep.amount_usd).toLocaleString()} — la mesa confirmará en Alpaca.`
+          : `Depósito pendiente $${Number(openDep.amount_usd).toLocaleString()}. Usa el enlace de fondeo y luego «Ya deposité».`;
+      }
+      if (openDep.status === "requested") {
+        try {
+          const fund = await api(`${API}/auth/capital/funding`);
+          renderFundingBox(fund.funding);
+          const confirmBtn = document.getElementById("btn-deposit-confirm");
+          if (confirmBtn) confirmBtn.onclick = () => confirmClientDeposit(openDep.id);
+        } catch { /* ignore */ }
+      }
+    } else if (depMsg) {
+      depMsg.textContent = "Indica el monto y pulsa Depositar para recibir el enlace a la cuenta Alpaca de Monarch.";
+    }
+    const openW = items.find((r) => r.kind === "withdrawal" && (r.status === "requested" || r.status === "approved"));
+    if (wMsg) {
+      wMsg.textContent = openW
+        ? `Retiro $${Number(openW.amount_usd).toLocaleString()} — ${_capitalStatusLabel("withdrawal", openW.status)}.`
+        : "Los retiros los revisa y aprueba la mesa Monarch.";
+    }
+  } catch (e) {
+    if (list) list.innerHTML = `<p class="muted">${e.message}</p>`;
   }
 }
 
@@ -1794,18 +1891,117 @@ async function submitDepositRequest() {
     return;
   }
   try {
-    const r = await api(`${API}/auth/deposit-request`, {
+    const r = await api(`${API}/auth/capital/deposit`, {
       method: "POST",
       body: JSON.stringify({ amount_usd: amount, note }),
     });
-    if (window.__monarchPrincipal) {
-      window.__monarchPrincipal.deposit_status = r.deposit_status;
-      window.__monarchPrincipal.deposit_requested_usd = r.deposit_requested_usd;
-    }
-    refreshClientDepositStatus();
-    toast("Solicitud de depósito enviada a la mesa");
+    window.__pendingDepositId = r.request?.id;
+    if (r.funding) renderFundingBox(r.funding);
+    const depMsg = document.getElementById("deposit-status-msg");
+    if (depMsg) depMsg.textContent = r.message || "Usa el enlace para depositar en Alpaca.";
+    toast("Enlace de depósito listo — fondea la cuenta Alpaca de Monarch");
+    loadClientCapital();
   } catch (e) {
     toast(e.message);
+  }
+}
+
+async function confirmClientDeposit(requestId) {
+  if (!requestId) return;
+  try {
+    const r = await api(`${API}/auth/capital/deposit/${requestId}/confirm`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    toast(r.message || "Aviso enviado a la mesa");
+    loadClientCapital();
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function submitWithdrawRequest() {
+  const amount = parseFloat(document.getElementById("withdraw-amount")?.value || "");
+  const note = document.getElementById("withdraw-note")?.value || "";
+  if (!(amount > 0)) {
+    toast("Indica un monto de retiro válido");
+    return;
+  }
+  try {
+    const r = await api(`${API}/auth/capital/withdraw`, {
+      method: "POST",
+      body: JSON.stringify({ amount_usd: amount, note }),
+    });
+    toast(r.message || "Retiro solicitado — pendiente de aprobación");
+    document.getElementById("withdraw-amount").value = "";
+    loadClientCapital();
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function loadDeskCapitalRequests() {
+  const box = document.getElementById("capital-desk-list");
+  if (!box || !isDeskPrincipal()) return;
+  try {
+    const data = await api(`${API}/auth/capital/requests`);
+    const items = data.items || [];
+    if (!items.length) {
+      box.innerHTML = `<p class="muted">Sin movimientos de capital.</p>`;
+      return;
+    }
+    box.innerHTML = items.map((r) => {
+      const actions = [];
+      if (r.kind === "deposit" && (r.status === "requested" || r.status === "client_confirmed")) {
+        actions.push(`<button type="button" class="btn primary" data-cap-action="received" data-cap-id="${r.id}">Marcar recibido en Alpaca</button>`);
+        actions.push(`<button type="button" class="btn" data-cap-action="reject" data-cap-id="${r.id}">Rechazar</button>`);
+      }
+      if (r.kind === "withdrawal" && r.status === "requested") {
+        actions.push(`<button type="button" class="btn primary" data-cap-action="approve" data-cap-id="${r.id}">Aprobar retiro</button>`);
+        actions.push(`<button type="button" class="btn danger" data-cap-action="reject" data-cap-id="${r.id}">Rechazar</button>`);
+      }
+      if (r.kind === "withdrawal" && r.status === "approved") {
+        actions.push(`<button type="button" class="btn primary" data-cap-action="paid" data-cap-id="${r.id}">Marcar pagado</button>`);
+      }
+      return `<div class="access-card">
+        <div class="meta">
+          <strong>${r.kind === "withdrawal" ? "Retiro" : "Depósito"} $${Number(r.amount_usd || 0).toLocaleString()}</strong>
+          <span class="pill ${r.status === "rejected" ? "rejected" : r.status === "requested" || r.status === "client_confirmed" ? "pending" : "approved"}">
+            ${_capitalStatusLabel(r.kind, r.status)}
+          </span>
+          <div class="muted" style="font-size:12px;margin-top:0.2rem">
+            ${r.email || "—"} · ${r.note || "—"} · ${r.created_at ? new Date(r.created_at).toLocaleString() : ""}
+          </div>
+        </div>
+        <div class="actions">${actions.join("")}</div>
+      </div>`;
+    }).join("");
+    if (!box.dataset.boundCapital) {
+      box.dataset.boundCapital = "1";
+      box.addEventListener("click", async (ev) => {
+        const btn = ev.target?.closest?.("[data-cap-action]");
+        if (!btn || !box.contains(btn)) return;
+        const id = btn.getAttribute("data-cap-id");
+        const action = btn.getAttribute("data-cap-action");
+        btn.disabled = true;
+        try {
+          await api(`${API}/auth/capital/${id}/${action}`, {
+            method: "POST",
+            body: JSON.stringify({}),
+          });
+          toast(action === "approve" ? "Retiro aprobado"
+            : action === "paid" ? "Retiro marcado como pagado"
+              : action === "received" ? "Depósito confirmado en Alpaca"
+                : "Solicitud rechazada");
+          loadDeskCapitalRequests();
+        } catch (e) {
+          toast(e.message);
+          btn.disabled = false;
+        }
+      });
+    }
+  } catch (e) {
+    box.innerHTML = `<p class="muted">${e.message}</p>`;
   }
 }
 
@@ -3004,8 +3200,10 @@ document.addEventListener("keydown", (e) => {
   document.getElementById("btn-access-refresh")?.addEventListener("click", () => {
     loadAccessRequests();
     loadPasswordResets();
+    loadDeskCapitalRequests();
   });
   document.getElementById("btn-deposit-request")?.addEventListener("click", () => submitDepositRequest());
+  document.getElementById("btn-withdraw-request")?.addEventListener("click", () => submitWithdrawRequest());
   loadDashboard();
   setInterval(loadDashboard, REFRESH_MS);
 })();

@@ -24,6 +24,10 @@ PUBLIC_PREFIXES = (
 # require the mesa desk role.
 CLIENT_MUTATION_ALLOW_PREFIXES = (
     "/api/v1/auth/deposit-request",
+    "/api/v1/auth/capital/deposit",
+    "/api/v1/auth/capital/withdraw",
+    "/api/v1/auth/capital/mine",
+    "/api/v1/auth/capital/funding",
     "/api/v1/auth/logout",
     "/api/v1/auth/client-error",
 )
