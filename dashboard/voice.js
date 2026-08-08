@@ -16,6 +16,37 @@
   let synth = window.speechSynthesis;
   let elevenConfigured = null; // null = unknown, true/false after probe
   let currentAudio = null;
+  let chatSessionId = localStorage.getItem("monarch_voice_session") || "";
+  let assistantName = "Viernes";
+
+  function ensureSessionId() {
+    if (!chatSessionId) {
+      chatSessionId = (crypto.randomUUID && crypto.randomUUID())
+        || `vs_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+      localStorage.setItem("monarch_voice_session", chatSessionId);
+    }
+    return chatSessionId;
+  }
+
+  function appendTranscript(role, text) {
+    const box = $("#voice-transcript");
+    if (!box || !text) return;
+    const div = document.createElement("div");
+    div.className = `voice-bubble ${role}`;
+    const who = role === "user" ? "Tú" : assistantName;
+    div.innerHTML = `<span class="who">${who}</span>${escapeHtmlVoice(text)}`;
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+    while (box.children.length > 24) box.removeChild(box.firstChild);
+  }
+
+  function escapeHtmlVoice(s) {
+    return String(s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
 
   function $(s) { return document.querySelector(s); }
 
@@ -220,32 +251,55 @@
   async function handleTranscript(text) {
     const trimmed = (text || "").trim();
     if (!trimmed) {
-      speak("No entendí. Prueba: cómo está el mercado, precio de NVDA, o compra 1 AAPL.");
+      speak("No te escuché, jefe. Prueba de nuevo.");
       return;
     }
 
-    setStatus(`Procesando: "${trimmed}"…`, true);
+    appendTranscript("user", trimmed);
+    setStatus(`Viernes escucha: "${trimmed}"…`, true);
     try {
-      const body = { text: trimmed };
+      const body = {
+        text: trimmed,
+        session_id: ensureSessionId(),
+      };
       if (deps.getPortfolioId()) body.portfolio_id = deps.getPortfolioId();
-      const result = await deps.api(`${deps.API}/voice/command`, {
+      const result = await deps.api(`${deps.API}/voice/chat`, {
         method: "POST",
         body: JSON.stringify(body),
       });
+      if (result.session_id) {
+        chatSessionId = result.session_id;
+        localStorage.setItem("monarch_voice_session", chatSessionId);
+      }
+      if (result.assistant_name) {
+        assistantName = result.assistant_name;
+        const nameEl = $("#voice-assistant-name");
+        if (nameEl) nameEl.textContent = assistantName;
+      }
+      appendTranscript("assistant", result.speech || "");
+
       if (result.requires_confirmation) {
-        setStatus("Esperando: di «confirma» o «cancela»", true);
+        setStatus("Esperando: di «confirma» o «cancela», jefe", true);
+        deps.toast("Viernes: orden pendiente — di confirma o cancela", 6000);
       } else {
-        setStatus(result.success ? "Listo ✓" : "Sin resultado", false);
+        const mode = result.mode === "chat" ? "conversación" : (result.mode || "listo");
+        setStatus(result.success ? `${assistantName} · ${mode}` : "Sin resultado", false);
       }
-      if (result.requires_confirmation) {
-        deps.toast("Voz: orden pendiente — di confirma o cancela", 6000);
-      }
+
+      const actions = Array.isArray(result.ui_actions) && result.ui_actions.length
+        ? result.ui_actions
+        : (result.ui_action ? [result.ui_action] : []);
+
       speak(result.speech, async () => {
-        if (result.ui_action) await dispatchUiAction(result.ui_action);
+        for (const action of actions) {
+          await dispatchUiAction(action);
+        }
       });
     } catch (e) {
       setStatus("Error", false);
-      speak("Hubo un error procesando el comando.");
+      const msg = "Perdón jefe, hubo un error procesando eso.";
+      appendTranscript("assistant", msg);
+      speak(msg);
       deps.toast("Voz: " + e.message);
     }
   }
@@ -374,13 +428,32 @@
       synth.addEventListener("voiceschanged", () => {}, { once: true });
     }
 
-    // Probe ElevenLabs in background; speak() will use it when ready
+    // Probe ElevenLabs + assistant status in background
     probeElevenStatus().then((ok) => { elevenConfigured = ok; });
+    ensureSessionId();
+    (async () => {
+      try {
+        const token = localStorage.getItem("nexbuy_token");
+        const headers = {};
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const r = await fetch(`${deps.API}/voice/assistant/status`, { headers });
+        if (!r.ok) return;
+        const st = await r.json();
+        if (st.assistant_name) {
+          assistantName = st.assistant_name;
+          const nameEl = $("#voice-assistant-name");
+          if (nameEl) nameEl.textContent = assistantName;
+        }
+        if (!st.openai_configured) {
+          setStatus("Viernes en modo comandos (falta OPENAI_API_KEY para chat libre)", false);
+        }
+      } catch { /* ignore */ }
+    })();
 
     if (!SpeechRecognition || isIOS) {
       const hint = isIOS
-        ? "iPhone: escribe abajo (mic limitado). Ej: precio NVDA, analiza AAPL, compra 1 AAPL."
-        : "Escribe el comando. Ej: precio NVDA · analiza AAPL · compra 1 AAPL · confirma";
+        ? "iPhone: escribe a Viernes abajo. Ej: jefe, ¿cómo está el mercado?"
+        : "Escribe a Viernes. Ej: simula 3200 al 12% · cambia la estrategia · precio NVDA";
       setStatus(hint, false);
       btn.disabled = true;
       btn.title = "Micrófono no disponible — usa el campo de texto";
@@ -389,6 +462,6 @@
     }
 
     bindMicButton(btn);
-    setStatus(isTouch ? "Mantén pulsado 🎙 y habla" : "Clic en 🎙 y habla", false);
+    setStatus(isTouch ? "Mantén pulsado 🎙 — habla con Viernes" : "Clic en 🎙 — habla con Viernes", false);
   };
 })();

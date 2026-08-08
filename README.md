@@ -155,24 +155,25 @@ Misma key alimenta **Trading API** y **Market Data**. Cada orden lleva `client_o
 API: `GET /broker/status|doctor|clock`, `POST /broker/execute/*`, `DELETE /broker/orders` (cancel-all).
 Opcional en tu máquina: `brew install alpacahq/tap/cli` para `alpaca account get` / `alpaca doctor`.
 
-#### Asistente de voz (Chrome / Edge)
+#### Asistente de voz — Viernes (Chrome / Edge)
 
-Botón **🎙 Voz** en el header del panel. Ejemplos:
+Botón **🎙** — chat conversacional con **Viernes** (te llama *jefe*), voz ElevenLabs natural.
 
-- «¿Cómo está el mercado?» · «Analiza VRT» · «Escanea la watchlist»
-- «Recomendaciones del día» · «Agrega RKLB a watchlist» · «Descubre biotech»
-- «Mi portafolio» · «Mis alertas» · «Ayuda»
-
-API: `POST /api/v1/voice/command` con `{ "text": "..." }`.
-TTS: `POST /api/v1/voice/tts` (ElevenLabs) · `GET /api/v1/voice/tts/status`.
+Puede: mercado, precios, análisis, compras (con confirmación), portafolio, autopilot, kill switch,
+simulaciones de inversión, asignación, y anotar cambios de UI/código (issue GitHub si hay token).
 
 ```bash
-ELEVENLABS_API_KEY=tu_key
-ELEVENLABS_VOICE_ID=EXAVITQu4vr4xnSDxMaL   # Sarah — cálida / profesional
-ELEVENLABS_MODEL_ID=eleven_flash_v2_5      # baja latencia en español
+OPENAI_API_KEY=sk-...                 # cerebro conversacional
+ELEVENLABS_API_KEY=sk_...            # voz natural
+ELEVENLABS_VOICE_ID=hpp4J3VqNfWAUOO0d1Us   # Bella
+ELEVENLABS_MODEL_ID=eleven_multilingual_v2
+VOICE_ASSISTANT_NAME=Viernes
+VOICE_BOSS_TITLE=jefe
+# opcional para cambios de producto/código:
+# GITHUB_TOKEN=...
 ```
 
-En FastAPI Cloud, marca `ELEVENLABS_API_KEY` como **Secret** y haz Redeploy.
+API: `POST /api/v1/voice/chat` · `POST /api/v1/voice/command` · `POST /api/v1/voice/tts`.
 
 ### Fase 2.2 — Market Data (implementado)
 Cadena de fallback automática: **Alpaca → Polygon → Alpha Vantage → YFinance**

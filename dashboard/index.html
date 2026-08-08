@@ -39,11 +39,15 @@
     </header>
 
     <div id="voice-bar" class="voice-bar">
-      <button id="btn-voice" class="btn voice-btn-mic" title="Asistente de voz" type="button" aria-label="Micrófono">🎙</button>
+      <button id="btn-voice" class="btn voice-btn-mic" title="Hablar con Viernes" type="button" aria-label="Micrófono">🎙</button>
       <div class="voice-bar-main">
-        <span id="voice-status" class="voice-status">Prueba: «precio NVDA» · «analiza AAPL» · «compra 1 AAPL»</span>
+        <div class="voice-bar-head">
+          <strong id="voice-assistant-name">Viernes</strong>
+          <span id="voice-status" class="voice-status">Tu asistente — dile jefe, pide mercado, estrategia, simulaciones o cambios</span>
+        </div>
+        <div id="voice-transcript" class="voice-transcript" aria-live="polite"></div>
         <div class="voice-text-row">
-          <input id="voice-text-input" type="text" placeholder="O escribe aquí en español…" autocomplete="off" />
+          <input id="voice-text-input" type="text" placeholder="Habla o escribe a Viernes… ej: jefe, simula 3200 al 12% a 12 meses" autocomplete="off" />
           <button id="btn-voice-send" class="btn primary" type="button">Enviar</button>
         </div>
       </div>

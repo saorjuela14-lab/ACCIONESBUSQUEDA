@@ -1,13 +1,14 @@
-"""Voice assistant API — interpret spoken commands and execute actions."""
+"""Voice assistant API — conversational Viernes + command router + TTS."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.engine import get_session
-from domain.voice import VoiceCommandResult, VoiceHelpItem
-from models.schemas import VoiceCommandRequest, VoiceTTSRequest
+from domain.voice import VoiceChatResult, VoiceCommandResult, VoiceHelpItem
+from models.schemas import VoiceChatRequest, VoiceCommandRequest, VoiceTTSRequest
 from services.elevenlabs_tts_service import ElevenLabsTTSError, ElevenLabsTTSService
+from services.voice_assistant_service import VoiceAssistantService
 from services.voice_command_service import VoiceCommandService, _HELP_ITEMS
 
 router = APIRouter()
@@ -18,12 +19,31 @@ async def voice_command(
     request: VoiceCommandRequest,
     session: AsyncSession = Depends(get_session),
 ) -> VoiceCommandResult:
-    """Interpreta texto de voz y ejecuta acciones del panel."""
+    """Interpreta texto de voz y ejecuta acciones del panel (comandos rápidos)."""
     return await VoiceCommandService().handle(
         request.text,
         session,
         portfolio_id=request.portfolio_id,
     )
+
+
+@router.post("/voice/chat", response_model=VoiceChatResult)
+async def voice_chat(
+    request: VoiceChatRequest,
+    session: AsyncSession = Depends(get_session),
+) -> VoiceChatResult:
+    """Chat conversacional con Viernes (estrategia, simulaciones, ops, cambios de producto)."""
+    return await VoiceAssistantService().chat(
+        request.text,
+        session,
+        portfolio_id=request.portfolio_id,
+        session_id=request.session_id,
+    )
+
+
+@router.get("/voice/assistant/status")
+async def voice_assistant_status() -> dict:
+    return VoiceAssistantService().status()
 
 
 @router.get("/voice/help", response_model=list[VoiceHelpItem])
@@ -39,7 +59,7 @@ async def voice_tts_status() -> dict:
 
 @router.post("/voice/tts")
 async def voice_tts(request: VoiceTTSRequest) -> Response:
-    """Sintetiza audio con ElevenLabs (voz amigable tipo secretaria / Friday)."""
+    """Sintetiza audio con ElevenLabs (voz natural tipo secretaria / Friday)."""
     svc = ElevenLabsTTSService()
     if not svc.configured():
         status = svc.status()

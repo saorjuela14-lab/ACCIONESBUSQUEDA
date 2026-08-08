@@ -684,21 +684,45 @@ body.tech-chart-fs { overflow: hidden; }
 .push-badge.off { color: var(--muted); }
 .voice-bar {
   display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap;
-  margin: 0 0.5rem 0.5rem; padding: 8px 10px;
-  background: rgba(196,165,116,0.08); border: 1px solid rgba(196,165,116,0.2);
-  border-radius: 6px; font-size: 11px;
+  margin: 0 0.5rem 0.5rem; padding: 10px 12px;
+  background:
+    linear-gradient(135deg, rgba(196,165,116,0.12), rgba(10,52,46,0.35)),
+    rgba(6,40,36,0.55);
+  border: 1px solid rgba(196,165,116,0.28);
+  border-radius: 10px; font-size: 11px;
 }
-.voice-bar-main { flex: 1; min-width: 200px; }
-.voice-text-row { display: flex; gap: 6px; margin-top: 6px; }
+.voice-bar-main { flex: 1; min-width: 220px; }
+.voice-bar-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.voice-bar-head strong {
+  color: var(--gold, #c4a574); font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase;
+}
+.voice-transcript {
+  max-height: 140px; overflow-y: auto; margin-top: 4px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.voice-transcript:empty { display: none; }
+.voice-bubble {
+  padding: 6px 9px; border-radius: 8px; line-height: 1.45; max-width: 95%;
+  white-space: pre-wrap; word-break: break-word;
+}
+.voice-bubble.user {
+  align-self: flex-end; background: rgba(196,165,116,0.18); color: var(--text);
+}
+.voice-bubble.assistant {
+  align-self: flex-start; background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+  color: var(--text);
+}
+.voice-bubble .who { display: block; font-size: 9px; color: var(--muted); margin-bottom: 2px; letter-spacing: 0.04em; }
+.voice-text-row { display: flex; gap: 6px; margin-top: 8px; }
 .voice-text-row input {
   flex: 1; min-width: 0; background: var(--surface); border: 1px solid var(--border);
-  color: var(--text); padding: 6px 8px; border-radius: 4px; font-size: 12px;
+  color: var(--text); padding: 8px 10px; border-radius: 6px; font-size: 13px;
 }
 .voice-btn-mic {
-  font-size: 18px; padding: 8px 12px; min-width: 44px; min-height: 44px;
+  font-size: 18px; padding: 8px 12px; min-width: 48px; min-height: 48px;
   border-radius: 50%; flex-shrink: 0;
 }
-.voice-status { color: var(--text); font-weight: 500; display: block; line-height: 1.4; }
+.voice-status { color: var(--muted); font-weight: 400; display: block; line-height: 1.4; flex: 1; }
 .voice-btn-mic.voice-active, .voice-btn.voice-active {
   background: rgba(239,68,68,0.25); border-color: #ef4444; color: #fca5a5;
 }

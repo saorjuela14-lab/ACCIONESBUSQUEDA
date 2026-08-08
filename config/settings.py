@@ -41,19 +41,32 @@ class Settings(BaseSettings):
     dashboard_access_token: str = ""
     public_base_url: str = ""
 
-    # ElevenLabs TTS — friendly desk assistant voice (secretary / Friday style)
-    # Default voice: Sarah (warm, reassuring, professional) — speaks Spanish via multilingual models
+    # Voice assistant persona ("Viernes" — habla al jefe)
+    voice_assistant_name: str = "Viernes"
+    voice_boss_title: str = "jefe"
+    voice_chat_enabled: bool = True
+    voice_chat_max_history: int = 16
+
+    # GitHub — optional: voice can open issues for product/code changes
+    github_token: str = Field(
+        default="",
+        validation_alias=AliasChoices("GITHUB_TOKEN", "GH_TOKEN"),
+    )
+    github_repo: str = "saorjuela14-lab/ACCIONESBUSQUEDA"
+
+    # ElevenLabs TTS — natural secretary / Friday voice (Spanish via multilingual)
     # Accepts ELEVENLABS_API_KEY or Cursor secret alias ELEVEN_LABS
     elevenlabs_api_key: str = Field(
         default="",
         validation_alias=AliasChoices("ELEVENLABS_API_KEY", "ELEVEN_LABS"),
     )
-    elevenlabs_voice_id: str = "EXAVITQu4vr4xnSDxMaL"
-    elevenlabs_model_id: str = "eleven_flash_v2_5"
+    # Bella — professional, bright, warm (more natural than flash+Sarah)
+    elevenlabs_voice_id: str = "hpp4J3VqNfWAUOO0d1Us"
+    elevenlabs_model_id: str = "eleven_multilingual_v2"
     elevenlabs_output_format: str = "mp3_44100_128"
-    elevenlabs_stability: float = 0.42
-    elevenlabs_similarity: float = 0.78
-    elevenlabs_style: float = 0.25
+    elevenlabs_stability: float = 0.32
+    elevenlabs_similarity: float = 0.85
+    elevenlabs_style: float = 0.55
 
     # Provider rate limits (free tiers)
     polygon_daily_limit: int = 1000
