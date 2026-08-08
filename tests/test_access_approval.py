@@ -98,6 +98,45 @@ async def test_public_register_is_pending_until_desk_approves():
 
 
 @pytest.mark.asyncio
+async def test_reject_marks_status_rejected_not_pending():
+    await init_db()
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        created = await client.post(
+            "/api/v1/auth/companies",
+            json={
+                "org_name": "No gracias",
+                "email": "no@gracias.test",
+                "password": "segura1234",
+                "full_name": "No",
+            },
+        )
+        org_id = created.json()["organization"]["id"]
+        desk = await client.post("/api/v1/auth/login", json={"token": "desk-secret"})
+        headers = {"Authorization": f"Bearer {desk.json()['token']}"}
+
+        rej = await client.post(
+            f"/api/v1/auth/companies/{org_id}/reject",
+            headers=headers,
+            json={},
+        )
+        assert rej.status_code == 200, rej.text
+        assert rej.json()["status"] == "rejected"
+
+        listed = await client.get("/api/v1/auth/companies", headers=headers)
+        item = next(i for i in listed.json()["items"] if i["id"] == org_id)
+        assert item["status"] == "rejected"
+
+        # Still cannot login
+        login = await client.post(
+            "/api/v1/auth/company/login",
+            json={"email": "no@gracias.test", "password": "segura1234"},
+        )
+        assert login.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_desk_created_client_is_approved_viewer():
     await init_db()
     app = create_app()

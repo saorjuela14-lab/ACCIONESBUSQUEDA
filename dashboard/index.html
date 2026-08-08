@@ -27,7 +27,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/styles.css?v=11-access-approval" />
+  <link rel="stylesheet" href="/dashboard/static/styles.css?v=12-fix-reject" />
   <!-- Heavy chart libs: defer so login/session UI is not blocked on cold start -->
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script defer src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -523,9 +523,9 @@
     </div>
   </div>
 
-  <script src="/dashboard/static/reliability.js?v=11-access-approval"></script>
-  <script src="/dashboard/static/voice.js?v=11-access-approval"></script>
-  <script src="/dashboard/static/app.js?v=11-access-approval"></script>
+  <script src="/dashboard/static/reliability.js?v=12-fix-reject"></script>
+  <script src="/dashboard/static/voice.js?v=12-fix-reject"></script>
+  <script src="/dashboard/static/app.js?v=12-fix-reject"></script>
   <script>
     // Permanently kill service workers — they were serving stale JS/CSS after deploy
     if ("serviceWorker" in navigator) {
