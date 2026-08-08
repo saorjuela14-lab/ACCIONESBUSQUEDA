@@ -1409,20 +1409,55 @@ function renderClientMarkets(p) {
   _renderAllocList("client-country-list", countryEntries);
 }
 
-async function loadClientPerformanceHistory() {
+window.__clientReturnRange = window.__clientReturnRange || "30d";
+
+function _bindClientReturnRanges() {
+  const tabs = document.getElementById("client-return-ranges");
+  if (!tabs || tabs.dataset.bound === "1") return;
+  tabs.dataset.bound = "1";
+  tabs.querySelectorAll(".range-tab").forEach((btn) => {
+    btn.onclick = () => {
+      const range = btn.getAttribute("data-range") || "30d";
+      window.__clientReturnRange = range;
+      tabs.querySelectorAll(".range-tab").forEach((b) => b.classList.toggle("active", b === btn));
+      loadClientPerformanceHistory(range);
+    };
+  });
+}
+
+async function loadClientPerformanceHistory(range) {
+  const selected = range || window.__clientReturnRange || "30d";
+  window.__clientReturnRange = selected;
+  _bindClientReturnRanges();
+  const emptyEl = document.getElementById("client-return-empty");
   try {
-    const data = await api(`${API}/dashboard/performance-history`);
+    const data = await api(`${API}/dashboard/performance-history?range=${encodeURIComponent(selected)}`);
     const points = data.points || [];
     const hint = document.getElementById("client-return-base-hint");
     if (hint) hint.textContent = `Base $${Number(data.base_usd || 20)}`;
+    const tabs = document.getElementById("client-return-ranges");
+    if (tabs) {
+      tabs.querySelectorAll(".range-tab").forEach((b) => {
+        b.classList.toggle("active", b.getAttribute("data-range") === (data.range || selected));
+      });
+    }
     if (!points.length) {
       destroyChart("client-return-chart");
+      if (emptyEl) emptyEl.classList.remove("hidden");
       return;
     }
+    if (emptyEl) emptyEl.classList.add("hidden");
+    const useTime = selected === "7d";
     makeChart("client-return-chart", {
       type: "line",
       data: {
-        labels: points.map((h) => (h.timestamp ? new Date(h.timestamp).toLocaleDateString(LOCALE) : "")),
+        labels: points.map((h) => {
+          if (!h.timestamp) return "";
+          const d = new Date(h.timestamp);
+          return useTime
+            ? d.toLocaleString(LOCALE, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+            : d.toLocaleDateString(LOCALE);
+        }),
         datasets: [{
           label: "Rendimiento %",
           data: points.map((h) => h.return_pct),
@@ -1438,7 +1473,7 @@ async function loadClientPerformanceHistory() {
         maintainAspectRatio: false,
         plugins: { legend: { display: false } },
         scales: {
-          x: { ticks: { color: "#7d8fa3", maxTicksLimit: 6 }, grid: { color: "rgba(197,165,114,0.08)" } },
+          x: { ticks: { color: "#7d8fa3", maxTicksLimit: useTime ? 8 : 6 }, grid: { color: "rgba(197,165,114,0.08)" } },
           y: {
             ticks: {
               color: "#7d8fa3",
@@ -1451,6 +1486,7 @@ async function loadClientPerformanceHistory() {
     });
   } catch {
     destroyChart("client-return-chart");
+    if (emptyEl) emptyEl.classList.remove("hidden");
   }
 }
 

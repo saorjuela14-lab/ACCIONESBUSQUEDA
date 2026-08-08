@@ -283,33 +283,63 @@ async def get_terminal_dashboard(
     return dash
 
 
+_PERF_RANGES = {
+    "7d": 7,
+    "30d": 30,
+    "90d": 90,
+    "3m": 90,
+}
+
+
 @router.get("/dashboard/performance-history")
 async def get_performance_history(
     session: AsyncSession = Depends(get_session),
     scope: OrgScope = Depends(get_org_scope),
-    limit: int = 90,
+    range: str = "30d",  # noqa: A002 — query alias for clients (?range=7d|30d|90d|3m)
+    limit: int = 500,
 ) -> dict:
-    """Return % history for the firm book (rebased to $20). No dollar totals for clients."""
+    """Return % history for the firm book (rebased to $20). Ranges: 7d | 30d | 90d/3m."""
+    from datetime import datetime, timedelta, timezone
+
+    key = (range or "30d").strip().lower()  # noqa: A002
+    days = _PERF_RANGES.get(key, 30)
     book_org = scope.book_org_id()
     portfolios = await PortfolioRepository(session).list_all(org_id=book_org)
     if not portfolios:
-        return {"ok": True, "base_usd": FIRM_RETURN_BASE_USD, "points": []}
+        return {"ok": True, "base_usd": FIRM_RETURN_BASE_USD, "range": key if key in _PERF_RANGES else "30d", "days": days, "points": []}
     p = sorted(portfolios, key=lambda x: x.updated_at, reverse=True)[0]
-    hist = await PortfolioSnapshotRepository(session).list_for_portfolio(p.id, limit=max(1, min(limit, 200)))
-    points = [
-        {
-            "timestamp": h.timestamp.isoformat() if h.timestamp else None,
-            "return_pct": return_pct_from_base(h.total_value, FIRM_RETURN_BASE_USD),
-        }
-        for h in hist
-    ]
+    hist = await PortfolioSnapshotRepository(session).list_for_portfolio(
+        p.id, limit=max(1, min(limit, 500))
+    )
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    points = []
+    for h in hist:
+        ts = h.timestamp
+        if ts is None:
+            continue
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        if ts < cutoff:
+            continue
+        points.append(
+            {
+                "timestamp": ts.isoformat(),
+                "return_pct": return_pct_from_base(h.total_value, FIRM_RETURN_BASE_USD),
+            }
+        )
     # Always append current mark so the chart is never empty when book exists
     current_ret = return_pct_from_base(p.total_value, FIRM_RETURN_BASE_USD)
+    now_iso = datetime.now(timezone.utc).isoformat()
     if not points or abs(points[-1]["return_pct"] - current_ret) > 0.01:
-        from datetime import datetime, timezone
-
-        points.append({"timestamp": datetime.now(timezone.utc).isoformat(), "return_pct": current_ret})
-    return {"ok": True, "base_usd": FIRM_RETURN_BASE_USD, "points": points}
+        points.append({"timestamp": now_iso, "return_pct": current_ret})
+    range_out = key if key in _PERF_RANGES else "30d"
+    return {
+        "ok": True,
+        "base_usd": FIRM_RETURN_BASE_USD,
+        "range": range_out,
+        "days": days,
+        "points": points,
+    }
 
 
 @router.get("/dashboard/watchlist-matrix", response_model=list[WatchlistMatrixRow])

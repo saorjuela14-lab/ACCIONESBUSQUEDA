@@ -184,10 +184,18 @@ async def test_client_sees_own_capital_not_firm_book_total():
         assert body["top_opportunities"] == []
         assert body["recently_analyzed"] == []
 
-        hist = await client.get("/api/v1/dashboard/performance-history", headers=client_h)
+        hist = await client.get("/api/v1/dashboard/performance-history?range=30d", headers=client_h)
         assert hist.status_code == 200, hist.text
         assert hist.json()["base_usd"] == 20.0
+        assert hist.json()["range"] == "30d"
+        assert hist.json()["days"] == 30
         assert "points" in hist.json()
+        hist7 = await client.get("/api/v1/dashboard/performance-history?range=7d", headers=client_h)
+        assert hist7.status_code == 200
+        assert hist7.json()["days"] == 7
+        hist3m = await client.get("/api/v1/dashboard/performance-history?range=3m", headers=client_h)
+        assert hist3m.status_code == 200
+        assert hist3m.json()["days"] == 90
 
         # Analysis / firm book APIs forbidden for clients
         for path in (

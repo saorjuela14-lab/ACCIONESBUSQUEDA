@@ -27,7 +27,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/styles.css?v=21-markets-base20" />
+  <link rel="stylesheet" href="/dashboard/static/styles.css?v=22-return-ranges" />
   <!-- Heavy chart libs: defer so login/session UI is not blocked on cold start -->
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script defer src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -179,8 +179,16 @@
           <ul id="client-country-list" class="client-alloc-list muted"></ul>
         </div>
       </div>
-      <h4 class="subhead" style="margin-top:0.85rem">Rendimiento de la cuenta</h4>
+      <div class="client-return-head">
+        <h4 class="subhead" style="margin:0">Rendimiento de la cuenta</h4>
+        <div class="range-tabs" id="client-return-ranges" role="tablist" aria-label="Periodo del gráfico">
+          <button type="button" class="range-tab" data-range="7d">7 días</button>
+          <button type="button" class="range-tab active" data-range="30d">30 días</button>
+          <button type="button" class="range-tab" data-range="90d">3 meses</button>
+        </div>
+      </div>
       <div class="chart-box"><canvas id="client-return-chart"></canvas></div>
+      <p id="client-return-empty" class="muted hidden" style="margin:0.4rem 0 0;font-size:12px">Aún no hay datos en este periodo.</p>
     </section>
 
     <section class="panel access-panel desk-only hidden" id="access-panel" aria-label="Solicitudes de acceso">
@@ -577,9 +585,9 @@
     </div>
   </div>
 
-  <script src="/dashboard/static/reliability.js?v=21-markets-base20"></script>
-  <script src="/dashboard/static/voice.js?v=21-markets-base20"></script>
-  <script src="/dashboard/static/app.js?v=21-markets-base20"></script>
+  <script src="/dashboard/static/reliability.js?v=22-return-ranges"></script>
+  <script src="/dashboard/static/voice.js?v=22-return-ranges"></script>
+  <script src="/dashboard/static/app.js?v=22-return-ranges"></script>
   <script>
     // Permanently kill service workers — they were serving stale JS/CSS after deploy
     if ("serviceWorker" in navigator) {

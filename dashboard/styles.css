@@ -909,6 +909,37 @@ body.role-client .ceo-bar .ceo-kpi-desk-only { display: none !important; }
   padding: 0.2rem 0;
   border-bottom: 1px solid rgba(197, 165, 114, 0.12);
 }
+.client-return-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  margin: 0.85rem 0 0.45rem;
+}
+.range-tabs {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+.range-tab {
+  min-height: 32px;
+  padding: 0.25rem 0.65rem;
+  font-size: 11px;
+  font-family: var(--sans);
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.range-tab:hover { color: var(--text); border-color: rgba(197, 165, 114, 0.4); }
+.range-tab.active {
+  color: #0a2f2a;
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
 .client-banner {
   margin: 0 0.5rem 0.65rem;
   padding: 0.85rem 1rem;
