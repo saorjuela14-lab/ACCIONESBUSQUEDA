@@ -1783,12 +1783,13 @@ function renderFundingBox(funding) {
     ? `<p class="muted" style="margin:0.4rem 0 0">Nota: la cuenta está en modo paper — el fondeo real aplica a la cuenta live de Alpaca.</p>`
     : "";
   box.innerHTML = `
-    <strong>Conexión para depositar en Alpaca — ${funding.account_name || "Monarch Capital"}</strong>
-    <p style="margin:0.35rem 0 0">Enlace de fondeo:
+    <strong>Fondeo a la cuenta Alpaca compartida — ${funding.account_name || "Monarch Capital"}</strong>
+    <p style="margin:0.35rem 0 0;color:#fde68a">${funding.headline || "Todos fondean la misma cuenta de la mesa. No hay cuenta Alpaca individual."}</p>
+    <p style="margin:0.35rem 0 0">Enlace de fondeo (cuenta única de la mesa):
       <a href="${funding.funding_url}" target="_blank" rel="noopener">${funding.funding_url}</a>
     </p>
     <ol>${steps}</ol>
-    <p>Referencia / memo: <span class="memo">${funding.memo_reference || ""}</span></p>
+    <p>Referencia / memo (identifica tu aporte en la misma cuenta): <span class="memo">${funding.memo_reference || ""}</span></p>
     ${funding.instructions ? `<p style="margin:0.45rem 0 0;white-space:pre-wrap">${funding.instructions}</p>` : ""}
     ${wire}
     ${paperNote}
