@@ -119,11 +119,17 @@ def create_app() -> FastAPI:
             )
 
         @app.get("/login")
-        async def login_page():
-            return FileResponse(
+        async def login_page(request: Request):
+            from apis.routes.auth import _clear_session_cookies
+
+            resp = FileResponse(
                 dashboard_dir / "login.html",
                 headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
             )
+            # Explicit logout: wipe cookies so the desk token cannot auto-reenter
+            if request.query_params.get("logged_out") in ("1", "true", "yes"):
+                _clear_session_cookies(resp)
+            return resp
 
     app.include_router(health.router, tags=["health"])
     app.include_router(auth.router, prefix="/api/v1", tags=["auth"])

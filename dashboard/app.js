@@ -143,10 +143,12 @@ function setBootMsg(msg) {
 function hideBootSplash() {
   document.documentElement.classList.add("session-ok");
   const splash = document.getElementById("boot-splash");
-  if (splash) {
-    splash.classList.add("boot-splash-done");
-    setTimeout(() => splash.remove(), 280);
-  }
+  if (!splash) return;
+  // Inline kill — works even if cached CSS lacks .boot-splash-done
+  splash.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;position:fixed!important;inset:0;z-index:-1;";
+  splash.classList.add("boot-splash-done");
+  splash.setAttribute("hidden", "true");
+  splash.remove();
 }
 
 function applySessionUi(principal) {
@@ -179,19 +181,27 @@ async function clearSessionAndGoLogin() {
   if (_authRedirecting) return;
   _authRedirecting = true;
   try {
+    sessionStorage.setItem("monarch_logged_out", "1");
+  } catch { /* private mode */ }
+  localStorage.removeItem("nexbuy_token");
+  localStorage.removeItem("monarch_auth");
+  try {
     await fetch(`${API}/auth/logout`, {
       method: "POST",
       credentials: "same-origin",
-      headers: authHeaders(),
+      headers: authHeaders({ json: false }),
+      cache: "no-store",
     });
-  } catch { /* ignore */ }
-  localStorage.removeItem("nexbuy_token");
-  localStorage.removeItem("monarch_auth");
-  location.replace("/login");
+  } catch { /* ignore — still force login page */ }
+  // logged_out=1 clears cookies server-side and blocks auto-bounce to dashboard
+  location.replace("/login?logged_out=1");
 }
 
-async function logoutSession() {
-  toast("Cerrando sesión en este dispositivo…");
+async function logoutSession(ev) {
+  if (ev) {
+    try { ev.preventDefault(); ev.stopPropagation(); } catch { /* ignore */ }
+  }
+  try { toast("Cerrando sesión…"); } catch { /* ignore */ }
   await clearSessionAndGoLogin();
 }
 
@@ -1574,6 +1584,7 @@ async function loadDashboard() {
   hideDashboardError();
   try {
     const d = await apiWithRetry(`${API}/dashboard`, {}, { retries: 2, label: "dashboard" });
+    hideBootSplash();
     renderDashboard(d);
     await Promise.all([
       loadDailyBriefing(),
@@ -1585,6 +1596,7 @@ async function loadDashboard() {
       loadOpsDesk(),
     ]);
   } catch (e) {
+    hideBootSplash();
     showDashboardError(e);
     toast("Panel: " + e.message);
   }
@@ -2720,7 +2732,11 @@ $("#btn-disc-research").onclick = runDiscoveryResearch;
 $("#btn-disc-analyze").onclick = runDiscoveryAnalyze;
 $("#btn-disc-proposal").onclick = runDiscoveryProposal;
 $("#btn-test-push") && ($("#btn-test-push").onclick = testPushNotification);
-$("#btn-logout") && ($("#btn-logout").onclick = logoutSession);
+const btnLogout = $("#btn-logout");
+if (btnLogout) {
+  btnLogout.addEventListener("click", logoutSession, { capture: true });
+  btnLogout.onclick = logoutSession;
+}
 $("#btn-shock").onclick = simulateShock;
 
 $("#news-modal-close").onclick = closeNewsModal;

@@ -684,13 +684,20 @@ body.tech-chart-fs { overflow: hidden; }
 .push-badge.off { color: var(--muted); }
 
 .boot-splash {
-  position: fixed; inset: 0; z-index: 9999;
+  position: fixed !important; inset: 0 !important; z-index: 9999 !important;
   display: flex; align-items: center; justify-content: center;
   background: radial-gradient(ellipse at 50% 30%, #0a342e 0%, #012622 55%, #011914 100%);
-  transition: opacity 0.25s ease, visibility 0.25s ease;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
 }
-.boot-splash.boot-splash-done {
-  opacity: 0; visibility: hidden; pointer-events: none;
+.boot-splash.boot-splash-done,
+.boot-splash[hidden] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+html.session-ok #boot-splash {
+  display: none !important;
 }
 .boot-splash-card {
   text-align: center; color: #e8dcc8; font-family: Outfit, system-ui, sans-serif;
