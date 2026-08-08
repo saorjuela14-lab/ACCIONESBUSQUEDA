@@ -27,7 +27,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/styles.css?v=19-client-capital" />
+  <link rel="stylesheet" href="/dashboard/static/styles.css?v=20-deposit-clean" />
   <!-- Heavy chart libs: defer so login/session UI is not blocked on cold start -->
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script defer src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -133,13 +133,10 @@
     </section>
 
     <section class="panel client-banner hidden" id="client-monitor-banner" aria-label="Modo cliente">
-      <p id="client-mode-copy"><strong>Tu panel.</strong> Ves solo tu capital y el rendimiento de la cuenta Monarch.
-        La mesa invierte; tú no analizas tickers ni ves el total del portafolio.
-        Para aportar: transfiere desde <strong>tu banco</strong> a los datos de abajo
-        (no uses Alpaca ni «conectar cuenta bancaria»).</p>
+      <p id="client-mode-copy"><strong>Tu panel.</strong> Ves solo tu capital y el rendimiento de la cuenta Monarch.</p>
 
       <div class="capital-block">
-        <h4>Depositar (desde tu banco → Monarch)</h4>
+        <h4>Depositar</h4>
         <div class="deposit-row" id="client-deposit-row">
           <input id="deposit-amount" type="number" min="1" step="0.01" placeholder="Monto USD" />
           <input id="deposit-note" type="text" maxlength="280" placeholder="Nota (opcional)" />
@@ -559,9 +556,9 @@
     </div>
   </div>
 
-  <script src="/dashboard/static/reliability.js?v=19-client-capital"></script>
-  <script src="/dashboard/static/voice.js?v=19-client-capital"></script>
-  <script src="/dashboard/static/app.js?v=19-client-capital"></script>
+  <script src="/dashboard/static/reliability.js?v=20-deposit-clean"></script>
+  <script src="/dashboard/static/voice.js?v=20-deposit-clean"></script>
+  <script src="/dashboard/static/app.js?v=20-deposit-clean"></script>
   <script>
     // Permanently kill service workers — they were serving stale JS/CSS after deploy
     if ("serviceWorker" in navigator) {

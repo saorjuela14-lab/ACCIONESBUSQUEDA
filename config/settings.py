@@ -137,12 +137,7 @@ class Settings(BaseSettings):
     alpaca_funding_account_type: str = "Checking"
     alpaca_funding_swift: str = ""
     alpaca_funding_beneficiary: str = "Monarch Capital"
-    alpaca_funding_instructions: str = (
-        "Transfiere desde tu banco a los datos de abajo (cuenta operativa de Monarch / Alpaca de la mesa).\n"
-        "No necesitas crear ni iniciar sesión en Alpaca.\n"
-        "En la referencia/memo escribe tu email de cliente.\n"
-        "Cuando salga el dinero, pulsa «Ya deposité»."
-    )
+    alpaca_funding_instructions: str = ""  # optional; leave empty for a clean client UI
     alpaca_funding_wire_details: str = ""  # free-form extra lines if needed
 
     http_max_retries: int = 3

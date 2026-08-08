@@ -71,7 +71,8 @@ async def test_deposit_returns_funding_and_client_confirm():
         assert body["funding"]["bank"]["account_number"] == "123456789"
         assert body["funding"]["memo_reference"] == "fund@co.test"
         assert body["funding"]["shared_account"] is True
-        assert "Alpaca" in (body["funding"].get("headline") or "")
+        assert body["funding"].get("headline") in ("", None)
+        assert body["funding"].get("steps") in ([], None)
         req_id = body["request"]["id"]
         assert body["request"]["status"] == "requested"
 
