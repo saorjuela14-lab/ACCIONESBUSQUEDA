@@ -883,6 +883,9 @@ body.role-client .client-banner { display: block; }
 }
 .access-card .pill.pending { color: #f59e0b; border-color: rgba(245,158,11,0.5); }
 .access-card .pill.approved { color: #22c55e; border-color: rgba(34,197,94,0.45); }
+.access-card .pill.rejected { color: #f87171; border-color: rgba(248,113,113,0.5); }
+.access-card .actions .btn { cursor: pointer; pointer-events: auto; min-height: 40px; }
+.access-card .actions .btn:disabled { opacity: 0.6; cursor: wait; }
 .access-panel { margin: 0 0.5rem 0.65rem; }
 
 a.auth-logout {

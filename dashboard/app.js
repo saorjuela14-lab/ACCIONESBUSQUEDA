@@ -1617,17 +1617,54 @@ async function loadDashboard() {
   }
 }
 
+function _accessStatusLabel(status) {
+  if (status === "approved") return "autorizado";
+  if (status === "rejected") return "rechazado";
+  return "pendiente";
+}
+
+async function _accessAction(orgId, action, btn) {
+  if (!orgId || !action) return;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = action === "reject" ? "Rechazando…" : action === "approve" ? "Autorizando…" : "Guardando…";
+  }
+  try {
+    const path = action === "deposit-received"
+      ? `${API}/auth/companies/${orgId}/deposit-received`
+      : `${API}/auth/companies/${orgId}/${action}`;
+    await api(path, { method: "POST", body: JSON.stringify({}) });
+    toast(
+      action === "reject" ? "Solicitud rechazada"
+        : action === "approve" ? "Cliente autorizado"
+          : "Depósito marcado como recibido"
+    );
+    await loadAccessRequests();
+  } catch (e) {
+    toast(e.message || "No se pudo completar la acción");
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = action === "reject" ? "Rechazar"
+        : action === "approve" ? "Autorizar"
+          : "Marcar depósito recibido";
+    }
+  }
+}
+
 async function loadAccessRequests() {
   const box = document.getElementById("access-list");
   if (!box || !isDeskPrincipal()) return;
   try {
     const page = await api(`${API}/auth/companies?limit=50`);
-    const items = page.items || page.data || page || [];
-    const list = Array.isArray(items) ? items : (items.items || []);
+    const list = Array.isArray(page?.items) ? page.items : [];
     if (!list.length) {
       box.innerHTML = `<p class="muted">Sin solicitudes todavía.</p>`;
       return;
     }
+    // Pending first, then approved, rejected last
+    const rank = { pending: 0, approved: 1, rejected: 2 };
+    list.sort((a, b) => (rank[a.status] ?? 9) - (rank[b.status] ?? 9));
+
     box.innerHTML = list.map((c) => {
       const status = c.status || (c.active ? "approved" : "pending");
       const deposit = c.deposit_status || "none";
@@ -1636,51 +1673,39 @@ async function loadAccessRequests() {
         : deposit === "received"
           ? " · depósito recibido"
           : "";
+      const actions = [];
+      if (status === "pending") {
+        actions.push(`<button type="button" class="btn primary" data-access-action="approve" data-org-id="${c.id}">Autorizar</button>`);
+        actions.push(`<button type="button" class="btn danger" data-access-action="reject" data-org-id="${c.id}">Rechazar</button>`);
+      } else if (status === "rejected") {
+        actions.push(`<button type="button" class="btn primary" data-access-action="approve" data-org-id="${c.id}">Autorizar de nuevo</button>`);
+      }
+      if (deposit === "requested") {
+        actions.push(`<button type="button" class="btn" data-access-action="deposit-received" data-org-id="${c.id}">Marcar depósito recibido</button>`);
+      }
       return `<div class="access-card" data-org="${c.id}">
         <div class="meta">
           <strong>${c.name || "Cliente"}</strong>
-          <span class="pill ${status}">${status === "pending" ? "pendiente" : "autorizado"}</span>
+          <span class="pill ${status}">${_accessStatusLabel(status)}</span>
           <div class="muted" style="font-size:12px;margin-top:0.2rem">
             ${c.full_name || "—"} · ${c.email || "—"} ${depLabel}
           </div>
         </div>
-        <div class="actions">
-          ${status === "pending" ? `<button type="button" class="btn primary" data-approve="${c.id}">Autorizar</button>
-          <button type="button" class="btn" data-reject="${c.id}">Rechazar</button>` : ""}
-          ${deposit === "requested" ? `<button type="button" class="btn" data-deposit-ok="${c.id}">Marcar depósito recibido</button>` : ""}
-        </div>
+        <div class="actions">${actions.join("")}</div>
       </div>`;
     }).join("");
-    box.querySelectorAll("[data-approve]").forEach((btn) => {
-      btn.onclick = async () => {
-        try {
-          await api(`${API}/auth/companies/${btn.dataset.approve}/approve`, { method: "POST" });
-          toast("Cliente autorizado");
-          loadAccessRequests();
-        } catch (e) { toast(e.message); }
-      };
-    });
-    box.querySelectorAll("[data-reject]").forEach((btn) => {
-      btn.onclick = async () => {
-        try {
-          await api(`${API}/auth/companies/${btn.dataset.reject}/reject`, { method: "POST" });
-          toast("Solicitud rechazada");
-          loadAccessRequests();
-        } catch (e) { toast(e.message); }
-      };
-    });
-    box.querySelectorAll("[data-deposit-ok]").forEach((btn) => {
-      btn.onclick = async () => {
-        try {
-          await api(`${API}/auth/companies/${btn.dataset.depositOk}/deposit-received`, {
-            method: "POST",
-            body: JSON.stringify({}),
-          });
-          toast("Depósito marcado como recibido");
-          loadAccessRequests();
-        } catch (e) { toast(e.message); }
-      };
-    });
+
+    // Event delegation — survives re-renders and works on mobile taps
+    if (!box.dataset.boundAccess) {
+      box.dataset.boundAccess = "1";
+      box.addEventListener("click", (ev) => {
+        const btn = ev.target?.closest?.("[data-access-action]");
+        if (!btn || !box.contains(btn)) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        _accessAction(btn.getAttribute("data-org-id"), btn.getAttribute("data-access-action"), btn);
+      });
+    }
   } catch (e) {
     box.innerHTML = `<p class="muted">No se pudieron cargar accesos: ${e.message}</p>`;
   }

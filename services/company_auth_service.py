@@ -442,7 +442,7 @@ class CompanyAuthService:
                     "name": o.name,
                     "slug": o.slug,
                     "active": o.active,
-                    "status": "approved" if o.active else "pending",
+                    "status": self._access_status(o, primary),
                     "deposit_status": getattr(o, "deposit_status", "none") or "none",
                     "deposit_requested_usd": getattr(o, "deposit_requested_usd", None),
                     "deposit_note": getattr(o, "deposit_note", None),
@@ -454,14 +454,22 @@ class CompanyAuthService:
             )
         return orgs, total
 
+    @staticmethod
+    def _access_status(org: OrganizationORM, primary: UserORM | None) -> str:
+        """pending | approved | rejected — reject must not look like pending."""
+        if org.active:
+            return "approved"
+        # Reject deactivates users; pending keeps users active while org is inactive
+        if primary is not None and not primary.active:
+            return "rejected"
+        return "pending"
+
     async def approve_company(self, org_id: str) -> dict[str, Any]:
         org = await self._get_client_org(org_id)
         org.active = True
         users_r = await self._session.execute(select(UserORM).where(UserORM.org_id == org.id))
         for u in users_r.scalars().all():
             u.active = True
-            if u.role not in ("viewer", "company_admin"):
-                u.role = "viewer"
             # Force monitor-only role for clients
             u.role = "viewer"
         await self._session.commit()
@@ -471,7 +479,11 @@ class CompanyAuthService:
         org = await self._get_client_org(org_id)
         org.active = False
         users_r = await self._session.execute(select(UserORM).where(UserORM.org_id == org.id))
-        for u in users_r.scalars().all():
+        users = list(users_r.scalars().all())
+        if not users:
+            # Ensure rejected is distinguishable even without users
+            raise ValueError("Empresa sin usuario — no se puede rechazar")
+        for u in users:
             u.active = False
         await self._session.commit()
         return {"ok": True, "id": org.id, "status": "rejected", "name": org.name}
