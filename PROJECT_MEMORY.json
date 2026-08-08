@@ -347,15 +347,20 @@
       ]
     },
     "voice": {
-      "module": "services/voice_command_service.py",
+      "assistant_name": "Viernes",
+      "boss_title": "jefe",
+      "module": "services/voice_assistant_service.py",
+      "commands": "services/voice_command_service.py",
       "tts": "services/elevenlabs_tts_service.py",
+      "changes": "services/voice_change_service.py",
       "ui": "dashboard/voice.js",
       "language": "es",
       "stt": "Web Speech API (browser)",
-      "tts_provider": "ElevenLabs (Sarah EXAVITQu4vr4xnSDxMaL / eleven_flash_v2_5) with browser SpeechSynthesis fallback",
-      "env": ["ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID", "ELEVENLABS_MODEL_ID"],
-      "endpoints": ["POST /api/v1/voice/command", "POST /api/v1/voice/tts", "GET /api/v1/voice/tts/status"],
-      "examples": ["precio NVDA", "analiza AAPL", "compra 1 SOUN", "posiciones", "descubre"]
+      "tts_provider": "ElevenLabs Bella hpp4J3VqNfWAUOO0d1Us / eleven_multilingual_v2 (natural) + browser fallback",
+      "chat": "OpenAI tool-calling (market, ops, simulate, allocation, queue product/code changes)",
+      "env": ["OPENAI_API_KEY", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID", "ELEVENLABS_MODEL_ID", "GITHUB_TOKEN"],
+      "endpoints": ["POST /api/v1/voice/chat", "POST /api/v1/voice/command", "POST /api/v1/voice/tts", "GET /api/v1/voice/assistant/status"],
+      "examples": ["jefe cómo está el mercado", "simula 3200 al 12%", "cambia el hero de la página", "compra 1 AAPL"]
     },
     "messaging": {
       "whatsapp_briefings_et": ["09:35", "12:30", "16:05"],
