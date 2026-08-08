@@ -19,27 +19,54 @@ class ElevenLabsTTSError(RuntimeError):
 class ElevenLabsTTSService:
     """Friendly desk-assistant voice (secretary / Friday style)."""
 
+    def _api_key(self) -> str:
+        return (get_settings().elevenlabs_api_key or "").strip()
+
+    def key_looks_valid(self) -> bool:
+        """ElevenLabs secret keys start with sk_. Key IDs are hex and must not be used."""
+        key = self._api_key()
+        return key.startswith("sk_") and len(key) > 20
+
     def configured(self) -> bool:
         settings = get_settings()
-        return bool(settings.elevenlabs_api_key and settings.elevenlabs_voice_id)
+        return bool(self.key_looks_valid() and settings.elevenlabs_voice_id)
 
     def status(self) -> dict:
         settings = get_settings()
+        key = self._api_key()
+        key_present = bool(key)
+        key_ok = self.key_looks_valid()
+        hint = None
+        if key_present and not key_ok:
+            hint = (
+                "La variable parece un Key ID, no la API key. "
+                "En elevenlabs.io crea/rota una key que empiece por sk_ y pégala en ELEVENLABS_API_KEY."
+            )
+        elif not key_present:
+            hint = "Define ELEVENLABS_API_KEY (sk_...) en el entorno."
         return {
             "configured": self.configured(),
             "provider": "elevenlabs",
             "voice_id": settings.elevenlabs_voice_id or None,
             "model_id": settings.elevenlabs_model_id,
             "fallback": "browser_speech_synthesis",
+            "key_present": key_present,
+            "key_format_ok": key_ok,
+            "hint": hint,
         }
 
     async def synthesize(self, text: str) -> tuple[bytes, str]:
         """Return (audio_bytes, content_type)."""
         settings = get_settings()
-        api_key = (settings.elevenlabs_api_key or "").strip()
+        api_key = self._api_key()
         voice_id = (settings.elevenlabs_voice_id or "").strip()
         if not api_key or not voice_id:
             raise ElevenLabsTTSError("ElevenLabs no está configurado (ELEVENLABS_API_KEY / VOICE_ID).")
+        if not self.key_looks_valid():
+            raise ElevenLabsTTSError(
+                "ELEVENLABS_API_KEY inválida: parece un Key ID. "
+                "Usa la key secreta que empieza por sk_ (Create/Rotate en elevenlabs.io)."
+            )
 
         clean = (text or "").strip()
         if not clean:

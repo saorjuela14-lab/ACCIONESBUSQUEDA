@@ -13,7 +13,7 @@ from services.elevenlabs_tts_service import ElevenLabsTTSError, ElevenLabsTTSSer
 @pytest.fixture
 def fake_settings():
     s = MagicMock()
-    s.elevenlabs_api_key = "test-key"
+    s.elevenlabs_api_key = "sk_test_valid_looking_key_1234567890"
     s.elevenlabs_voice_id = "EXAVITQu4vr4xnSDxMaL"
     s.elevenlabs_model_id = "eleven_flash_v2_5"
     s.elevenlabs_output_format = "mp3_44100_128"
@@ -33,6 +33,21 @@ def test_status_not_configured():
         status = ElevenLabsTTSService().status()
         assert status["configured"] is False
         assert status["fallback"] == "browser_speech_synthesis"
+        assert status["key_format_ok"] is False
+
+
+def test_status_rejects_key_id():
+    with patch("services.elevenlabs_tts_service.get_settings") as gs:
+        s = MagicMock()
+        s.elevenlabs_api_key = "0fe4" + ("a" * 60)  # Key ID shape, not sk_
+        s.elevenlabs_voice_id = "EXAVITQu4vr4xnSDxMaL"
+        s.elevenlabs_model_id = "eleven_flash_v2_5"
+        gs.return_value = s
+        status = ElevenLabsTTSService().status()
+        assert status["key_present"] is True
+        assert status["key_format_ok"] is False
+        assert status["configured"] is False
+        assert "sk_" in (status.get("hint") or "")
 
 
 @pytest.mark.asyncio
@@ -55,7 +70,7 @@ async def test_synthesize_success(fake_settings):
         assert "mpeg" in ctype
         mock_client.post.assert_awaited_once()
         kwargs = mock_client.post.await_args.kwargs
-        assert kwargs["headers"]["xi-api-key"] == "test-key"
+        assert kwargs["headers"]["xi-api-key"].startswith("sk_")
         assert kwargs["json"]["text"] == "Hola, soy tu asistente."
         assert kwargs["json"]["model_id"] == "eleven_flash_v2_5"
 

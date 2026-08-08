@@ -42,14 +42,18 @@ async def voice_tts(request: VoiceTTSRequest) -> Response:
     """Sintetiza audio con ElevenLabs (voz amigable tipo secretaria / Friday)."""
     svc = ElevenLabsTTSService()
     if not svc.configured():
+        status = svc.status()
         raise HTTPException(
             status_code=503,
-            detail="ElevenLabs no configurado. Define ELEVENLABS_API_KEY en el entorno.",
+            detail=status.get("hint")
+            or "ElevenLabs no configurado. Define ELEVENLABS_API_KEY (sk_...) en el entorno.",
         )
     try:
         audio, content_type = await svc.synthesize(request.text)
     except ElevenLabsTTSError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 — never crash the worker on TTS
+        raise HTTPException(status_code=502, detail=f"TTS falló: {exc}") from exc
     return Response(
         content=audio,
         media_type=content_type or "audio/mpeg",
