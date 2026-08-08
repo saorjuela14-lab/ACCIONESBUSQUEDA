@@ -136,3 +136,57 @@ async def test_withdrawal_requires_desk_approval():
         listed = await client.get("/api/v1/auth/capital/requests", headers=desk_h)
         assert listed.status_code == 200
         assert any(i["id"] == req_id for i in listed.json()["items"])
+
+
+@pytest.mark.asyncio
+async def test_client_sees_own_capital_not_firm_book_total():
+    await init_db()
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        client_h, desk_h = await _client_session(client)
+
+        # Before deposit received → prospect (no capital)
+        mine0 = await client.get("/api/v1/auth/capital/mine", headers=client_h)
+        assert mine0.status_code == 200
+        assert mine0.json()["summary"]["has_invested"] is False
+        assert mine0.json()["summary"]["net_capital_usd"] == 0
+
+        dep = await client.post(
+            "/api/v1/auth/capital/deposit",
+            headers=client_h,
+            json={"amount_usd": 500},
+        )
+        req_id = dep.json()["request"]["id"]
+        await client.post(f"/api/v1/auth/capital/deposit/{req_id}/confirm", headers=client_h, json={})
+        await client.post(f"/api/v1/auth/capital/{req_id}/received", headers=desk_h, json={})
+
+        mine = await client.get("/api/v1/auth/capital/mine", headers=client_h)
+        assert mine.status_code == 200
+        summary = mine.json()["summary"]
+        assert summary["has_invested"] is True
+        assert summary["net_capital_usd"] == 500
+        assert summary["deposited_usd"] == 500
+
+        dash = await client.get("/api/v1/dashboard", headers=client_h)
+        assert dash.status_code == 200, dash.text
+        body = dash.json()
+        assert body["client_view"]["has_invested"] is True
+        assert body["client_view"]["net_capital_usd"] == 500
+        # Firm book dollar totals must not leak
+        assert (body.get("portfolio") or {}).get("total_value", 0) == 0
+        assert (body.get("portfolio") or {}).get("cash", 0) == 0
+        assert body["watchlist"] == []
+        assert body["top_opportunities"] == []
+        assert body["recently_analyzed"] == []
+
+        # Analysis / firm book APIs forbidden for clients
+        for path in (
+            "/api/v1/analyze/AAPL",
+            "/api/v1/portfolios",
+            "/api/v1/watchlist",
+            "/api/v1/recommendations/daily/latest",
+            "/api/v1/dashboard/watchlist-matrix",
+        ):
+            forbidden = await client.get(path, headers=client_h)
+            assert forbidden.status_code == 403, path

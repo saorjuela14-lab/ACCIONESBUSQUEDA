@@ -849,18 +849,40 @@ html.session-ok #boot-splash {
   font-size: 11px; color: var(--gold, #c4a574); padding: 4px 10px; border: 1px solid var(--border);
   border-radius: 999px; white-space: nowrap;
 }
-/* Client monitor mode: hide mesa-only invest / ops controls */
+/* Client monitor mode: hide mesa-only invest / ops / research */
 body.role-client .desk-only,
 body.role-client .header-actions,
 body.role-client #voice-bar,
 body.role-client .controls-drawer,
 body.role-client #btn-manage-capital,
 body.role-client #btn-create-portfolio,
-body.role-client #btn-scan {
+body.role-client #btn-scan,
+body.role-client #btn-generate-trades,
+body.role-client #trade-recs-panel,
+body.role-client #watchlist-matrix-panel,
+body.role-client .term-grid,
+body.role-client #indices-row,
+body.role-client .briefing-panel,
+body.role-client #mob-tech,
+body.role-client #mob-analyze,
+body.role-client .mob-nav-btn[data-scroll="trade-recs-panel"],
+body.role-client .mob-nav-btn[data-scroll="portfolio-panel"],
+body.role-client #provider-health {
   display: none !important;
+}
+/* Prospect (no deposit received): only performance + deposit UI */
+body.role-client.client-prospect .news-panel,
+body.role-client.client-prospect .ceo-kpi-client-capital,
+body.role-client.client-prospect .ceo-kpi-client-equity {
+  display: none !important;
+}
+/* Investor: capital + return + news — still no analysis */
+body.role-client.client-investor .news-panel {
+  display: block;
 }
 body.role-desk .client-banner { display: none !important; }
 body.role-client .client-banner { display: block; }
+body.role-client .ceo-bar .ceo-kpi-desk-only { display: none !important; }
 .client-banner {
   margin: 0 0.5rem 0.65rem;
   padding: 0.85rem 1rem;

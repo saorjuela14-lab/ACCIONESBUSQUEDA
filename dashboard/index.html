@@ -27,7 +27,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/styles.css?v=18-bank-deposit" />
+  <link rel="stylesheet" href="/dashboard/static/styles.css?v=19-client-capital" />
   <!-- Heavy chart libs: defer so login/session UI is not blocked on cold start -->
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script defer src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -123,20 +123,23 @@
     </div>
 
     <section class="ceo-bar" id="ceo-bar" aria-label="Resumen de la cuenta">
-      <div class="ceo-kpi highlight"><label id="ceo-money-label">Cuenta Monarch</label><div id="ceo-portfolio">—</div></div>
-      <div class="ceo-kpi"><label>Ganancia / pérdida</label><div id="ceo-return">—</div></div>
-      <div class="ceo-kpi"><label>Alertas</label><div id="ceo-alerts">—</div></div>
-      <div class="ceo-kpi"><label>En seguimiento</label><div id="ceo-watchlist-count">—</div></div>
+      <div class="ceo-kpi highlight ceo-kpi-desk-only"><label id="ceo-money-label">Cuenta Monarch</label><div id="ceo-portfolio">—</div></div>
+      <div class="ceo-kpi highlight ceo-kpi-client-capital hidden"><label>Tu capital</label><div id="ceo-client-capital">—</div></div>
+      <div class="ceo-kpi ceo-kpi-client-equity hidden"><label>Tu estimado</label><div id="ceo-client-equity">—</div></div>
+      <div class="ceo-kpi"><label id="ceo-return-label">Rendimiento</label><div id="ceo-return">—</div></div>
+      <div class="ceo-kpi ceo-kpi-desk-only"><label>Alertas</label><div id="ceo-alerts">—</div></div>
+      <div class="ceo-kpi ceo-kpi-desk-only"><label>En seguimiento</label><div id="ceo-watchlist-count">—</div></div>
       <div class="ceo-kpi"><label>Actualizado</label><div id="ceo-updated">—</div></div>
     </section>
 
     <section class="panel client-banner hidden" id="client-monitor-banner" aria-label="Modo cliente">
-      <p><strong>Modo monitoreo.</strong> Ves la cuenta Monarch. Solo la mesa invierte.
-        Para aportar, solo haces una <strong>transferencia bancaria</strong> a los datos de Monarch
-        (misma cuenta compartida). <strong>No te registres ni inicies sesión en Alpaca.</strong></p>
+      <p id="client-mode-copy"><strong>Tu panel.</strong> Ves solo tu capital y el rendimiento de la cuenta Monarch.
+        La mesa invierte; tú no analizas tickers ni ves el total del portafolio.
+        Para aportar: transfiere desde <strong>tu banco</strong> a los datos de abajo
+        (no uses Alpaca ni «conectar cuenta bancaria»).</p>
 
       <div class="capital-block">
-        <h4>Depositar (transferencia a Monarch)</h4>
+        <h4>Depositar (desde tu banco → Monarch)</h4>
         <div class="deposit-row" id="client-deposit-row">
           <input id="deposit-amount" type="number" min="1" step="0.01" placeholder="Monto USD" />
           <input id="deposit-note" type="text" maxlength="280" placeholder="Nota (opcional)" />
@@ -173,7 +176,8 @@
       <div id="access-list" class="access-list muted">Cargando solicitudes…</div>
       <h4 style="margin:1rem 0 0.4rem;font-size:13px;color:var(--gold,#c4a574)">Capital (depósitos / retiros)</h4>
       <p class="muted" style="margin:0 0 0.5rem;font-size:12px">
-        Depósitos: el cliente fondea Alpaca y confirma; tú marcas Recibido.
+        Depósitos: el cliente transfiere a los datos bancarios (tú configuras ACH/wire en el servidor);
+        confirma «Ya deposité»; tú marcas Recibido cuando entre el dinero.
         Retiros: Aprueba o Rechaza; cuando pagues, marca Pagado.
       </p>
       <div id="capital-desk-list" class="access-list muted">Sin movimientos.</div>
@@ -555,9 +559,9 @@
     </div>
   </div>
 
-  <script src="/dashboard/static/reliability.js?v=18-bank-deposit"></script>
-  <script src="/dashboard/static/voice.js?v=18-bank-deposit"></script>
-  <script src="/dashboard/static/app.js?v=18-bank-deposit"></script>
+  <script src="/dashboard/static/reliability.js?v=19-client-capital"></script>
+  <script src="/dashboard/static/voice.js?v=19-client-capital"></script>
+  <script src="/dashboard/static/app.js?v=19-client-capital"></script>
   <script>
     // Permanently kill service workers — they were serving stale JS/CSS after deploy
     if ("serviceWorker" in navigator) {

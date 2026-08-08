@@ -428,11 +428,16 @@ async def capital_mine(
     auth = CompanyAuthService(session)
     token = _extract_bearer(request)
     resolved = _require_client(await auth.resolve_bearer(token) if token else None)
-    items = await CapitalRequestService(session).list_mine(
+    svc = CapitalRequestService(session)
+    items = await svc.list_mine(
         org_id=resolved["org_id"],
         user_id=resolved["user_id"],
     )
-    return {"ok": True, "items": items}
+    summary = await svc.client_capital_summary(
+        org_id=resolved["org_id"],
+        user_id=resolved["user_id"],
+    )
+    return {"ok": True, "items": items, "summary": summary}
 
 
 @router.get("/auth/capital/requests")

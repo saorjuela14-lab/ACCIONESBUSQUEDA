@@ -10,7 +10,13 @@ from database.repositories.investment_memory_repository import InvestmentMemoryR
 from database.repositories.portfolio_repository import PortfolioRepository
 from database.repositories.portfolio_snapshot_repository import PortfolioSnapshotRepository
 from database.repositories.watchlist_repository import WatchlistRepository
-from domain.dashboard import PortfolioDashboardSlice, TerminalDashboard, TickerOpportunity, WatchlistMatrixRow
+from domain.dashboard import (
+    ClientAccountView,
+    PortfolioDashboardSlice,
+    TerminalDashboard,
+    TickerOpportunity,
+    WatchlistMatrixRow,
+)
 from domain.enums import InvestmentRecommendation
 from providers.market.factory import get_market_provider
 from services.market_dashboard_service import MarketDashboardService
@@ -51,6 +57,42 @@ def _memory_to_opportunities(memory: list) -> tuple[list[TickerOpportunity], lis
     opportunities.sort(key=lambda x: x.confidence * max(x.score, 0), reverse=True)
     risks.sort(key=lambda x: x.confidence * abs(min(x.score, 0)), reverse=True)
     return opportunities[:8], risks[:8]
+
+
+def _redact_for_client(dash: TerminalDashboard, client_view: ClientAccountView) -> TerminalDashboard:
+    """Clients never see firm book totals, positions, or research surfaces."""
+    # Performance % only — strip dollar totals / cash / weights
+    perf = None
+    if dash.portfolio is not None:
+        perf = PortfolioDashboardSlice(
+            portfolio_id=None,
+            name="Rendimiento Monarch",
+            mode=dash.portfolio.mode,
+            initial_capital=0.0,
+            cash=0.0,
+            total_value=0.0,
+            return_pct=dash.portfolio.return_pct,
+            sharpe=None,
+            sortino=None,
+            max_drawdown=None,
+            diversification_score=None,
+            unrealized_pnl=0.0,
+            realized_pnl=0.0,
+        )
+    news = dash.news_highlights if client_view.has_invested else []
+    return dash.model_copy(
+        update={
+            "portfolio": perf,
+            "client_view": client_view,
+            "watchlist": [],
+            "top_opportunities": [],
+            "top_risks": [],
+            "recently_analyzed": [],
+            "active_alerts": [],
+            "news_highlights": news,
+            "provider_health": {},
+        }
+    )
 
 
 @router.get("/dashboard", response_model=TerminalDashboard)
@@ -95,7 +137,7 @@ async def get_terminal_dashboard(
                     "Conecta Alpaca o usa Postgres para no perder datos."
                 )
         else:
-            # Clients: never seed fake capital — only show the real firm book
+            # Clients: never seed fake capital — only load real firm book for return %
             portfolios = await PortfolioRepository(session).list_all(org_id=book_org)
             p = sorted(portfolios, key=lambda x: x.updated_at, reverse=True)[0] if portfolios else None
             source = "existing" if p else "none"
@@ -184,7 +226,7 @@ async def get_terminal_dashboard(
         provider_health["portfolio_bootstrap"] = bootstrap_note
 
     svc_mkt = MarketDashboardService()
-    return await svc_mkt.build(
+    dash = await svc_mkt.build(
         watchlist=watchlist,
         alerts=alerts,
         portfolio_slice=portfolio_slice,
@@ -194,12 +236,36 @@ async def get_terminal_dashboard(
         provider_health=provider_health,
     )
 
+    if scope.is_client and scope.org_id and scope.user_id:
+        from services.capital_request_service import CapitalRequestService
+
+        firm_ret = portfolio_slice.return_pct if portfolio_slice else None
+        try:
+            summary = await CapitalRequestService(session).client_capital_summary(
+                org_id=scope.org_id,
+                user_id=scope.user_id,
+                firm_return_pct=firm_ret,
+            )
+            client_view = ClientAccountView(**summary)
+        except Exception:
+            client_view = ClientAccountView(
+                has_invested=False,
+                mode="prospect",
+                firm_return_pct=firm_ret,
+                note="No se pudo cargar tu capital; muestra solo el rendimiento de la cuenta.",
+            )
+        return _redact_for_client(dash, client_view)
+
+    return dash
+
 
 @router.get("/dashboard/watchlist-matrix", response_model=list[WatchlistMatrixRow])
 async def get_watchlist_matrix(
     session: AsyncSession = Depends(get_session),
     scope: OrgScope = Depends(get_org_scope),
 ) -> list[WatchlistMatrixRow]:
+    if scope.is_client:
+        return []
     watchlist = await WatchlistRepository(session).list_active(org_id=scope.read_org_id())
     tickers = [w.ticker for w in watchlist]
     memory = await InvestmentMemoryRepository(session).latest_by_ticker(tickers)

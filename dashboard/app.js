@@ -135,16 +135,30 @@ function isDeskPrincipal(p = window.__monarchPrincipal) {
   return !!(p && p.role === "desk");
 }
 
-function applyRoleMode(principal) {
+function applyRoleMode(principal, clientView) {
   const desk = isDeskPrincipal(principal);
   document.body.classList.toggle("role-desk", desk);
   document.body.classList.toggle("role-client", !desk);
+  const invested = !!(clientView && clientView.has_invested);
+  document.body.classList.toggle("client-prospect", !desk && !invested);
+  document.body.classList.toggle("client-investor", !desk && invested);
   const moneyLabel = document.getElementById("ceo-money-label");
   if (moneyLabel) moneyLabel.textContent = desk ? "Tu dinero" : "Cuenta Monarch";
+  const retLabel = document.getElementById("ceo-return-label");
+  if (retLabel) retLabel.textContent = desk ? "Ganancia / pérdida" : "Rendimiento de la cuenta";
   const accessPanel = document.getElementById("access-panel");
   if (accessPanel) accessPanel.classList.toggle("hidden", !desk);
   const clientBanner = document.getElementById("client-monitor-banner");
   if (clientBanner) clientBanner.classList.toggle("hidden", desk);
+  const copy = document.getElementById("client-mode-copy");
+  if (copy && !desk) {
+    copy.innerHTML = invested
+      ? `<strong>Tu inversión.</strong> Ves tu capital, tu estimado según el rendimiento de la cuenta, y noticias.
+        No analizas tickers ni ves el portafolio total de la mesa.`
+      : `<strong>Antes de invertir.</strong> Solo ves el <em>rendimiento</em> al que va la cuenta Monarch.
+        Para aportar: transfiere desde <strong>tu banco</strong> a los datos de abajo
+        (no uses Alpaca ni «conectar cuenta bancaria»).`;
+  }
 }
 
 function setBootMsg(msg) {
@@ -590,16 +604,44 @@ function renderHeatmap(sectors) {
 
 function renderCeoBar(d) {
   const p = d.portfolio;
-  lastDashboardPortfolio = p || null;
-  $("#ceo-portfolio").textContent = p ? `$${p.total_value?.toFixed(0)}` : "—";
-  const ret = p?.return_pct;
+  const cv = d.client_view || null;
+  lastDashboardPortfolio = isDeskPrincipal() ? (p || null) : null;
+  applyRoleMode(window.__monarchPrincipal, cv);
+
+  const desk = isDeskPrincipal();
+  const capEl = document.getElementById("ceo-client-capital");
+  const eqEl = document.getElementById("ceo-client-equity");
+  const capWrap = document.querySelector(".ceo-kpi-client-capital");
+  const eqWrap = document.querySelector(".ceo-kpi-client-equity");
+
+  if (desk) {
+    $("#ceo-portfolio").textContent = p ? `$${p.total_value?.toFixed(0)}` : "—";
+    if (capWrap) capWrap.classList.add("hidden");
+    if (eqWrap) eqWrap.classList.add("hidden");
+  } else {
+    $("#ceo-portfolio").textContent = "—";
+    if (capWrap) capWrap.classList.toggle("hidden", !(cv && cv.has_invested));
+    if (eqWrap) eqWrap.classList.toggle("hidden", !(cv && cv.has_invested));
+    if (capEl) {
+      capEl.textContent = cv && cv.has_invested
+        ? `$${Number(cv.net_capital_usd || 0).toLocaleString(LOCALE, { maximumFractionDigits: 0 })}`
+        : "—";
+    }
+    if (eqEl) {
+      eqEl.textContent = cv && cv.estimated_equity_usd != null
+        ? `$${Number(cv.estimated_equity_usd).toLocaleString(LOCALE, { maximumFractionDigits: 0 })}`
+        : "—";
+    }
+  }
+
+  const ret = (cv && cv.firm_return_pct != null) ? cv.firm_return_pct : p?.return_pct;
   const retEl = $("#ceo-return");
   retEl.textContent = ret != null ? fmtPct(ret) : "—";
   retEl.className = ret >= 0 ? "up" : "down";
-  $("#ceo-alerts").textContent = (d.active_alerts || []).length;
-  $("#ceo-watchlist-count").textContent = (d.watchlist || []).length;
+  $("#ceo-alerts").textContent = desk ? (d.active_alerts || []).length : "—";
+  $("#ceo-watchlist-count").textContent = desk ? (d.watchlist || []).length : "—";
   $("#ceo-updated").textContent = d.timestamp ? new Date(d.timestamp).toLocaleTimeString(LOCALE) : new Date().toLocaleTimeString(LOCALE);
-  if (p && !alpacaBookCapital()) {
+  if (desk && p && !alpacaBookCapital()) {
     const cap = Number(p.cash || p.total_value || p.initial_capital || 0);
     if (cap > 0 && cap !== 1000) syncCapitalInputsFromBroker(cap);
   }
@@ -1435,6 +1477,14 @@ function renderDashboard(d) {
   regime.textContent = `Mercado ${trRegime(d.market_regime)} (${scoreSign}${d.market_regime_score})`;
   regime.className = `regime ${d.market_regime}`;
   renderCeoBar(d);
+
+  // Clients: capital / return / news only — skip research + firm book panels
+  if (!isDeskPrincipal()) {
+    renderMarketNews(d.news_highlights || []);
+    renderProviderHealth({});
+    return;
+  }
+
   renderIndices(d.indices || []);
   renderHeatmap(d.sector_heatmap || []);
   $("#econ-calendar").innerHTML = (d.economic_calendar || []).map((e) => `<div><b>${e.date}</b> ${e.title}</div>`).join("") || "—";
@@ -1475,41 +1525,24 @@ function renderDashboard(d) {
     <div>Drawdown: ${p.max_drawdown?.toFixed(2) ?? "—"}%</div>
     <div>P&amp;L no realizado: $${p.unrealized_pnl?.toFixed(2)}</div>
     <div>Países: ${Object.entries(p.country_weights || {}).map(([k,v]) => `${k} ${v}%`).join(", ") || "—"}</div>
-    ${isDeskPrincipal()
-      ? `<button type="button" id="btn-sync-alpaca-pf" class="btn" style="margin-top:6px;width:100%;font-size:11px">Sincronizar desde Alpaca</button>
-         <p class="muted" style="font-size:10px;margin-top:6px">Mesa: sincroniza el book Alpaca. Usa Postgres (<code>DATABASE_URL</code>) para no perder datos en redeploy.</p>`
-      : `<p class="muted" style="font-size:10px;margin-top:6px">Portafolio de tu empresa — revisa capital, posiciones y rendimiento.</p>`
-    }
-  ` : (isDeskPrincipal()
-    ? `<div class="ui-state"><p>Sin portafolio</p><button type="button" id="btn-create-default-pf" class="btn primary" style="margin-top:6px;width:100%">Crear / sincronizar book</button></div>`
-    : `<div class="ui-state"><p>Sin portafolio de empresa</p><button type="button" id="btn-create-default-pf" class="btn primary" style="margin-top:6px;width:100%">Crear portafolio</button></div>`);
+    <button type="button" id="btn-sync-alpaca-pf" class="btn" style="margin-top:6px;width:100%;font-size:11px">Sincronizar desde Alpaca</button>
+    <p class="muted" style="font-size:10px;margin-top:6px">Mesa: sincroniza el book Alpaca. Usa Postgres (<code>DATABASE_URL</code>) para no perder datos en redeploy.</p>
+  ` : `<div class="ui-state"><p>Sin portafolio</p><button type="button" id="btn-create-default-pf" class="btn primary" style="margin-top:6px;width:100%">Crear / sincronizar book</button></div>`;
   renderPortfolioPies(p);
   lastPortfolioId = p?.portfolio_id || null;
   if (lastPortfolioId) {
     try { localStorage.setItem("nexbuy_portfolio_id", lastPortfolioId); } catch {}
   }
   const bootNote = d.provider_health?.portfolio_bootstrap;
-  if (bootNote && isDeskPrincipal()) toast(bootNote, 9000);
+  if (bootNote) toast(bootNote, 9000);
   $("#btn-sync-alpaca-pf") && ($("#btn-sync-alpaca-pf").onclick = syncPortfolioFromAlpaca);
   $("#btn-create-default-pf") && ($("#btn-create-default-pf").onclick = async () => {
     try {
       showLoading("Creando portafolio…");
-      if (isDeskPrincipal()) {
-        try {
-          await api(`${API}/portfolios/sync-alpaca`, { method: "POST" });
-        } catch {
-          await api(`${API}/portfolios/default`, { method: "POST", body: "{}" });
-        }
-      } else {
-        await api(`${API}/portfolios/default`, {
-          method: "POST",
-          body: JSON.stringify({
-            name: "Portafolio empresa",
-            strategy: "growth_investing",
-            initial_capital: 1000,
-            mode: "demo",
-          }),
-        });
+      try {
+        await api(`${API}/portfolios/sync-alpaca`, { method: "POST" });
+      } catch {
+        await api(`${API}/portfolios/default`, { method: "POST", body: "{}" });
       }
       toast("Portafolio listo");
       await loadDashboard();
@@ -1598,14 +1631,13 @@ async function loadDashboard() {
     const d = await apiWithRetry(`${API}/dashboard`, {}, { retries: 2, label: "dashboard" });
     hideBootSplash();
     renderDashboard(d);
-    const jobs = [
-      loadDailyBriefing(),
-      loadDailyTradeRecommendations(),
-      loadWatchlistMatrix(),
-      loadPushStatus(),
-    ];
+    const jobs = [];
     if (isDeskPrincipal()) {
       jobs.push(
+        loadDailyBriefing(),
+        loadDailyTradeRecommendations(),
+        loadWatchlistMatrix(),
+        loadPushStatus(),
         loadAlpacaStatus(),
         loadRiskDesk(),
         loadOpsDesk(),
@@ -1614,7 +1646,8 @@ async function loadDashboard() {
         loadDeskCapitalRequests(),
       );
     } else {
-      loadClientCapital();
+      // Client: capital + (news already in dashboard if invested). No research fetches.
+      jobs.push(loadClientCapital());
     }
     await Promise.all(jobs);
   } catch (e) {
@@ -1824,14 +1857,15 @@ function renderFundingBox(funding) {
     : "";
 
   box.innerHTML = `
-    <strong>Dónde depositar — ${funding.account_name || "Monarch Capital"}</strong>
-    <p style="margin:0.35rem 0 0;color:#fde68a">${funding.headline || "Solo transferencia bancaria. Sin registro ni login en Alpaca."}</p>
+    <strong>Datos para tu transferencia — ${funding.account_name || "Monarch Capital"}</strong>
+    <p style="margin:0.35rem 0 0;color:#fde68a">${funding.headline || "Desde TU banco hacia estos datos. Sin Alpaca."}</p>
     <ol>${steps}</ol>
-    <div class="fund-grid">${bankRows || "<p class='muted'>Sin datos bancarios configurados todavía.</p>"}</div>
+    <div class="fund-grid">${bankRows || "<p class='muted'>La mesa aún no publicó routing/cuenta. Pídeselos — no uses el «Select» de Alpaca.</p>"}</div>
     ${funding.instructions ? `<p style="margin:0.55rem 0 0;white-space:pre-wrap">${funding.instructions}</p>` : ""}
     ${wire}
     ${extraLink}
     ${missing}
+    <p class="muted" style="margin:0.55rem 0 0;font-size:11px">Si en Alpaca ves «Deposit Funds → Select», ignóralo: eso conecta el banco del dueño de la cuenta (solo la mesa).</p>
     <div style="margin-top:0.75rem">
       <button type="button" class="btn primary" id="btn-deposit-confirm">Ya deposité — avisar a la mesa</button>
     </div>
