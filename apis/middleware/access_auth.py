@@ -32,6 +32,28 @@ CLIENT_MUTATION_ALLOW_PREFIXES = (
     "/api/v1/auth/client-error",
 )
 
+# Clients must not analyze tickers, inspect the firm book, or use research tools.
+# Allowed: /dashboard (redacted), /auth/capital/*, news/reports reads, health.
+CLIENT_FORBIDDEN_PREFIXES = (
+    "/api/v1/analyze",
+    "/api/v1/discover",
+    "/api/v1/correlations",
+    "/api/v1/graph",
+    "/api/v1/sentiment",
+    "/api/v1/market",
+    "/api/v1/proposal",
+    "/api/v1/allocation",
+    "/api/v1/voice",
+    "/api/v1/recommendations",
+    "/api/v1/watchlist",
+    "/api/v1/portfolios",
+    "/api/v1/ops",
+    "/api/v1/risk",
+    "/api/v1/broker",
+    "/api/v1/providers",
+    "/api/v1/dashboard/watchlist-matrix",
+)
+
 
 def _extract_token(request: Request) -> str | None:
     auth = request.headers.get("authorization", "")
@@ -99,10 +121,22 @@ class AccessTokenMiddleware(BaseHTTPMiddleware):
 
         if principal:
             request.state.principal = principal
-            # Approved clients are read-only monitors of the firm account.
+            is_client = principal.get("role") != "desk"
+            # Clients: no ticker analysis, firm book, or research APIs (any method).
+            if is_client and any(path.startswith(p) for p in CLIENT_FORBIDDEN_PREFIXES):
+                return JSONResponse(
+                    status_code=403,
+                    content={
+                        "detail": (
+                            "Tu acceso muestra solo tu capital y el rendimiento de la cuenta. "
+                            "El análisis de tickers y el portafolio total son solo de la mesa."
+                        )
+                    },
+                )
+            # Approved clients are read-only (except capital deposit/withdraw).
             # Only the mesa invests / mutates capital, watchlist, broker, ops, etc.
             if (
-                principal.get("role") != "desk"
+                is_client
                 and method not in ("GET", "HEAD", "OPTIONS")
                 and path.startswith("/api/")
                 and not any(path.startswith(p) for p in CLIENT_MUTATION_ALLOW_PREFIXES)
@@ -117,7 +151,7 @@ class AccessTokenMiddleware(BaseHTTPMiddleware):
                         content={
                             "detail": (
                                 "Solo lectura: la mesa Monarch es quien invierte. "
-                                "Tu acceso es para monitorear la cuenta."
+                                "Tu acceso es para monitorear tu capital."
                             )
                         },
                     )

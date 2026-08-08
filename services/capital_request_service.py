@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from typing import Any
+from urllib.parse import urlparse
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,37 +15,137 @@ from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+# Never send clients to Alpaca auth — that forces signup/login per person.
+_BLOCKED_FUNDING_HOSTS = {
+    "app.alpaca.markets",
+    "alpaca.markets",
+    "broker-app.alpaca.markets",
+}
 
-def funding_package(*, client_email: str = "") -> dict[str, Any]:
-    """Instructions / links so the client can fund the ONE shared firm Alpaca account."""
+
+def _safe_funding_url(raw: str) -> str:
+    url = (raw or "").strip()
+    if not url:
+        return ""
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        return ""
+    if not host or host in _BLOCKED_FUNDING_HOSTS or host.endswith(".alpaca.markets"):
+        return ""
+    return url
+
+
+def funding_package(*, client_email: str = "", amount_usd: float | None = None) -> dict[str, Any]:
+    """Bank-transfer destination for the ONE shared firm account (no Alpaca login)."""
     s = get_settings()
     memo = (client_email or "tu-email@cliente.com").strip().lower()
+    bank_name = (s.alpaca_funding_bank_name or "").strip()
+    routing = (s.alpaca_funding_routing_number or "").strip()
+    account_no = (s.alpaca_funding_account_number or "").strip()
+    beneficiary = (s.alpaca_funding_beneficiary or s.alpaca_funding_account_name or "Monarch Capital").strip()
+    account_type = (s.alpaca_funding_account_type or "Checking").strip()
+    swift = (s.alpaca_funding_swift or "").strip()
     instructions = (s.alpaca_funding_instructions or "").strip()
     wire = (s.alpaca_funding_wire_details or "").strip()
+    funding_url = _safe_funding_url(s.alpaca_funding_url)
+    configured = bool(bank_name and routing and account_no) or bool(wire)
+
+    bank = {
+        "beneficiary": beneficiary,
+        "bank_name": bank_name,
+        "routing_number": routing,
+        "account_number": account_no,
+        "account_type": account_type,
+        "swift": swift,
+    }
     return {
         "account_name": s.alpaca_funding_account_name or "Monarch Capital",
-        "funding_url": s.alpaca_funding_url or "https://app.alpaca.markets/",
+        "funding_url": funding_url,  # empty unless a non-Alpaca custom page is configured
+        "bank": bank,
         "instructions": instructions,
         "wire_details": wire,
         "memo_reference": memo,
+        "amount_usd": amount_usd,
+        "configured": configured,
         "shared_account": True,
+        "no_alpaca_login": True,
         "paper": bool(s.effective_alpaca_paper),
         "headline": (
-            "Todos los clientes fondean la MISMA cuenta Alpaca de Monarch Capital "
-            "(la de la mesa). No se crea una cuenta Alpaca por cliente."
+            "Transfiere desde TU banco hacia los datos de Monarch. "
+            "No abras Alpaca, no pulses «Select» ni conectes tu cuenta bancaria allí — eso solo lo hace la mesa."
         ),
         "steps": [
-            "Abre el enlace de fondeo de la cuenta Alpaca ÚNICA de Monarch (mesa).",
-            "Transfiere el monto (ACH o wire) hacia ESA cuenta compartida — no a una cuenta tuya en Alpaca.",
-            f"En la referencia/memo escribe exactamente: {memo} (solo para identificar tu aporte dentro de la misma cuenta).",
-            "Cuando el banco confirme el envío, pulsa «Ya deposité» para avisar a la mesa.",
+            "Abre la app o web de TU banco (no Alpaca).",
+            "Crea una transferencia ACH o wire HACIA los datos de abajo (copiar/pegar).",
+            f"En referencia/memo escribe exactamente: {memo}",
+            "Cuando tu banco confirme el envío, pulsa «Ya deposité». La mesa verifica y marca recibido.",
         ],
+        "desk_only_note": (
+            "La mesa obtiene estos datos en Alpaca → Funds → Incoming wire / ACH details. "
+            "El flujo «Deposit Funds → Select → login al banco» es solo para el dueño de la cuenta Alpaca."
+        ),
     }
 
 
 class CapitalRequestService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def client_capital_summary(
+        self,
+        *,
+        org_id: str,
+        user_id: str,
+        firm_return_pct: float | None = None,
+    ) -> dict[str, Any]:
+        """Per-client capital (received deposits − paid withdrawals) + account return %.
+
+        Clients never see the firm book total — only their net contribution and
+        the desk account's performance percentage.
+        """
+        await self._require_active_client(org_id=org_id, user_id=user_id)
+        r = await self._session.execute(
+            select(CapitalRequestORM).where(
+                CapitalRequestORM.org_id == org_id,
+                CapitalRequestORM.user_id == user_id,
+            )
+        )
+        rows = list(r.scalars().all())
+        deposited = sum(x.amount_usd for x in rows if x.kind == "deposit" and x.status == "received")
+        withdrawn = sum(x.amount_usd for x in rows if x.kind == "withdrawal" and x.status == "paid")
+        pending_deposit = sum(
+            x.amount_usd
+            for x in rows
+            if x.kind == "deposit" and x.status in ("requested", "client_confirmed")
+        )
+        pending_withdrawal = sum(
+            x.amount_usd
+            for x in rows
+            if x.kind == "withdrawal" and x.status in ("requested", "approved")
+        )
+        net = max(0.0, float(deposited) - float(withdrawn))
+        has_invested = net > 0
+        ret = float(firm_return_pct) if firm_return_pct is not None else None
+        estimated_equity = round(net * (1.0 + (ret or 0.0) / 100.0), 2) if has_invested else None
+        estimated_pnl = round(estimated_equity - net, 2) if estimated_equity is not None else None
+        return {
+            "has_invested": has_invested,
+            "mode": "investor" if has_invested else "prospect",
+            "deposited_usd": round(float(deposited), 2),
+            "withdrawn_usd": round(float(withdrawn), 2),
+            "net_capital_usd": round(net, 2),
+            "pending_deposit_usd": round(float(pending_deposit), 2),
+            "pending_withdrawal_usd": round(float(pending_withdrawal), 2),
+            "firm_return_pct": ret,
+            "estimated_equity_usd": estimated_equity,
+            "estimated_pnl_usd": estimated_pnl,
+            "note": (
+                "Tu capital es lo que la mesa ya confirmó recibido. "
+                "El rendimiento % es el de la cuenta Monarch (compartida); "
+                "no ves el total del portafolio de la mesa."
+            ),
+        }
 
     async def _require_active_client(self, *, org_id: str, user_id: str) -> tuple[OrganizationORM, UserORM]:
         org_r = await self._session.execute(select(OrganizationORM).where(OrganizationORM.id == org_id))
@@ -98,15 +199,15 @@ class CapitalRequestService:
         org.deposit_requested_usd = float(amount_usd)
         org.deposit_note = row.note
         await self._session.commit()
-        funding = funding_package(client_email=user.email)
+        funding = funding_package(client_email=user.email, amount_usd=float(amount_usd))
         logger.info("capital.deposit_requested", email=user.email, amount=amount_usd)
         return {
             "ok": True,
             "request": self._serialize(row),
             "funding": funding,
             "message": (
-                "Solicitud registrada. Usa el enlace e instrucciones para depositar "
-                "en la cuenta Alpaca de Monarch. Luego pulsa «Ya deposité»."
+                "Listo. Transfiere a los datos bancarios de Monarch (sin entrar a Alpaca). "
+                "Luego pulsa «Ya deposité»."
             ),
         }
 

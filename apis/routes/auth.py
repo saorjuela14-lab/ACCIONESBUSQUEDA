@@ -306,7 +306,7 @@ async def capital_funding_info(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Funding links/instructions for the shared firm Alpaca account."""
+    """Bank-transfer destination for the shared firm account (no Alpaca login)."""
     from services.capital_request_service import funding_package
 
     svc = CompanyAuthService(session)
@@ -322,7 +322,7 @@ async def capital_deposit(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Client starts a deposit → gets Alpaca funding instructions for the firm account."""
+    """Client starts a deposit → gets bank transfer details for the firm account."""
     from services.capital_request_service import CapitalRequestService
 
     auth = CompanyAuthService(session)
@@ -338,13 +338,13 @@ async def capital_deposit(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await _notify_mesa(
-        "Depósito solicitado → fondear Alpaca",
+        "Depósito solicitado (transferencia bancaria)",
         (
             f"Cliente: {resolved.get('email')}\n"
             f"Monto: ${body.amount_usd:,.2f}\n"
             f"Ref/memo: {resolved.get('email')}\n"
             f"{(body.note or '')[:200]}\n"
-            f"El cliente recibió el enlace de fondeo de la cuenta Alpaca de la mesa."
+            f"El cliente recibió los datos bancarios de Monarch (sin login Alpaca)."
         ),
     )
     metrics.inc("capital_deposit_requested")
@@ -428,11 +428,16 @@ async def capital_mine(
     auth = CompanyAuthService(session)
     token = _extract_bearer(request)
     resolved = _require_client(await auth.resolve_bearer(token) if token else None)
-    items = await CapitalRequestService(session).list_mine(
+    svc = CapitalRequestService(session)
+    items = await svc.list_mine(
         org_id=resolved["org_id"],
         user_id=resolved["user_id"],
     )
-    return {"ok": True, "items": items}
+    summary = await svc.client_capital_summary(
+        org_id=resolved["org_id"],
+        user_id=resolved["user_id"],
+    )
+    return {"ok": True, "items": items, "summary": summary}
 
 
 @router.get("/auth/capital/requests")

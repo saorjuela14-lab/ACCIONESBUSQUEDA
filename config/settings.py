@@ -127,18 +127,23 @@ class Settings(BaseSettings):
     alpaca_base_url: str = ""  # override; empty → api.alpaca.markets (live) or paper-api
     alpaca_data_base_url: str = "https://data.alpaca.markets"
     alpaca_data_feed: str = "iex"  # iex (free) | sip (paid) | delayed_sip
-    # Client funding into the shared firm Alpaca account (shown after deposit request)
-    alpaca_funding_url: str = "https://app.alpaca.markets/"
+    # Client bank transfer INTO the shared firm Alpaca / operating account.
+    # Do NOT send clients to app.alpaca.markets login — they only need deposit destination details.
+    alpaca_funding_url: str = ""  # optional custom page; leave empty (never Alpaca login)
     alpaca_funding_account_name: str = "Monarch Capital"
+    alpaca_funding_bank_name: str = ""
+    alpaca_funding_routing_number: str = ""
+    alpaca_funding_account_number: str = ""
+    alpaca_funding_account_type: str = "Checking"
+    alpaca_funding_swift: str = ""
+    alpaca_funding_beneficiary: str = "Monarch Capital"
     alpaca_funding_instructions: str = (
-        "IMPORTANTE: todos los clientes depositan en la MISMA cuenta Alpaca de Monarch Capital "
-        "(la cuenta de la mesa). No hay cuentas Alpaca individuales por cliente.\n"
-        "1) Abre el enlace de fondeo de esa cuenta única.\n"
-        "2) Usa transferencia ACH o wire según tu banco.\n"
-        "3) En la referencia/memo escribe tu email (solo identifica tu aporte).\n"
-        "4) Cuando el dinero salga de tu banco, pulsa «Ya deposité» para avisar a la mesa."
+        "Transfiere desde tu banco a los datos de abajo (cuenta operativa de Monarch / Alpaca de la mesa).\n"
+        "No necesitas crear ni iniciar sesión en Alpaca.\n"
+        "En la referencia/memo escribe tu email de cliente.\n"
+        "Cuando salga el dinero, pulsa «Ya deposité»."
     )
-    alpaca_funding_wire_details: str = ""  # optional extra bank/wire lines for the firm account
+    alpaca_funding_wire_details: str = ""  # free-form extra lines if needed
 
     http_max_retries: int = 3
     http_retry_backoff: float = 1.5

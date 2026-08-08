@@ -182,6 +182,22 @@ class PortfolioDashboardSlice(BaseModel):
     realized_pnl: float = 0.0
 
 
+class ClientAccountView(BaseModel):
+    """What an approved client is allowed to see (never firm book totals)."""
+
+    has_invested: bool = False
+    mode: str = "prospect"  # prospect | investor
+    net_capital_usd: float = 0.0
+    deposited_usd: float = 0.0
+    withdrawn_usd: float = 0.0
+    pending_deposit_usd: float = 0.0
+    pending_withdrawal_usd: float = 0.0
+    firm_return_pct: float | None = None
+    estimated_equity_usd: float | None = None
+    estimated_pnl_usd: float | None = None
+    note: str = ""
+
+
 class TerminalDashboard(BaseModel):
     market_regime: str  # bullish | neutral | bearish
     market_regime_score: float = 0.0
@@ -197,5 +213,6 @@ class TerminalDashboard(BaseModel):
     top_risks: list[TickerOpportunity] = Field(default_factory=list)
     recently_analyzed: list[str] = Field(default_factory=list)
     portfolio: PortfolioDashboardSlice | None = None
+    client_view: ClientAccountView | None = None
     provider_health: dict = Field(default_factory=dict)
     timestamp: datetime | None = None

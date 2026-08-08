@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from starlette.responses import Response
 
-from apis.middleware.access_auth import AccessTokenMiddleware, _extract_token
+from apis.middleware.access_auth import (
+    CLIENT_FORBIDDEN_PREFIXES,
+    AccessTokenMiddleware,
+    _extract_token,
+)
 from config.settings import get_settings
 
 
@@ -80,3 +84,41 @@ async def test_middleware_root_goes_to_login_without_session():
     resp = await mw.dispatch(req, call_next)
     assert resp.status_code == 302
     assert "/login" in resp.headers.get("location", "")
+
+
+@pytest.mark.asyncio
+async def test_middleware_blocks_client_research_apis():
+    async def call_next(request):
+        return Response("ok")
+
+    mw = AccessTokenMiddleware(app=MagicMock())
+    mw._auth_required = AsyncMock(return_value=True)
+    mw._resolve = AsyncMock(
+        return_value={
+            "role": "viewer",
+            "org_id": "org-1",
+            "user_id": "u-1",
+            "email": "c@test.com",
+            "auth_type": "session",
+        }
+    )
+
+    for prefix in CLIENT_FORBIDDEN_PREFIXES[:5]:
+        req = MagicMock()
+        req.url.path = f"{prefix}/x"
+        req.method = "GET"
+        req.headers = {"authorization": "Bearer client"}
+        req.query_params = {}
+        req.cookies = {}
+        resp = await mw.dispatch(req, call_next)
+        assert resp.status_code == 403, prefix
+
+    # Dashboard itself remains allowed (payload is redacted in the route)
+    req = MagicMock()
+    req.url.path = "/api/v1/dashboard"
+    req.method = "GET"
+    req.headers = {"authorization": "Bearer client"}
+    req.query_params = {}
+    req.cookies = {}
+    resp = await mw.dispatch(req, call_next)
+    assert resp.status_code == 200
