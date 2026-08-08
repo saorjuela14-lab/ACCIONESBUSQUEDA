@@ -16,7 +16,7 @@ logger = get_logger(__name__)
 
 
 def funding_package(*, client_email: str = "") -> dict[str, Any]:
-    """Instructions / links so the client can fund the firm Alpaca account."""
+    """Instructions / links so the client can fund the ONE shared firm Alpaca account."""
     s = get_settings()
     memo = (client_email or "tu-email@cliente.com").strip().lower()
     instructions = (s.alpaca_funding_instructions or "").strip()
@@ -27,12 +27,17 @@ def funding_package(*, client_email: str = "") -> dict[str, Any]:
         "instructions": instructions,
         "wire_details": wire,
         "memo_reference": memo,
+        "shared_account": True,
         "paper": bool(s.effective_alpaca_paper),
+        "headline": (
+            "Todos los clientes fondean la MISMA cuenta Alpaca de Monarch Capital "
+            "(la de la mesa). No se crea una cuenta Alpaca por cliente."
+        ),
         "steps": [
-            "Abre el enlace de fondeo de la cuenta Alpaca de Monarch.",
-            "Transfiere el monto (ACH o wire) hacia esa cuenta.",
-            f"En la referencia/memo escribe exactamente: {memo}",
-            "Cuando el banco confirme el envío, pulsa «Ya deposité» para avisarnos.",
+            "Abre el enlace de fondeo de la cuenta Alpaca ÚNICA de Monarch (mesa).",
+            "Transfiere el monto (ACH o wire) hacia ESA cuenta compartida — no a una cuenta tuya en Alpaca.",
+            f"En la referencia/memo escribe exactamente: {memo} (solo para identificar tu aporte dentro de la misma cuenta).",
+            "Cuando el banco confirme el envío, pulsa «Ya deposité» para avisar a la mesa.",
         ],
     }
 

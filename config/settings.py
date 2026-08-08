@@ -131,10 +131,11 @@ class Settings(BaseSettings):
     alpaca_funding_url: str = "https://app.alpaca.markets/"
     alpaca_funding_account_name: str = "Monarch Capital"
     alpaca_funding_instructions: str = (
-        "Deposita en la cuenta Alpaca de Monarch Capital (cuenta que opera la mesa).\n"
-        "1) Abre el enlace de fondeo de Alpaca.\n"
+        "IMPORTANTE: todos los clientes depositan en la MISMA cuenta Alpaca de Monarch Capital "
+        "(la cuenta de la mesa). No hay cuentas Alpaca individuales por cliente.\n"
+        "1) Abre el enlace de fondeo de esa cuenta única.\n"
         "2) Usa transferencia ACH o wire según tu banco.\n"
-        "3) En la referencia/memo escribe tu email de cliente.\n"
+        "3) En la referencia/memo escribe tu email (solo identifica tu aporte).\n"
         "4) Cuando el dinero salga de tu banco, pulsa «Ya deposité» para avisar a la mesa."
     )
     alpaca_funding_wire_details: str = ""  # optional extra bank/wire lines for the firm account

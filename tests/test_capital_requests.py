@@ -62,6 +62,8 @@ async def test_deposit_returns_funding_and_client_confirm():
         body = dep.json()
         assert body["funding"]["funding_url"] == "https://app.alpaca.markets/funding-test"
         assert body["funding"]["memo_reference"] == "fund@co.test"
+        assert body["funding"]["shared_account"] is True
+        assert "MISMA cuenta" in (body["funding"].get("headline") or "")
         req_id = body["request"]["id"]
         assert body["request"]["status"] == "requested"
 
