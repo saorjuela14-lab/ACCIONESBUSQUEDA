@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/styles.css?v=11-access-approval" />
+  <link rel="stylesheet" href="/dashboard/static/styles.css?v=14-password-reset" />
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
 </head>
 <body class="login-page">
@@ -38,11 +38,37 @@
     </div>
 
     <div id="panel-company" class="login-panel">
-      <label for="company-email">Email corporativo</label>
-      <input id="company-email" type="email" placeholder="tu@empresa.com" autocomplete="username" />
-      <label for="company-password" style="margin-top:0.55rem">Contraseña</label>
-      <input id="company-password" type="password" placeholder="Mínimo 8 caracteres" autocomplete="current-password" />
-      <button id="btn-login-company" class="btn primary" style="width:100%;margin-top:0.75rem;padding:0.65rem">Entrar</button>
+      <div id="login-main">
+        <label for="company-email">Email corporativo</label>
+        <input id="company-email" type="email" placeholder="tu@empresa.com" autocomplete="username" />
+        <label for="company-password" style="margin-top:0.55rem">Contraseña</label>
+        <input id="company-password" type="password" placeholder="Mínimo 8 caracteres" autocomplete="current-password" />
+        <button id="btn-login-company" class="btn primary" style="width:100%;margin-top:0.75rem;padding:0.65rem">Entrar</button>
+        <p style="text-align:center;margin:0.65rem 0 0">
+          <button type="button" id="btn-show-forgot" class="link-btn">¿Olvidaste tu contraseña?</button>
+        </p>
+      </div>
+
+      <div id="forgot-panel" class="hidden">
+        <p class="muted" style="font-size:12px;margin:0 0 0.65rem">
+          Escribe tu email. La mesa Monarch te dará un código de 6 dígitos (Telegram/WhatsApp o panel Accesos).
+          Luego pon tu nueva contraseña.
+        </p>
+        <label for="forgot-email">Email</label>
+        <input id="forgot-email" type="email" placeholder="tu@empresa.com" autocomplete="username" />
+        <button id="btn-forgot-send" class="btn primary" style="width:100%;margin-top:0.65rem;padding:0.65rem">Pedir código</button>
+        <label for="forgot-code" style="margin-top:0.75rem">Código de 6 dígitos</label>
+        <input id="forgot-code" type="text" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code" />
+        <label for="forgot-pass" style="margin-top:0.55rem">Nueva contraseña</label>
+        <input id="forgot-pass" type="password" placeholder="Mínimo 8 caracteres" autocomplete="new-password" />
+        <label for="forgot-pass2" style="margin-top:0.55rem">Confirmar contraseña</label>
+        <input id="forgot-pass2" type="password" placeholder="Repite la contraseña" autocomplete="new-password" />
+        <button id="btn-forgot-reset" class="btn primary" style="width:100%;margin-top:0.65rem;padding:0.65rem">Guardar nueva contraseña</button>
+        <p style="text-align:center;margin:0.65rem 0 0">
+          <button type="button" id="btn-forgot-back" class="link-btn">Volver al login</button>
+        </p>
+      </div>
+
       <details class="login-register" id="register-box" open>
         <summary>Solicitar acceso (nuevo cliente)</summary>
         <p class="muted" style="font-size:12px;margin:0.4rem 0 0.6rem">
@@ -68,18 +94,42 @@
     </div>
 
     <p id="login-error" class="login-error hidden"></p>
+    <p id="login-ok" class="login-ok hidden"></p>
     <p id="login-status" class="muted" style="text-align:center;margin-top:0.75rem;font-size:11px"></p>
   </div>
   <script>
     const API = "/api/v1";
     const err = document.getElementById("login-error");
+    const okEl = document.getElementById("login-ok");
     const statusEl = document.getElementById("login-status");
 
     function showErr(msg) {
+      okEl.classList.add("hidden");
       err.textContent = msg || "Error";
       err.classList.remove("hidden");
     }
-    function clearErr() { err.classList.add("hidden"); err.textContent = ""; }
+    function showOk(msg) {
+      err.classList.add("hidden");
+      okEl.textContent = msg || "";
+      okEl.classList.toggle("hidden", !msg);
+    }
+    function clearErr() {
+      err.classList.add("hidden");
+      err.textContent = "";
+      okEl.classList.add("hidden");
+      okEl.textContent = "";
+    }
+
+    function showForgot(on) {
+      document.getElementById("login-main").classList.toggle("hidden", on);
+      document.getElementById("forgot-panel").classList.toggle("hidden", !on);
+      document.getElementById("register-box")?.classList.toggle("hidden", on);
+      clearErr();
+      if (on) {
+        const email = document.getElementById("company-email").value.trim();
+        if (email) document.getElementById("forgot-email").value = email;
+      }
+    }
 
     function storeSession(token, meta) {
       localStorage.setItem("nexbuy_token", token);
@@ -200,6 +250,54 @@
         err.classList.add("hidden");
         document.getElementById("reg-pass").value = "";
         alert(data.message || "Solicitud enviada. La mesa debe autorizarte antes de entrar.");
+      } catch (e) { showErr(e.message); }
+    };
+
+    document.getElementById("btn-show-forgot").onclick = () => showForgot(true);
+    document.getElementById("btn-forgot-back").onclick = () => showForgot(false);
+
+    document.getElementById("btn-forgot-send").onclick = async () => {
+      clearErr();
+      const email = document.getElementById("forgot-email").value.trim();
+      if (!email) return showErr("Escribe tu email");
+      try {
+        const r = await fetch(`${API}/auth/password/forgot`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ email }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : "No se pudo pedir el código");
+        showOk(data.message || "Si el email existe, la mesa recibió el código.");
+      } catch (e) { showErr(e.message); }
+    };
+
+    document.getElementById("btn-forgot-reset").onclick = async () => {
+      clearErr();
+      const email = document.getElementById("forgot-email").value.trim();
+      const code = document.getElementById("forgot-code").value.trim();
+      const pass = document.getElementById("forgot-pass").value;
+      const pass2 = document.getElementById("forgot-pass2").value;
+      if (!email || !code) return showErr("Email y código son obligatorios");
+      if (pass.length < 8) return showErr("La contraseña debe tener al menos 8 caracteres");
+      if (pass !== pass2) return showErr("Las contraseñas no coinciden");
+      try {
+        const r = await fetch(`${API}/auth/password/reset`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ email, code, new_password: pass }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : "No se pudo actualizar");
+        showOk(data.message || "Contraseña actualizada. Ya puedes iniciar sesión.");
+        document.getElementById("company-email").value = email;
+        document.getElementById("company-password").value = "";
+        document.getElementById("forgot-pass").value = "";
+        document.getElementById("forgot-pass2").value = "";
+        document.getElementById("forgot-code").value = "";
+        setTimeout(() => showForgot(false), 800);
       } catch (e) { showErr(e.message); }
     };
 

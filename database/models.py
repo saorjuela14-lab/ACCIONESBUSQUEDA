@@ -221,6 +221,23 @@ class AuthSessionORM(Base):
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class PasswordResetORM(Base):
+    """One-time password recovery codes for company users (mesa-relayed)."""
+
+    __tablename__ = "password_resets"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    org_id: Mapped[str] = mapped_column(String(36), index=True)
+    email: Mapped[str] = mapped_column(String(255), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64))
+    # Plain code kept until used/expired so the mesa can relay it (no SMTP yet)
+    code_plain: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class PositionMandateORM(Base):
     __tablename__ = "position_mandates"
 

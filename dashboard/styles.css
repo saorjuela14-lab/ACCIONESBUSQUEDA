@@ -787,6 +787,14 @@ html.session-ok #boot-splash {
 }
 .login-error { color: var(--red); font-size: 12px; margin-top: 0.5rem; }
 .login-error.hidden { display: none; }
+.login-ok { color: #86efac; font-size: 12px; margin-top: 0.5rem; }
+.login-ok.hidden { display: none; }
+.link-btn {
+  background: none; border: none; color: var(--gold, #c4a574);
+  font-size: 12px; cursor: pointer; text-decoration: underline; padding: 0;
+}
+.link-btn:hover { color: #e8dcc8; }
+#forgot-panel.hidden, #login-main.hidden { display: none; }
 .login-tabs { display: flex; gap: 6px; margin-bottom: 0.85rem; }
 .login-tab {
   flex: 1; background: var(--surface); border: 1px solid var(--border); color: var(--muted);

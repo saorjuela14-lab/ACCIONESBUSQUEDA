@@ -40,6 +40,21 @@ class DepositReceivedBody(BaseModel):
     amount_usd: float | None = Field(default=None, gt=0, le=1_000_000_000)
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+
+
+class ResetPasswordRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+    code: str = Field(min_length=4, max_length=12)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class DeskSetPasswordRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class ClientErrorReport(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     source: str = Field(default="window", max_length=64)
@@ -307,6 +322,90 @@ async def deposit_received(
         return await svc.mark_deposit_received(org_id, body.amount_usd)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/auth/password/forgot")
+async def forgot_password(
+    body: ForgotPasswordRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Request a recovery code. Mesa is notified (Telegram/WhatsApp) to relay it."""
+    svc = CompanyAuthService(session)
+    result = await svc.request_password_reset(body.email)
+    if result.get("created") and result.get("code"):
+        try:
+            from services.push_notification_service import PushNotificationService
+
+            await PushNotificationService().notify_message(
+                "Recuperación de contraseña",
+                (
+                    f"Cliente: {result.get('full_name') or '—'}\n"
+                    f"Email: {result.get('email')}\n"
+                    f"Empresa: {result.get('org_name') or '—'}\n"
+                    f"Código: {result['code']}\n"
+                    f"Válido {result.get('expires_minutes', 30)} min.\n"
+                    f"Entrégalelo al cliente o revísalo en Accesos → Recuperaciones."
+                ),
+            )
+        except Exception:
+            pass
+        metrics.inc("auth_password_reset_requested")
+    # Never expose the code in the public HTTP response
+    return {
+        "ok": True,
+        "message": result.get("message"),
+    }
+
+
+@router.post("/auth/password/reset")
+async def reset_password(
+    body: ResetPasswordRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    svc = CompanyAuthService(session)
+    try:
+        out = await svc.reset_password_with_code(
+            email=body.email,
+            code=body.code,
+            new_password=body.new_password,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    metrics.inc("auth_password_reset_ok")
+    return out
+
+
+@router.get("/auth/password/resets")
+async def list_password_resets(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Mesa: pending recovery codes to relay to clients."""
+    svc = CompanyAuthService(session)
+    token = _extract_bearer(request)
+    resolved = await svc.resolve_bearer(token) if token else None
+    if not resolved or resolved.get("role") != "desk":
+        raise HTTPException(status_code=403, detail="Solo la mesa puede ver recuperaciones")
+    items = await svc.list_password_resets()
+    return {"ok": True, "items": items}
+
+
+@router.post("/auth/password/desk-set")
+async def desk_set_password(
+    body: DeskSetPasswordRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Mesa sets a new password for an approved client directly."""
+    svc = CompanyAuthService(session)
+    token = _extract_bearer(request)
+    resolved = await svc.resolve_bearer(token) if token else None
+    if not resolved or resolved.get("role") != "desk":
+        raise HTTPException(status_code=403, detail="Solo la mesa puede restablecer contraseñas")
+    try:
+        return await svc.desk_set_password(email=body.email, new_password=body.new_password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/auth/me")

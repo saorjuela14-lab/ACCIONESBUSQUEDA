@@ -1605,7 +1605,13 @@ async function loadDashboard() {
       loadPushStatus(),
     ];
     if (isDeskPrincipal()) {
-      jobs.push(loadAlpacaStatus(), loadRiskDesk(), loadOpsDesk(), loadAccessRequests());
+      jobs.push(
+        loadAlpacaStatus(),
+        loadRiskDesk(),
+        loadOpsDesk(),
+        loadAccessRequests(),
+        loadPasswordResets(),
+      );
     } else {
       refreshClientDepositStatus();
     }
@@ -1678,6 +1684,8 @@ async function loadAccessRequests() {
       if (status === "pending") {
         actions.push(`<button type="button" class="btn primary" data-access-action="approve" data-org-id="${c.id}">Autorizar</button>`);
         actions.push(`<button type="button" class="btn danger" data-access-action="reject" data-org-id="${c.id}">Rechazar</button>`);
+      } else if (status === "approved" && c.email) {
+        actions.push(`<button type="button" class="btn" data-set-password="${c.email}">Nueva contraseña</button>`);
       }
       if (deposit === "requested") {
         actions.push(`<button type="button" class="btn" data-access-action="deposit-received" data-org-id="${c.id}">Marcar depósito recibido</button>`);
@@ -1698,6 +1706,12 @@ async function loadAccessRequests() {
     if (!box.dataset.boundAccess) {
       box.dataset.boundAccess = "1";
       box.addEventListener("click", (ev) => {
+        const setPw = ev.target?.closest?.("[data-set-password]");
+        if (setPw && box.contains(setPw)) {
+          ev.preventDefault();
+          deskSetClientPassword(setPw.getAttribute("data-set-password"));
+          return;
+        }
         const btn = ev.target?.closest?.("[data-access-action]");
         if (!btn || !box.contains(btn)) return;
         ev.preventDefault();
@@ -1707,6 +1721,53 @@ async function loadAccessRequests() {
     }
   } catch (e) {
     box.innerHTML = `<p class="muted">No se pudieron cargar accesos: ${e.message}</p>`;
+  }
+}
+
+async function loadPasswordResets() {
+  const box = document.getElementById("reset-list");
+  if (!box || !isDeskPrincipal()) return;
+  try {
+    const data = await api(`${API}/auth/password/resets`);
+    const items = data.items || [];
+    if (!items.length) {
+      box.innerHTML = `<p class="muted">Sin recuperaciones activas.</p>`;
+      return;
+    }
+    box.innerHTML = items.map((r) => `
+      <div class="access-card">
+        <div class="meta">
+          <strong>${r.email || "—"}</strong>
+          <span class="pill pending">código activo</span>
+          <div class="muted" style="font-size:12px;margin-top:0.25rem">
+            Código: <b style="color:#e8dcc8;letter-spacing:0.12em">${r.code || "—"}</b>
+            · vence ${r.expires_at ? new Date(r.expires_at).toLocaleString() : "—"}
+          </div>
+        </div>
+      </div>
+    `).join("");
+  } catch (e) {
+    box.innerHTML = `<p class="muted">No se pudieron cargar recuperaciones: ${e.message}</p>`;
+  }
+}
+
+async function deskSetClientPassword(email) {
+  if (!email) return;
+  const pw = window.prompt(`Nueva contraseña para ${email} (mín. 8 caracteres):`);
+  if (!pw) return;
+  if (pw.length < 8) {
+    toast("La contraseña debe tener al menos 8 caracteres");
+    return;
+  }
+  try {
+    await api(`${API}/auth/password/desk-set`, {
+      method: "POST",
+      body: JSON.stringify({ email, new_password: pw }),
+    });
+    toast("Contraseña actualizada. Entrégasela al cliente.");
+    loadPasswordResets();
+  } catch (e) {
+    toast(e.message);
   }
 }
 
@@ -2940,7 +3001,10 @@ document.addEventListener("keydown", (e) => {
   if (isDeskPrincipal()) {
     api(`${API}/portfolios/default`, { method: "POST" }).catch(() => {});
   }
-  document.getElementById("btn-access-refresh")?.addEventListener("click", () => loadAccessRequests());
+  document.getElementById("btn-access-refresh")?.addEventListener("click", () => {
+    loadAccessRequests();
+    loadPasswordResets();
+  });
   document.getElementById("btn-deposit-request")?.addEventListener("click", () => submitDepositRequest());
   loadDashboard();
   setInterval(loadDashboard, REFRESH_MS);
