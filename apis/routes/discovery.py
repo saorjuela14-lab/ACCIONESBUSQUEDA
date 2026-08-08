@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apis.deps import OrgScope, get_org_scope
 from database.engine import get_session
 from database.repositories.alert_repository import AlertRepository
 from database.repositories.investment_memory_repository import InvestmentMemoryRepository
@@ -47,9 +48,11 @@ def _build_discovery_service(session: AsyncSession, with_analysis: bool = False)
 async def discover_research(
     request: DiscoveryResearchRequest,
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> DiscoveryReport:
     """Investiga X, Reddit, StockTwits y noticias para descubrir empresas."""
-    watchlist = await WatchlistRepository(session).list_active()
+    org = scope.book_org_id()
+    watchlist = await WatchlistRepository(session).list_active(org_id=org)
     exclude = list(request.exclude_tickers or [])
     exclude.extend(w.ticker for w in watchlist)
 
@@ -66,16 +69,19 @@ async def discover_research(
 async def discover_analyze(
     request: DiscoveryAnalyzeRequest,
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> DiscoveryAnalyzeResult:
     """Descubre empresas y analiza las mejores con el comité de inversión."""
-    watchlist = await WatchlistRepository(session).list_active()
+    org = scope.book_org_id()
+    watchlist = await WatchlistRepository(session).list_active(org_id=org)
     exclude = list(request.exclude_tickers or [])
     exclude.extend(w.ticker for w in watchlist)
 
     portfolio = None
     if request.portfolio_id:
-        portfolios = await PortfolioRepository(session).list_all()
-        portfolio = next((p for p in portfolios if p.id == request.portfolio_id), None)
+        portfolio = await PortfolioRepository(session).get_by_id(
+            request.portfolio_id, org_id=org
+        )
         if not portfolio:
             raise HTTPException(status_code=404, detail="Portafolio no encontrado")
 
@@ -94,15 +100,18 @@ async def discover_analyze(
 async def discover_to_proposal(
     request: DiscoverProposalRequest,
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> DiscoveryProposalResult:
     """Descubre empresas, analiza las mejores y genera propuesta de inversión."""
-    watchlist = await WatchlistRepository(session).list_active()
+    org = scope.book_org_id()
+    watchlist = await WatchlistRepository(session).list_active(org_id=org)
     exclude = [w.ticker for w in watchlist]
 
     portfolio = None
     if request.portfolio_id:
-        portfolios = await PortfolioRepository(session).list_all()
-        portfolio = next((p for p in portfolios if p.id == request.portfolio_id), None)
+        portfolio = await PortfolioRepository(session).get_by_id(
+            request.portfolio_id, org_id=org
+        )
         if not portfolio:
             raise HTTPException(status_code=404, detail="Portafolio no encontrado")
 
@@ -137,6 +146,7 @@ async def discover_to_proposal(
             risk_profile=request.risk_profile,
             instrument_mode=request.instrument_mode,
             add_to_watchlist=request.add_to_watchlist,
+            org_id=org,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

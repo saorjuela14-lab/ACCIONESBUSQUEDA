@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apis.deps import OrgScope, get_org_scope
 from database.engine import get_session
 from database.repositories.alert_repository import AlertRepository
 from database.repositories.investment_memory_repository import InvestmentMemoryRepository
@@ -40,14 +41,17 @@ def _build_analysis_service(session: AsyncSession) -> AnalysisService:
 async def analyze_ticker(
     request: AnalyzeRequest,
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> InvestmentThesis:
     service = _build_analysis_service(session)
+    org = scope.book_org_id()
     portfolio = None
-    watchlist = await WatchlistRepository(session).list_active()
+    watchlist = await WatchlistRepository(session).list_active(org_id=org)
 
     if request.portfolio_id:
-        portfolios = await PortfolioRepository(session).list_all()
-        portfolio = next((p for p in portfolios if p.id == request.portfolio_id), None)
+        portfolio = await PortfolioRepository(session).get_by_id(
+            request.portfolio_id, org_id=org
+        )
         if not portfolio:
             raise HTTPException(status_code=404, detail="Portfolio not found")
 
@@ -64,5 +68,6 @@ async def analyze_ticker(
 async def analyze_ticker_get(
     ticker: str,
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> InvestmentThesis:
-    return await analyze_ticker(AnalyzeRequest(ticker=ticker), session)
+    return await analyze_ticker(AnalyzeRequest(ticker=ticker), session, scope)

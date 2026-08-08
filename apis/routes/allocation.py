@@ -5,6 +5,7 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apis.deps import OrgScope, get_org_scope
 from database.engine import get_session
 from database.repositories.investment_memory_repository import InvestmentMemoryRepository
 from database.repositories.watchlist_repository import WatchlistRepository
@@ -21,8 +22,9 @@ router = APIRouter()
 async def allocation_advise(
     request: AllocationAdviseRequest,
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> MarketAllocationPlan:
-    watchlist = await WatchlistRepository(session).list_active()
+    watchlist = await WatchlistRepository(session).list_active(org_id=scope.book_org_id())
     if not watchlist:
         raise HTTPException(status_code=400, detail="La watchlist está vacía. Agrega tickers primero.")
 

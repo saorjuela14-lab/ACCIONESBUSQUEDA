@@ -20,6 +20,7 @@ class PortfolioService:
         initial_capital: float,
         cash: float | None = None,
         mode: PortfolioMode = PortfolioMode.REAL,
+        org_id: str | None = None,
     ) -> Portfolio:
         portfolio = Portfolio(
             name=name,
@@ -27,19 +28,25 @@ class PortfolioService:
             mode=mode,
             initial_capital=initial_capital,
             cash=cash if cash is not None else initial_capital,
+            org_id=org_id,
         )
         return await self._repo.create(portfolio)
 
-    async def get_by_id(self, portfolio_id: str) -> Portfolio | None:
-        return await self._repo.get_by_id(portfolio_id)
+    async def get_by_id(self, portfolio_id: str, org_id: str | None = None) -> Portfolio | None:
+        return await self._repo.get_by_id(portfolio_id, org_id=org_id)
 
-    async def list_all(self) -> list[Portfolio]:
-        return await self._repo.list_all()
+    async def list_all(self, org_id: str | None = None) -> list[Portfolio]:
+        return await self._repo.list_all(org_id=org_id)
 
     async def add_position(
-        self, portfolio_id: str, ticker: str, shares: float, average_cost: float
+        self,
+        portfolio_id: str,
+        ticker: str,
+        shares: float,
+        average_cost: float,
+        org_id: str | None = None,
     ) -> Portfolio:
-        portfolio = await self._repo.get_by_id(portfolio_id)
+        portfolio = await self._repo.get_by_id(portfolio_id, org_id=org_id)
         if not portfolio:
             raise ValueError(f"Portfolio {portfolio_id} not found")
 
@@ -65,9 +72,10 @@ class PortfolioService:
         positions: list[PortfolioPosition],
         cash: float,
         initial_capital: float | None = None,
+        org_id: str | None = None,
     ) -> Portfolio:
         """Replace positions and cash without debiting (broker sync)."""
-        portfolio = await self._repo.get_by_id(portfolio_id)
+        portfolio = await self._repo.get_by_id(portfolio_id, org_id=org_id)
         if not portfolio:
             raise ValueError(f"Portfolio {portfolio_id} not found")
         portfolio.positions = list(positions)
@@ -77,8 +85,10 @@ class PortfolioService:
         portfolio.updated_at = datetime.now(timezone.utc)
         return await self._repo.update(portfolio)
 
-    async def refresh_prices(self, portfolio_id: str) -> Portfolio:
-        portfolio = await self._repo.get_by_id(portfolio_id)
+    async def refresh_prices(
+        self, portfolio_id: str, org_id: str | None = None
+    ) -> Portfolio:
+        portfolio = await self._repo.get_by_id(portfolio_id, org_id=org_id)
         if not portfolio:
             raise ValueError(f"Portfolio {portfolio_id} not found")
 

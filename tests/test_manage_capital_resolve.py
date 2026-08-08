@@ -12,7 +12,12 @@ from apis.routes.recommendations import _resolve_manage_capital
 @pytest.mark.asyncio
 async def test_resolve_prefers_requested_capital():
     session = MagicMock()
-    assert await _resolve_manage_capital(session, 22.5) == 22.5
+    assert (
+        await _resolve_manage_capital(
+            session, 22.5, is_desk=True, org_id="monarch"
+        )
+        == 22.5
+    )
 
 
 @pytest.mark.asyncio
@@ -29,7 +34,39 @@ async def test_resolve_uses_alpaca_equity_when_no_request():
     mock_svc.get_account = AsyncMock(return_value=account)
 
     with patch("services.alpaca_order_service.AlpacaOrderService", return_value=mock_svc):
-        assert await _resolve_manage_capital(session, None) == 23.4
+        assert (
+            await _resolve_manage_capital(
+                session, None, is_desk=True, org_id="monarch"
+            )
+            == 23.4
+        )
+
+
+@pytest.mark.asyncio
+async def test_resolve_company_skips_alpaca():
+    session = MagicMock()
+    pf = MagicMock()
+    pf.cash = 40.0
+    pf.initial_capital = 1000.0
+    pf.updated_at = datetime.now(timezone.utc)
+    pf.total_value = None
+
+    mock_alpaca = MagicMock()
+    mock_alpaca.is_configured.return_value = True
+    mock_alpaca.get_account = AsyncMock(
+        return_value=MagicMock(equity=9999.0, portfolio_value=9999.0, cash=1.0, buying_power=1.0)
+    )
+
+    with patch("services.alpaca_order_service.AlpacaOrderService", return_value=mock_alpaca), \
+         patch("apis.routes.recommendations.PortfolioRepository") as Repo:
+        Repo.return_value.list_all = AsyncMock(return_value=[pf])
+        assert (
+            await _resolve_manage_capital(
+                session, None, is_desk=False, org_id="acme"
+            )
+            == 40.0
+        )
+        mock_alpaca.get_account.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -47,7 +84,12 @@ async def test_resolve_falls_back_to_portfolio_cash():
     with patch("services.alpaca_order_service.AlpacaOrderService", return_value=mock_alpaca), \
          patch("apis.routes.recommendations.PortfolioRepository") as Repo:
         Repo.return_value.list_all = AsyncMock(return_value=[pf])
-        assert await _resolve_manage_capital(session, None) == 18.0
+        assert (
+            await _resolve_manage_capital(
+                session, None, is_desk=True, org_id="monarch"
+            )
+            == 18.0
+        )
 
 
 @pytest.mark.asyncio
@@ -60,5 +102,7 @@ async def test_resolve_errors_when_nothing_available():
          patch("apis.routes.recommendations.PortfolioRepository") as Repo:
         Repo.return_value.list_all = AsyncMock(return_value=[])
         with pytest.raises(HTTPException) as ei:
-            await _resolve_manage_capital(session, None)
+            await _resolve_manage_capital(
+                session, None, is_desk=True, org_id="monarch"
+            )
         assert ei.value.status_code == 400

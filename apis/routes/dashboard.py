@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apis.deps import OrgScope, get_org_scope
 from database.engine import get_session
 from database.repositories.alert_repository import AlertRepository
 from database.repositories.investment_memory_repository import InvestmentMemoryRepository
@@ -55,11 +56,25 @@ def _memory_to_opportunities(memory: list) -> tuple[list[TickerOpportunity], lis
 @router.get("/dashboard", response_model=TerminalDashboard)
 async def get_terminal_dashboard(
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> TerminalDashboard:
-    watchlist_items = await WatchlistRepository(session).list_active()
+    # Desk reads all tenant rows when needed, but the default book is 'monarch'
+    org_read = scope.read_org_id()
+    book_org = "monarch" if scope.is_desk else scope.write_org_id()
+
+    watchlist_items = await WatchlistRepository(session).list_active(
+        org_id=None if scope.is_desk else org_read
+    )
+    # Desk UI shows firm watchlist (monarch); companies see only theirs
+    if scope.is_desk:
+        watchlist_items = [w for w in watchlist_items if (w.org_id or "monarch") == "monarch"]
     watchlist = [w.ticker for w in watchlist_items]
 
-    alerts_raw = await AlertRepository(session).list_unacknowledged(15)
+    alerts_raw = await AlertRepository(session).list_unacknowledged(
+        15, org_id=None if scope.is_desk else org_read
+    )
+    if scope.is_desk:
+        alerts_raw = [a for a in alerts_raw if (a.org_id or "monarch") == "monarch"]
     alerts = [f"[{a.severity.value}] {a.ticker}: {a.title}" for a in alerts_raw[:15]]
 
     portfolio_slice = None
@@ -70,7 +85,12 @@ async def get_terminal_dashboard(
 
     svc = PortfolioService(PortfolioRepository(session), get_market_provider())
     try:
-        p, source = await PortfolioBootstrapService(svc).ensure_portfolio()
+        p, source = await PortfolioBootstrapService(svc).ensure_portfolio(
+            org_id=book_org,
+            allow_alpaca=scope.is_desk,
+            default_name="Portafolio empresa" if not scope.is_desk else "Portafolio CEO",
+            default_cash=1000.0 if not scope.is_desk else 22.0,
+        )
         if source == "alpaca":
             bootstrap_note = (
                 "Portafolio recreado desde Alpaca (la DB SQLite se reinicia en cada redeploy). "
@@ -82,7 +102,7 @@ async def get_terminal_dashboard(
                 "Conecta Alpaca o usa Postgres para no perder datos."
             )
     except Exception:
-        portfolios = await PortfolioRepository(session).list_all()
+        portfolios = await PortfolioRepository(session).list_all(org_id=book_org)
         p = sorted(portfolios, key=lambda x: x.updated_at, reverse=True)[0] if portfolios else None
         source = "existing" if p else "none"
 
@@ -180,8 +200,9 @@ async def get_terminal_dashboard(
 @router.get("/dashboard/watchlist-matrix", response_model=list[WatchlistMatrixRow])
 async def get_watchlist_matrix(
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> list[WatchlistMatrixRow]:
-    watchlist = await WatchlistRepository(session).list_active()
+    watchlist = await WatchlistRepository(session).list_active(org_id=scope.read_org_id())
     tickers = [w.ticker for w in watchlist]
     memory = await InvestmentMemoryRepository(session).latest_by_ticker(tickers)
     return await WatchlistMatrixService(get_market_provider()).build(watchlist, memory)

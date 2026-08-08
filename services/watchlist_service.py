@@ -10,12 +10,19 @@ class WatchlistService:
         self._repo = repo
         self._market = market_provider
 
-    async def add(self, ticker: str, notes: str | None = None) -> WatchlistItem:
+    async def add(
+        self, ticker: str, notes: str | None = None, org_id: str | None = None
+    ) -> WatchlistItem:
         quote = await self._market.get_quote(ticker)
-        return await self._repo.add(ticker, company_name=quote.get("company_name"), notes=notes)
+        return await self._repo.add(
+            ticker,
+            company_name=quote.get("company_name"),
+            notes=notes,
+            org_id=org_id,
+        )
 
-    async def list_active(self) -> list[WatchlistItem]:
-        return await self._repo.list_active()
+    async def list_active(self, org_id: str | None = None) -> list[WatchlistItem]:
+        return await self._repo.list_active(org_id=org_id)
 
-    async def remove(self, ticker: str) -> bool:
-        return await self._repo.remove(ticker)
+    async def remove(self, ticker: str, org_id: str | None = None) -> bool:
+        return await self._repo.remove(ticker, org_id=org_id)

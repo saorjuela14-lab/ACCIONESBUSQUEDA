@@ -59,6 +59,7 @@ class SchedulerService:
                 AlertService(alert_repo, self._settings.alert_cooldown_hours),
                 market,
                 news,
+                org_id="monarch",
             ),
             report_repo=ReportRepository(session),
             alert_repo=alert_repo,
@@ -103,6 +104,7 @@ class SchedulerService:
                 AlertService(alert_repo, self._settings.alert_cooldown_hours),
                 market,
                 news,
+                org_id="monarch",
             )
             result = await monitor.scan_all()
             logger.info("scheduler.watchlist_scan", **{k: v for k, v in result.items() if k != "changes"})

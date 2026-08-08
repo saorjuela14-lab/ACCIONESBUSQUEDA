@@ -51,14 +51,23 @@ class AlertService:
                 emitted.append(saved)
         return emitted
 
-    async def list_active(self, limit: int = 50, offset: int = 0) -> list[Alert]:
-        return await self._repo.list_unacknowledged(limit=limit, offset=offset)
+    async def list_active(
+        self, limit: int = 50, offset: int = 0, org_id: str | None = None
+    ) -> list[Alert]:
+        return await self._repo.list_unacknowledged(limit=limit, offset=offset, org_id=org_id)
 
-    async def list_active_page(self, *, limit: int = 25, offset: int = 0) -> tuple[list[Alert], int]:
-        return await self._repo.list_unacknowledged_page(limit=limit, offset=offset)
+    async def list_active_page(
+        self, *, limit: int = 25, offset: int = 0, org_id: str | None = None
+    ) -> tuple[list[Alert], int]:
+        return await self._repo.list_unacknowledged_page(
+            limit=limit, offset=offset, org_id=org_id
+        )
 
-    async def acknowledge(self, alert_id: str) -> bool:
-        result = await self._session.execute(select(AlertORM).where(AlertORM.id == alert_id))
+    async def acknowledge(self, alert_id: str, org_id: str | None = None) -> bool:
+        q = select(AlertORM).where(AlertORM.id == alert_id)
+        if org_id is not None:
+            q = q.where(AlertORM.org_id == org_id)
+        result = await self._session.execute(q)
         row = result.scalar_one_or_none()
         if not row:
             return False
@@ -68,13 +77,12 @@ class AlertService:
 
     async def _is_duplicate(self, alert: Alert) -> bool:
         cutoff = datetime.now(timezone.utc) - timedelta(hours=self._cooldown_hours)
-        result = await self._session.execute(
-            select(AlertORM).where(
-                and_(
-                    AlertORM.ticker == alert.ticker.upper(),
-                    AlertORM.alert_type == alert.alert_type.value,
-                    AlertORM.created_at >= cutoff,
-                )
-            )
-        )
+        clauses = [
+            AlertORM.ticker == alert.ticker.upper(),
+            AlertORM.alert_type == alert.alert_type.value,
+            AlertORM.created_at >= cutoff,
+        ]
+        if alert.org_id is not None:
+            clauses.append(AlertORM.org_id == alert.org_id)
+        result = await self._session.execute(select(AlertORM).where(and_(*clauses)))
         return result.scalar_one_or_none() is not None

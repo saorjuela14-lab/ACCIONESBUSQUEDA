@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config.settings import get_settings
 from database.engine import get_session
 from database.repositories.alert_repository import AlertRepository
+from apis.deps import OrgScope, get_org_scope
 from domain.entities import Alert
 from domain.enums import AlertSeverity, AlertType
 from domain.pagination import Page
@@ -25,8 +26,11 @@ async def list_alerts(
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> Page[Alert]:
-    items, total = await _alert_service(session).list_active_page(limit=limit, offset=offset)
+    items, total = await _alert_service(session).list_active_page(
+        limit=limit, offset=offset, org_id=scope.read_org_id()
+    )
     return Page.of(items, total=total, limit=limit, offset=offset)
 
 
@@ -128,8 +132,12 @@ async def preview_status_briefing(
 
 
 @router.post("/alerts/{alert_id}/acknowledge")
-async def acknowledge_alert(alert_id: str, session: AsyncSession = Depends(get_session)) -> dict:
-    ok = await _alert_service(session).acknowledge(alert_id)
+async def acknowledge_alert(
+    alert_id: str,
+    session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
+) -> dict:
+    ok = await _alert_service(session).acknowledge(alert_id, org_id=scope.read_org_id())
     if not ok:
         raise HTTPException(status_code=404, detail="Alert not found")
     return {"acknowledged": True}

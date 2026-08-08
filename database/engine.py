@@ -16,6 +16,8 @@ logger = get_logger(__name__)
 _engine = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 
+_ORG_TABLES = ("portfolios", "watchlist", "alerts")
+
 
 def _ensure_data_dir(url: str) -> None:
     if is_sqlite(url) and ":///" in url:
@@ -24,35 +26,62 @@ def _ensure_data_dir(url: str) -> None:
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
 
 
-async def _migrate_schema(conn, url: str) -> None:
-    """Lightweight migrations (add columns if missing)."""
-    if is_sqlite(url):
-        result = await conn.execute(text("PRAGMA table_info(portfolios)"))
-        cols = {row[1] for row in result.fetchall()}
-        if "mode" not in cols:
-            await conn.execute(
-                text("ALTER TABLE portfolios ADD COLUMN mode VARCHAR(16) DEFAULT 'real'")
-            )
-        return
+async def _table_columns_sqlite(conn, table: str) -> set[str]:
+    result = await conn.execute(text(f"PRAGMA table_info({table})"))
+    return {row[1] for row in result.fetchall()}
 
-    # Postgres: create_all handles new installs; add column if upgrading old schema
+
+async def _table_columns_pg(conn, table: str) -> set[str]:
     result = await conn.execute(
         text(
             "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name = 'portfolios'"
-        )
+            "WHERE table_name = :t"
+        ),
+        {"t": table},
     )
-    cols = {row[0] for row in result.fetchall()}
-    if cols and "mode" not in cols:
+    return {row[0] for row in result.fetchall()}
+
+
+async def _migrate_schema(conn, url: str) -> None:
+    """Lightweight migrations (add columns if missing)."""
+    sqlite = is_sqlite(url)
+
+    async def cols(table: str) -> set[str]:
+        if sqlite:
+            return await _table_columns_sqlite(conn, table)
+        return await _table_columns_pg(conn, table)
+
+    # portfolios.mode (legacy)
+    pcols = await cols("portfolios")
+    if pcols and "mode" not in pcols:
         await conn.execute(
             text("ALTER TABLE portfolios ADD COLUMN mode VARCHAR(16) DEFAULT 'real'")
         )
+
+    # org_id on tenant tables
+    for table in _ORG_TABLES:
+        tcols = await cols(table)
+        if not tcols:
+            continue
+        if "org_id" not in tcols:
+            await conn.execute(
+                text(f"ALTER TABLE {table} ADD COLUMN org_id VARCHAR(36)")
+            )
+            logger.info("db.migrate.add_org_id", table=table)
+
+    # Backfill NULL org rows to monarch so desk still sees legacy data;
+    # company tenants only see their own org_id.
+    for table in _ORG_TABLES:
+        tcols = await cols(table)
+        if "org_id" in tcols:
+            await conn.execute(
+                text(f"UPDATE {table} SET org_id = 'monarch' WHERE org_id IS NULL")
+            )
 
 
 def _engine_kwargs(url: str) -> dict:
     kwargs: dict = {"echo": False}
     if not is_sqlite(url):
-        # Neon / serverless-friendly
         kwargs.update(
             {
                 "pool_pre_ping": True,

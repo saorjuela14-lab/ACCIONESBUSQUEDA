@@ -60,12 +60,14 @@ class VoiceAssistantService:
         *,
         portfolio_id: str | None = None,
         session_id: str | None = None,
+        org_id: str | None = None,
     ) -> VoiceChatResult:
         settings = get_settings()
         raw = (text or "").strip()
         name = settings.voice_assistant_name
         boss = settings.voice_boss_title
         sid = (session_id or "").strip() or str(uuid.uuid4())
+        self._org_id = org_id or "monarch"
 
         if not raw:
             return VoiceChatResult(
@@ -78,7 +80,9 @@ class VoiceAssistantService:
         # Fast path: short trading commands still go through the deterministic router
         # when they clearly match (keeps buy/sell confirmations solid).
         if self._looks_like_trade_command(raw):
-            cmd = await self._commands.handle(raw, db, portfolio_id=portfolio_id)
+            cmd = await self._commands.handle(
+                raw, db, portfolio_id=portfolio_id, org_id=self._org_id
+            )
             speech = self._with_persona(cmd.speech, boss=boss)
             return VoiceChatResult(
                 speech=speech,
@@ -100,7 +104,9 @@ class VoiceAssistantService:
 
         if not settings.openai_api_key or not settings.voice_chat_enabled:
             # Fallback: command router + honest note about chat needing OpenAI
-            cmd = await self._commands.handle(raw, db, portfolio_id=portfolio_id)
+            cmd = await self._commands.handle(
+                raw, db, portfolio_id=portfolio_id, org_id=self._org_id
+            )
             if cmd.intent != "unknown":
                 speech = self._with_persona(cmd.speech, boss=boss)
                 return VoiceChatResult(
@@ -425,7 +431,10 @@ Si no estás segura, pregunta una sola cosa. Sé proactiva y útil."""
         try:
             if name == "run_voice_command":
                 cmd = await self._commands.handle(
-                    str(args.get("text") or ""), db, portfolio_id=portfolio_id
+                    str(args.get("text") or ""),
+                    db,
+                    portfolio_id=portfolio_id,
+                    org_id=getattr(self, "_org_id", None) or "monarch",
                 )
                 extra["ui_action"] = cmd.ui_action
                 extra["requires_confirmation"] = cmd.requires_confirmation
@@ -531,7 +540,9 @@ Si no estás segura, pregunta una sola cosa. Sé proactiva y útil."""
 
                 capital = float(args.get("capital") or 0)
                 style = str(args.get("strategy_style") or "balanced")
-                watchlist = await WatchlistRepository(db).list_active()
+                watchlist = await WatchlistRepository(db).list_active(
+                    org_id=getattr(self, "_org_id", None) or "monarch"
+                )
                 memory = await InvestmentMemoryRepository(db).latest_by_ticker(
                     [w.ticker for w in watchlist]
                 )

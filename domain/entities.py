@@ -14,6 +14,7 @@ def utc_now() -> datetime:
 
 class WatchlistItem(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
+    org_id: str | None = None
     ticker: str
     company_name: str | None = None
     added_at: datetime = Field(default_factory=utc_now)
@@ -40,6 +41,7 @@ class PortfolioPosition(BaseModel):
 
 class Portfolio(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
+    org_id: str | None = None
     name: str
     strategy: StrategyType
     mode: PortfolioMode = PortfolioMode.REAL
@@ -66,6 +68,7 @@ class Portfolio(BaseModel):
 
 class Alert(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
+    org_id: str | None = None
     ticker: str
     alert_type: AlertType
     severity: AlertSeverity
