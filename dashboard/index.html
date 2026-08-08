@@ -27,7 +27,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/styles.css?v=13-delete-reject" />
+  <link rel="stylesheet" href="/dashboard/static/styles.css?v=14-password-reset" />
   <!-- Heavy chart libs: defer so login/session UI is not blocked on cold start -->
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script defer src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -150,6 +150,11 @@
         Autoriza solicitudes. Los clientes solo monitorean; tú eres quien invierte.
       </p>
       <div id="access-list" class="access-list muted">Cargando solicitudes…</div>
+      <h4 style="margin:1rem 0 0.4rem;font-size:13px;color:var(--gold,#c4a574)">Recuperaciones de contraseña</h4>
+      <p class="muted" style="margin:0 0 0.5rem;font-size:12px">
+        Cuando un cliente pide recuperar acceso, aquí aparece el código para entregárselo.
+      </p>
+      <div id="reset-list" class="access-list muted">Sin recuperaciones activas.</div>
     </section>
 
     <section class="indices-row" id="indices-row" aria-label="Índices del mercado"></section>
@@ -523,9 +528,9 @@
     </div>
   </div>
 
-  <script src="/dashboard/static/reliability.js?v=13-delete-reject"></script>
-  <script src="/dashboard/static/voice.js?v=13-delete-reject"></script>
-  <script src="/dashboard/static/app.js?v=13-delete-reject"></script>
+  <script src="/dashboard/static/reliability.js?v=14-password-reset"></script>
+  <script src="/dashboard/static/voice.js?v=14-password-reset"></script>
+  <script src="/dashboard/static/app.js?v=14-password-reset"></script>
   <script>
     // Permanently kill service workers — they were serving stale JS/CSS after deploy
     if ("serviceWorker" in navigator) {

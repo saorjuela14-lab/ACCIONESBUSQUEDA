@@ -14,13 +14,14 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config.settings import get_settings
-from database.models import AuthSessionORM, OrganizationORM, UserORM, utc_now
+from database.models import AuthSessionORM, OrganizationORM, PasswordResetORM, UserORM, utc_now
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 _PBKDF2_ROUNDS = 120_000
 _SESSION_DAYS = 14
+_RESET_MINUTES = 30
 
 
 def _hash_password(password: str, salt: str | None = None) -> str:
@@ -485,6 +486,7 @@ class CompanyAuthService:
         org = await self._get_client_org(org_id)
         name = org.name
         oid = org.id
+        await self._session.execute(delete(PasswordResetORM).where(PasswordResetORM.org_id == oid))
         await self._session.execute(delete(AuthSessionORM).where(AuthSessionORM.org_id == oid))
         await self._session.execute(delete(UserORM).where(UserORM.org_id == oid))
         await self._session.execute(delete(OrganizationORM).where(OrganizationORM.id == oid))
@@ -546,6 +548,205 @@ class CompanyAuthService:
             "deposit_status": org.deposit_status,
             "deposit_requested_usd": org.deposit_requested_usd,
         }
+
+    async def request_password_reset(self, email: str) -> dict[str, Any]:
+        """Create a one-time recovery code for an approved client.
+
+        Always returns a generic ok payload (no email enumeration).
+        When a matching active user exists, returns code for mesa notification.
+        """
+        email = (email or "").strip().lower()
+        generic = {
+            "ok": True,
+            "message": (
+                "Si el email está registrado y autorizado, la mesa Monarch recibió un código. "
+                "Pídeselo o revísalo con ellos, e ingrésalo aquí con tu nueva contraseña. "
+                "El código vence en 30 minutos."
+            ),
+        }
+        if not email or "@" not in email:
+            return generic
+
+        result = await self._session.execute(select(UserORM).where(UserORM.email == email))
+        user = result.scalar_one_or_none()
+        if not user or not user.active:
+            return generic
+        org_r = await self._session.execute(
+            select(OrganizationORM).where(OrganizationORM.id == user.org_id)
+        )
+        org = org_r.scalar_one_or_none()
+        if not org or not org.active:
+            return generic
+
+        # Invalidate previous unused codes for this user
+        prev = await self._session.execute(
+            select(PasswordResetORM).where(
+                PasswordResetORM.user_id == user.id,
+                PasswordResetORM.used.is_(False),
+            )
+        )
+        for row in prev.scalars().all():
+            row.used = True
+            row.code_plain = None
+
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        reset = PasswordResetORM(
+            id=str(uuid.uuid4()),
+            user_id=user.id,
+            org_id=user.org_id,
+            email=email,
+            code_hash=_hash_token(code),
+            code_plain=code,
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=_RESET_MINUTES),
+            used=False,
+        )
+        self._session.add(reset)
+        await self._session.commit()
+        logger.info("auth.password_reset_requested", email=email, org=org.slug)
+        return {
+            **generic,
+            "created": True,
+            "email": email,
+            "org_name": org.name,
+            "full_name": user.full_name,
+            "code": code,
+            "expires_minutes": _RESET_MINUTES,
+        }
+
+    async def reset_password_with_code(
+        self,
+        *,
+        email: str,
+        code: str,
+        new_password: str,
+    ) -> dict[str, Any]:
+        email = (email or "").strip().lower()
+        code = re.sub(r"\D", "", code or "")
+        if not email or len(code) != 6:
+            raise ValueError("Email o código inválido")
+        if len(new_password or "") < 8:
+            raise ValueError("La contraseña debe tener al menos 8 caracteres")
+
+        result = await self._session.execute(select(UserORM).where(UserORM.email == email))
+        user = result.scalar_one_or_none()
+        if not user or not user.active:
+            raise ValueError("Código inválido o expirado")
+
+        org_r = await self._session.execute(
+            select(OrganizationORM).where(OrganizationORM.id == user.org_id)
+        )
+        org = org_r.scalar_one_or_none()
+        if not org or not org.active:
+            raise ValueError("Código inválido o expirado")
+
+        resets = await self._session.execute(
+            select(PasswordResetORM)
+            .where(
+                PasswordResetORM.user_id == user.id,
+                PasswordResetORM.used.is_(False),
+            )
+            .order_by(PasswordResetORM.created_at.desc())
+        )
+        now = datetime.now(timezone.utc)
+        matched: PasswordResetORM | None = None
+        for row in resets.scalars().all():
+            exp = row.expires_at
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if exp < now:
+                row.used = True
+                row.code_plain = None
+                continue
+            if hmac.compare_digest(row.code_hash, _hash_token(code)):
+                matched = row
+                break
+        if not matched:
+            await self._session.commit()
+            raise ValueError("Código inválido o expirado")
+
+        user.password_hash = _hash_password(new_password)
+        matched.used = True
+        matched.code_plain = None
+        # Revoke existing sessions so old devices must re-login
+        sess_r = await self._session.execute(
+            select(AuthSessionORM).where(
+                AuthSessionORM.user_id == user.id,
+                AuthSessionORM.revoked.is_(False),
+            )
+        )
+        for s in sess_r.scalars().all():
+            s.revoked = True
+        await self._session.commit()
+        logger.info("auth.password_reset_ok", email=email)
+        return {"ok": True, "message": "Contraseña actualizada. Ya puedes iniciar sesión."}
+
+    async def list_password_resets(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Active recovery codes for the mesa panel."""
+        now = datetime.now(timezone.utc)
+        r = await self._session.execute(
+            select(PasswordResetORM)
+            .where(PasswordResetORM.used.is_(False))
+            .order_by(PasswordResetORM.created_at.desc())
+            .limit(limit)
+        )
+        out: list[dict[str, Any]] = []
+        for row in r.scalars().all():
+            exp = row.expires_at
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if exp < now:
+                row.used = True
+                row.code_plain = None
+                continue
+            out.append(
+                {
+                    "id": row.id,
+                    "email": row.email,
+                    "org_id": row.org_id,
+                    "code": row.code_plain,
+                    "expires_at": exp.isoformat(),
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                }
+            )
+        await self._session.commit()
+        return out
+
+    async def desk_set_password(self, *, email: str, new_password: str) -> dict[str, Any]:
+        """Mesa sets a new password for an approved client (no code needed)."""
+        email = (email or "").strip().lower()
+        if len(new_password or "") < 8:
+            raise ValueError("La contraseña debe tener al menos 8 caracteres")
+        result = await self._session.execute(select(UserORM).where(UserORM.email == email))
+        user = result.scalar_one_or_none()
+        if not user:
+            raise ValueError("Usuario no encontrado")
+        org_r = await self._session.execute(
+            select(OrganizationORM).where(OrganizationORM.id == user.org_id)
+        )
+        org = org_r.scalar_one_or_none()
+        if not org or not org.active or not user.active:
+            raise ValueError("Cliente no autorizado")
+        user.password_hash = _hash_password(new_password)
+        # Invalidate open recovery codes + sessions
+        prev = await self._session.execute(
+            select(PasswordResetORM).where(
+                PasswordResetORM.user_id == user.id,
+                PasswordResetORM.used.is_(False),
+            )
+        )
+        for row in prev.scalars().all():
+            row.used = True
+            row.code_plain = None
+        sess_r = await self._session.execute(
+            select(AuthSessionORM).where(
+                AuthSessionORM.user_id == user.id,
+                AuthSessionORM.revoked.is_(False),
+            )
+        )
+        for s in sess_r.scalars().all():
+            s.revoked = True
+        await self._session.commit()
+        return {"ok": True, "email": email, "message": "Contraseña actualizada por la mesa"}
 
     async def _get_client_org(self, org_id: str) -> OrganizationORM:
         if not org_id or org_id == "monarch":
