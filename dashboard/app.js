@@ -135,6 +135,20 @@ function isDeskPrincipal(p = window.__monarchPrincipal) {
   return !!(p && p.role === "desk");
 }
 
+function setBootMsg(msg) {
+  const el = document.getElementById("boot-splash-msg");
+  if (el && msg) el.textContent = msg;
+}
+
+function hideBootSplash() {
+  document.documentElement.classList.add("session-ok");
+  const splash = document.getElementById("boot-splash");
+  if (splash) {
+    splash.classList.add("boot-splash-done");
+    setTimeout(() => splash.remove(), 280);
+  }
+}
+
 function applySessionUi(principal) {
   window.__monarchPrincipal = principal || null;
   const chip = document.getElementById("auth-chip");
@@ -147,9 +161,7 @@ function applySessionUi(principal) {
     chip.classList.remove("hidden");
   }
   if (logoutBtn) logoutBtn.classList.toggle("hidden", !principal);
-  if (principal) {
-    document.documentElement.classList.add("session-ok");
-  }
+  hideBootSplash();
 }
 
 let _authRedirecting = false;
@@ -174,25 +186,37 @@ async function logoutSession() {
   await clearSessionAndGoLogin();
 }
 
+async function fetchWithTimeout(url, opts = {}, ms = 12000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function ensureAuth() {
+  setBootMsg("Validando sesión…");
   try {
     const token = localStorage.getItem("nexbuy_token");
     let me = null;
     if (token) {
-      me = await fetch(`${API}/auth/me`, {
+      me = await fetchWithTimeout(`${API}/auth/me`, {
         headers: { Authorization: `Bearer ${token}` },
         credentials: "same-origin",
-      });
+      }, 12000);
     }
     // Cookie-only session (httponly) — recover without localStorage bounce loop
     if (!me || !me.ok) {
-      if (token) {
+      if (token && me && me.status === 401) {
         localStorage.removeItem("nexbuy_token");
         localStorage.removeItem("monarch_auth");
       }
-      me = await fetch(`${API}/auth/me`, { credentials: "same-origin" });
+      me = await fetchWithTimeout(`${API}/auth/me`, { credentials: "same-origin" }, 12000);
     }
     if (!me.ok) {
+      setBootMsg("Sesión expirada — redirigiendo…");
       await clearSessionAndGoLogin();
       return false;
     }
@@ -200,15 +224,21 @@ async function ensureAuth() {
     if (token && !localStorage.getItem("nexbuy_token")) {
       localStorage.setItem("nexbuy_token", token);
     }
+    setBootMsg("Listo");
     applySessionUi(principal);
     return true;
-  } catch {
-    // Network blip with a local token: show UI; without token go to login
+  } catch (err) {
+    // Cold start / timeout: still show the terminal if we have a local token
     if (!localStorage.getItem("nexbuy_token")) {
       location.replace("/login");
       return false;
     }
-    document.documentElement.classList.add("session-ok");
+    setBootMsg("Servidor lento — abriendo igual…");
+    applySessionUi({
+      role: "desk",
+      email: "sesión local",
+      auth_type: "local_fallback",
+    });
     return true;
   }
 }
@@ -2694,6 +2724,14 @@ document.addEventListener("keydown", (e) => {
 });
 
 (async () => {
+  // Never leave a blank green screen if auth/network hangs
+  setTimeout(() => {
+    if (!document.documentElement.classList.contains("session-ok")) {
+      setBootMsg("Abriendo terminal…");
+      hideBootSplash();
+    }
+  }, 10000);
+
   if (window.MonarchUI) {
     window.MonarchUI.installErrorBoundary();
     window.MonarchUI.bindRetries(document, {
@@ -2726,10 +2764,9 @@ document.addEventListener("keydown", (e) => {
       speakAnalyzeResult,
     });
   }
-  // Ensure this session's book exists before first paint of portfolio panel
-  try {
-    await api(`${API}/portfolios/default`, { method: "POST" });
-  } catch { /* already exists or auth off */ }
+  setBootMsg("Cargando panel…");
+  // Seed book in background — do not block first paint
+  api(`${API}/portfolios/default`, { method: "POST" }).catch(() => {});
   loadDashboard();
   setInterval(loadDashboard, REFRESH_MS);
 })();
