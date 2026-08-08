@@ -870,6 +870,10 @@ body.role-client .client-banner { display: block; }
   font-size: 13px;
 }
 .client-banner p { margin: 0 0 0.55rem; }
+.client-banner h4 {
+  margin: 0 0 0.45rem; font-size: 13px; color: var(--gold, #c4a574);
+  font-weight: 600;
+}
 .deposit-row {
   display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center;
 }
@@ -877,6 +881,19 @@ body.role-client .client-banner { display: block; }
   flex: 1 1 140px; min-height: 40px; padding: 0.4rem 0.55rem;
   background: rgba(0,0,0,0.25); border: 1px solid var(--border); color: var(--text);
   border-radius: 6px;
+}
+.funding-box {
+  margin-top: 0.65rem; padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(196,165,116,0.4);
+  background: rgba(0,0,0,0.22);
+  border-radius: 8px; font-size: 12px; color: #e8dcc8;
+}
+.funding-box.hidden { display: none; }
+.funding-box ol { margin: 0.4rem 0 0.55rem 1.1rem; padding: 0; }
+.funding-box a { color: #c4a574; word-break: break-all; }
+.funding-box .memo {
+  font-family: ui-monospace, monospace; letter-spacing: 0.02em;
+  color: #fde68a;
 }
 .access-list { display: flex; flex-direction: column; gap: 0.55rem; }
 .access-card {

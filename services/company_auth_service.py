@@ -249,6 +249,9 @@ class CompanyAuthService:
             "org_id": user.org_id,
             "email": user.email,
             "deposit_status": getattr(org, "deposit_status", "none") or "none",
+            "deposit_requested_usd": getattr(org, "deposit_requested_usd", None),
+            "withdrawal_status": getattr(org, "withdrawal_status", "none") or "none",
+            "withdrawal_requested_usd": getattr(org, "withdrawal_requested_usd", None),
             "org_name": org.name,
         }
 
