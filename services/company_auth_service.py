@@ -179,21 +179,12 @@ class CompanyAuthService:
             return None
         settings = get_settings()
         if settings.dashboard_access_token and hmac.compare_digest(token, settings.dashboard_access_token):
-            phone, has_key = "", False
-            try:
-                prefs = await self.get_notify_prefs(user_id="desk", role="desk")
-                phone = prefs.get("notify_phone") or ""
-                has_key = bool(prefs.get("has_whatsapp_key"))
-            except Exception:
-                pass
             return {
                 "auth_type": "desk",
                 "role": "desk",
                 "user_id": "desk",
                 "org_id": "monarch",
                 "email": "desk@monarch",
-                "notify_phone": phone,
-                "has_whatsapp_key": has_key,
             }
 
         th = _hash_token(token)
@@ -221,8 +212,6 @@ class CompanyAuthService:
             "user_id": user.id,
             "org_id": user.org_id,
             "email": user.email,
-            "notify_phone": getattr(user, "notify_phone", None) or "",
-            "has_whatsapp_key": bool(getattr(user, "notify_whatsapp_key", None)),
         }
 
     async def revoke_token(self, token: str) -> None:

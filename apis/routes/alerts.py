@@ -52,49 +52,26 @@ async def alert_push_status(session: AsyncSession = Depends(get_session)) -> dic
 
 
 @router.post("/alerts/test-push")
-async def test_push_notification(
-    session: AsyncSession = Depends(get_session),
-    scope: OrgScope = Depends(get_org_scope),
-) -> dict:
-    """Envía alerta de prueba — solo mesa/creador."""
-    if not scope.is_desk:
-        raise HTTPException(
-            status_code=403,
-            detail="Solo la mesa Monarch puede probar push",
-        )
+async def test_push_notification() -> dict:
+    """Envía alerta de prueba a Telegram/WhatsApp/webhook del servidor."""
     push = PushNotificationService()
+    if not push.any_channel_configured:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Configura TELEGRAM_BOT_TOKEN+CHAT_ID y/o WhatsApp "
+                "(CallMeBot / Meta / Twilio) o ALERT_WEBHOOK_URL"
+            ),
+        )
     sample = Alert(
         ticker="TEST",
         alert_type=AlertType.BREAKOUT,
         severity=AlertSeverity.MEDIUM,
         title="Alerta de prueba Monarch Capital",
         description="Si ves esto, las notificaciones push están activas.",
-        org_id=scope.book_org_id(),
     )
-    result = {"telegram": False, "whatsapp": False, "webhook": False}
-    user_wa: dict[str, bool] = {}
-    if push.any_channel_configured:
-        result = await push.notify_alert(sample)
-
-    from services.company_auth_service import CompanyAuthService
-    from services.push_notification_service import _strip_html
-
-    targets = await CompanyAuthService(session).list_notify_targets(scope.book_org_id())
-    if targets:
-        user_wa = await push.notify_whatsapp_targets(
-            _strip_html(push._format_alert(sample)), targets  # noqa: SLF001
-        )
-
-    ok = any(result.values()) or any(user_wa.values())
-    if not ok and not push.any_channel_configured and not targets:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Guarda tu WhatsApp en el panel de Alertas, o configura "
-                "TELEGRAM / WhatsApp (CallMeBot/Meta/Twilio) en el servidor"
-            ),
-        )
-    return {"sent": result, "user_whatsapp": user_wa, "ok": ok}
+    result = await push.notify_alert(sample)
+    return {"sent": result, "ok": any(result.values())}
 
 
 @router.post("/alerts/briefing/send")

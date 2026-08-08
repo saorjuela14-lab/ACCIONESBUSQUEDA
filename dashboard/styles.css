@@ -683,33 +683,6 @@ body.tech-chart-fs { overflow: hidden; }
 .push-badge.on { color: #22c55e; }
 .push-badge.off { color: var(--muted); }
 
-.notify-phone-box {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid color-mix(in srgb, var(--muted) 35%, transparent);
-}
-.notify-phone-label {
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.notify-phone-input {
-  width: 100%;
-  box-sizing: border-box;
-  font-size: 12px;
-  padding: 7px 8px;
-  border-radius: 6px;
-  border: 1px solid color-mix(in srgb, var(--muted) 45%, transparent);
-  background: color-mix(in srgb, var(--bg, #0b1220) 85%, transparent);
-  color: inherit;
-}
-.notify-phone-hint { font-size: 10px; line-height: 1.35; margin: 0; }
-.notify-phone-row { display: flex; gap: 6px; }
-.notify-phone-row .btn { flex: 1; font-size: 10px; margin: 0; }
 .voice-bar {
   display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap;
   margin: 0 0.5rem 0.5rem; padding: 10px 12px;

@@ -11,22 +11,23 @@
   <link rel="icon" href="/dashboard/static/icon.png" type="image/png" />
   <link rel="apple-touch-icon" href="/dashboard/static/apple-touch-icon.png" />
   <title>Monarch Capital — Terminal</title>
+  <script>
+    // Hard gate BEFORE any paint: no local token → login immediately
+    (function () {
+      try {
+        if (!localStorage.getItem("nexbuy_token")) {
+          location.replace("/login");
+        }
+      } catch (_) {
+        location.replace("/login");
+      }
+    })();
+  </script>
+  <style>html:not(.session-ok) body { visibility: hidden !important; }</style>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/dashboard/static/styles.css" />
-  <script>
-    // Soft client gate: if there is no local token, go to login immediately
-    // (server also redirects unauthenticated /dashboard → /login).
-    (function () {
-      try {
-        if (!localStorage.getItem("nexbuy_token")) {
-          // Cookie-only sessions still work via server middleware; don't hard-block.
-          document.documentElement.dataset.authPending = "1";
-        }
-      } catch (_) { /* private mode */ }
-    })();
-  </script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
@@ -395,17 +396,7 @@
         <div class="panel">
           <h3>Alertas <span id="push-status-badge" class="push-badge muted" title="Estado push"></span></h3>
           <div class="alert-actions">
-            <!-- Creator/desk only: WhatsApp personal + test push -->
-            <div class="notify-phone-box hidden" id="notify-phone-box" data-desk-only="1">
-              <label class="notify-phone-label" for="notify-phone-input">WhatsApp mesa (creador)</label>
-              <input id="notify-phone-input" class="notify-phone-input" type="tel" inputmode="tel" autocomplete="tel" placeholder="+57 300 123 4567" />
-              <input id="notify-wa-key-input" class="notify-phone-input" type="password" autocomplete="off" placeholder="Clave CallMeBot (opcional)" />
-              <p class="muted notify-phone-hint">Solo mesa Monarch: alertas del book a tu WhatsApp.</p>
-              <div class="notify-phone-row">
-                <button id="btn-save-notify-phone" class="btn" type="button">Guardar número</button>
-                <button id="btn-test-push" class="btn" type="button">Probar push</button>
-              </div>
-            </div>
+            <button id="btn-test-push" class="btn" style="font-size:10px;margin-bottom:6px;width:100%">Probar push</button>
           </div>
           <div id="alerts-panel" class="scroll-list"></div>
         </div>
@@ -475,7 +466,12 @@
   <script src="/dashboard/static/app.js"></script>
   <script>
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/dashboard/static/sw.js").catch(() => {});
+      // Drop stale SW caches that used to serve /dashboard HTML without login
+      navigator.serviceWorker.getRegistrations().then((regs) => {
+        Promise.all(regs.map((r) => r.unregister())).finally(() => {
+          navigator.serviceWorker.register("/dashboard/static/sw.js").catch(() => {});
+        });
+      });
     }
   </script>
 </html>

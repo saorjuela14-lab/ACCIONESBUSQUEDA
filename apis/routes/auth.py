@@ -38,12 +38,6 @@ class ClientErrorReport(BaseModel):
     stack: str | None = Field(default=None, max_length=4000)
 
 
-class NotifyPrefsRequest(BaseModel):
-    phone: str = Field(default="", max_length=32)
-    whatsapp_api_key: str | None = Field(default=None, max_length=128)
-    clear_whatsapp_key: bool = False
-
-
 def _extract_bearer(request: Request) -> str | None:
     auth = request.headers.get("authorization", "")
     if auth.lower().startswith("bearer "):
@@ -200,53 +194,6 @@ async def auth_me(request: Request, session: AsyncSession = Depends(get_session)
     if not resolved:
         raise HTTPException(status_code=401, detail="No autenticado")
     return {"ok": True, **resolved}
-
-
-def _require_desk(resolved: dict | None) -> dict:
-    if not resolved:
-        raise HTTPException(status_code=401, detail="No autenticado")
-    if resolved.get("role") != "desk":
-        raise HTTPException(
-            status_code=403,
-            detail="Solo la mesa Monarch (creador) configura WhatsApp de alertas",
-        )
-    return resolved
-
-
-@router.get("/auth/me/notify")
-async def get_notify_prefs(request: Request, session: AsyncSession = Depends(get_session)) -> dict:
-    """Preferencias WhatsApp — solo mesa/creador."""
-    token = _extract_bearer(request)
-    svc = CompanyAuthService(session)
-    resolved = _require_desk(await svc.resolve_bearer(token) if token else None)
-    prefs = await svc.get_notify_prefs(
-        user_id=resolved.get("user_id"), role=str(resolved.get("role") or "")
-    )
-    return {"ok": True, **prefs}
-
-
-@router.patch("/auth/me/notify")
-async def update_notify_prefs(
-    body: NotifyPrefsRequest,
-    request: Request,
-    session: AsyncSession = Depends(get_session),
-) -> dict:
-    """Guarda el WhatsApp del creador (mesa) para recibir alertas."""
-    token = _extract_bearer(request)
-    svc = CompanyAuthService(session)
-    resolved = _require_desk(await svc.resolve_bearer(token) if token else None)
-    try:
-        result = await svc.update_notify_prefs(
-            user_id=resolved.get("user_id"),
-            org_id=resolved.get("org_id"),
-            role=str(resolved.get("role") or ""),
-            phone=body.phone,
-            whatsapp_api_key=body.whatsapp_api_key,
-            clear_whatsapp_key=body.clear_whatsapp_key,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return result
 
 
 @router.post("/auth/logout")

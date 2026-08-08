@@ -23,14 +23,22 @@ def _env(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_dashboard_redirects_to_login_without_session():
+async def test_root_and_dashboard_redirect_to_login_without_session():
     await init_db()
     app = create_app()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+        root = await client.get("/")
+        assert root.status_code in (302, 307)
+        assert "/login" in root.headers.get("location", "")
+
         r = await client.get("/dashboard")
         assert r.status_code in (302, 307)
         assert "/login" in r.headers.get("location", "")
+
+        login = await client.get("/login")
+        assert login.status_code == 200
+        assert "Inicia sesión" in login.text or "Acceso" in login.text
 
 
 @pytest.mark.asyncio

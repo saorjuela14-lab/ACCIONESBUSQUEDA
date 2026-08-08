@@ -62,14 +62,20 @@ class AccessTokenMiddleware(BaseHTTPMiddleware):
                     return RedirectResponse(url="/dashboard", status_code=302)
             return await call_next(request)
 
-        # Terminal HTML: require a valid session when auth is on (no flash of empty UI)
-        if path in ("/", "/dashboard") and method == "GET":
-            if await self._auth_required():
-                token = _extract_token(request)
-                principal = await self._resolve(token)
-                if not principal:
-                    return RedirectResponse(url="/login", status_code=302)
-                request.state.principal = principal
+        # Entry + terminal HTML: login first — never paint the desk without a session
+        if path == "/" and method == "GET":
+            token = _extract_token(request)
+            principal = await self._resolve(token) if token else None
+            if principal:
+                return RedirectResponse(url="/dashboard", status_code=302)
+            return RedirectResponse(url="/login", status_code=302)
+
+        if path == "/dashboard" and method == "GET":
+            token = _extract_token(request)
+            principal = await self._resolve(token) if token else None
+            if not principal:
+                return RedirectResponse(url="/login", status_code=302)
+            request.state.principal = principal
             return await call_next(request)
 
         token = _extract_token(request)
