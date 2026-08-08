@@ -18,6 +18,7 @@ from domain.dashboard import (
     WatchlistMatrixRow,
 )
 from domain.enums import InvestmentRecommendation
+from domain.firm_capital import FIRM_RETURN_BASE_USD, return_pct_from_base
 from providers.market.factory import get_market_provider
 from services.market_dashboard_service import MarketDashboardService
 from services.provider_diagnostics import get_providers_status
@@ -60,22 +61,26 @@ def _memory_to_opportunities(memory: list) -> tuple[list[TickerOpportunity], lis
 
 
 def _redact_for_client(dash: TerminalDashboard, client_view: ClientAccountView) -> TerminalDashboard:
-    """Clients never see firm book totals, positions, or research surfaces."""
-    # Performance % only — strip dollar totals / cash / weights
+    """Clients: return %, market allocation % — never firm dollar totals or research."""
     perf = None
     if dash.portfolio is not None:
+        src = dash.portfolio
         perf = PortfolioDashboardSlice(
             portfolio_id=None,
             name="Rendimiento Monarch",
-            mode=dash.portfolio.mode,
-            initial_capital=0.0,
+            mode=src.mode,
+            initial_capital=FIRM_RETURN_BASE_USD,
             cash=0.0,
             total_value=0.0,
-            return_pct=dash.portfolio.return_pct,
+            return_pct=src.return_pct,
             sharpe=None,
             sortino=None,
             max_drawdown=None,
             diversification_score=None,
+            sector_weights=dict(src.sector_weights or {}),
+            country_weights=dict(src.country_weights or {}),
+            cap_exposure=dict(src.cap_exposure or {}),
+            currency_exposure=dict(src.currency_exposure or {}),
             unrealized_pnl=0.0,
             realized_pnl=0.0,
         )
@@ -124,7 +129,7 @@ async def get_terminal_dashboard(
                 org_id=book_org,
                 allow_alpaca=True,
                 default_name="Portafolio CEO",
-                default_cash=22.0,
+                default_cash=FIRM_RETURN_BASE_USD,
             )
             if source == "alpaca":
                 bootstrap_note = (
@@ -147,6 +152,18 @@ async def get_terminal_dashboard(
         source = "existing" if p else "none"
 
     if p:
+        # Lock return baseline to $20 (fixes legacy rows stamped with Alpaca equity ~21.68)
+        if abs(float(p.initial_capital or 0) - FIRM_RETURN_BASE_USD) > 0.001:
+            try:
+                p = await svc.mirror_positions(
+                    p.id,
+                    positions=list(p.positions),
+                    cash=float(p.cash or 0),
+                    initial_capital=FIRM_RETURN_BASE_USD,
+                    org_id=book_org,
+                )
+            except Exception:
+                p.initial_capital = FIRM_RETURN_BASE_USD
         try:
             p = await svc.refresh_prices(p.id)
         except Exception:
@@ -165,8 +182,8 @@ async def get_terminal_dashboard(
                     q = await get_market_provider().get_quote(pos.ticker)
                 except Exception:
                     q = {}
-                sec = q.get("sector") or "Unknown"
-                country = q.get("country") or "Unknown"
+                sec = q.get("sector") or "Otros"
+                country = q.get("country") or "Otros"
                 mcap = float(q.get("market_cap") or 0)
                 val = (pos.current_price or pos.average_cost) * pos.shares
                 sector_w[sec] = sector_w.get(sec, 0) + val
@@ -179,11 +196,18 @@ async def get_terminal_dashboard(
                     cap_w["small"] += val
         except Exception:
             pass
-        total = p.total_value or p.initial_capital
-        if total:
-            sector_w = {k: round(v / total * 100, 1) for k, v in sector_w.items()}
-            country_w = {k: round(v / total * 100, 1) for k, v in country_w.items()}
-            cap_w = {k: round(v / total * 100, 1) for k, v in cap_w.items()}
+        total = float(p.total_value or 0)
+        cash = float(p.cash or 0)
+        # Allocation vs portfolio total (include cash bucket so clients see deploy vs cash)
+        if total > 0:
+            sector_w = {k: round(v / total * 100, 1) for k, v in sector_w.items() if v > 0}
+            country_w = {k: round(v / total * 100, 1) for k, v in country_w.items() if v > 0}
+            cap_w = {k: round(v / total * 100, 1) for k, v in cap_w.items() if v > 0}
+            cash_pct = round(cash / total * 100, 1)
+            if cash_pct > 0:
+                sector_w["Efectivo"] = cash_pct
+                country_w["Efectivo"] = cash_pct
+        ret = return_pct_from_base(total, FIRM_RETURN_BASE_USD)
         unrealized = sum(
             ((pos.current_price or pos.average_cost) - pos.average_cost) * pos.shares
             for pos in p.positions
@@ -192,10 +216,10 @@ async def get_terminal_dashboard(
             portfolio_id=p.id,
             name=p.name,
             mode=p.mode.value,
-            initial_capital=p.initial_capital,
-            cash=p.cash,
+            initial_capital=FIRM_RETURN_BASE_USD,
+            cash=cash,
             total_value=total,
-            return_pct=p.return_pct,
+            return_pct=ret,
             sharpe=metrics.get("sharpe"),
             sortino=metrics.get("sortino"),
             max_drawdown=metrics.get("max_drawdown"),
@@ -208,7 +232,7 @@ async def get_terminal_dashboard(
         )
         try:
             await PortfolioSnapshotRepository(session).save(
-                p.id, total, p.return_pct, p.cash
+                p.id, total, ret, cash
             )
         except Exception:
             pass
@@ -257,6 +281,35 @@ async def get_terminal_dashboard(
         return _redact_for_client(dash, client_view)
 
     return dash
+
+
+@router.get("/dashboard/performance-history")
+async def get_performance_history(
+    session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
+    limit: int = 90,
+) -> dict:
+    """Return % history for the firm book (rebased to $20). No dollar totals for clients."""
+    book_org = scope.book_org_id()
+    portfolios = await PortfolioRepository(session).list_all(org_id=book_org)
+    if not portfolios:
+        return {"ok": True, "base_usd": FIRM_RETURN_BASE_USD, "points": []}
+    p = sorted(portfolios, key=lambda x: x.updated_at, reverse=True)[0]
+    hist = await PortfolioSnapshotRepository(session).list_for_portfolio(p.id, limit=max(1, min(limit, 200)))
+    points = [
+        {
+            "timestamp": h.timestamp.isoformat() if h.timestamp else None,
+            "return_pct": return_pct_from_base(h.total_value, FIRM_RETURN_BASE_USD),
+        }
+        for h in hist
+    ]
+    # Always append current mark so the chart is never empty when book exists
+    current_ret = return_pct_from_base(p.total_value, FIRM_RETURN_BASE_USD)
+    if not points or abs(points[-1]["return_pct"] - current_ret) > 0.01:
+        from datetime import datetime, timezone
+
+        points.append({"timestamp": datetime.now(timezone.utc).isoformat(), "return_pct": current_ret})
+    return {"ok": True, "base_usd": FIRM_RETURN_BASE_USD, "points": points}
 
 
 @router.get("/dashboard/watchlist-matrix", response_model=list[WatchlistMatrixRow])

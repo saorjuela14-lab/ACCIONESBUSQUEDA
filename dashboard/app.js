@@ -150,6 +150,8 @@ function applyRoleMode(principal, clientView) {
   if (accessPanel) accessPanel.classList.toggle("hidden", !desk);
   const clientBanner = document.getElementById("client-monitor-banner");
   if (clientBanner) clientBanner.classList.toggle("hidden", desk);
+  const marketsPanel = document.getElementById("client-markets-panel");
+  if (marketsPanel) marketsPanel.classList.toggle("hidden", desk);
   const copy = document.getElementById("client-mode-copy");
   if (copy && !desk) {
     copy.innerHTML = invested
@@ -1355,32 +1357,120 @@ async function loadWatchlistMatrix() {
   }
 }
 
+const _ALLOC_COLORS = ["#c4a574", "#3d9b6e", "#d4a574", "#d45d5d", "#2d4a40", "#9aaba3", "#6b8f71", "#b08968"];
+
+function _allocEntries(weights) {
+  return Object.entries(weights || {})
+    .filter(([, v]) => Number(v) > 0)
+    .sort((a, b) => Number(b[1]) - Number(a[1]));
+}
+
+function _renderAllocList(elId, entries) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!entries.length) {
+    el.innerHTML = "<li><span>Sin asignación todavía</span><span>—</span></li>";
+    return;
+  }
+  el.innerHTML = entries
+    .map(([k, v]) => `<li><span>${escapeHtml(k)}</span><span>${Number(v).toFixed(1)}%</span></li>`)
+    .join("");
+}
+
+function _renderDoughnut(canvasId, entries) {
+  if (!entries.length) {
+    destroyChart(canvasId);
+    return;
+  }
+  makeChart(canvasId, {
+    type: "doughnut",
+    data: {
+      labels: entries.map(([k]) => k),
+      datasets: [{
+        data: entries.map(([, v]) => Number(v)),
+        backgroundColor: entries.map((_, i) => _ALLOC_COLORS[i % _ALLOC_COLORS.length]),
+      }],
+    },
+    options: {
+      plugins: { legend: { position: "bottom", labels: { color: "#7d8fa3", font: { size: 10 } } } },
+      maintainAspectRatio: false,
+    },
+  });
+}
+
+function renderClientMarkets(p) {
+  const panel = document.getElementById("client-markets-panel");
+  if (panel) panel.classList.remove("hidden");
+  const sectorEntries = _allocEntries(p?.sector_weights);
+  const countryEntries = _allocEntries(p?.country_weights);
+  _renderDoughnut("client-sector-chart", sectorEntries);
+  _renderDoughnut("client-country-chart", countryEntries);
+  _renderAllocList("client-sector-list", sectorEntries);
+  _renderAllocList("client-country-list", countryEntries);
+}
+
+async function loadClientPerformanceHistory() {
+  try {
+    const data = await api(`${API}/dashboard/performance-history`);
+    const points = data.points || [];
+    const hint = document.getElementById("client-return-base-hint");
+    if (hint) hint.textContent = `Base $${Number(data.base_usd || 20)}`;
+    if (!points.length) {
+      destroyChart("client-return-chart");
+      return;
+    }
+    makeChart("client-return-chart", {
+      type: "line",
+      data: {
+        labels: points.map((h) => (h.timestamp ? new Date(h.timestamp).toLocaleDateString(LOCALE) : "")),
+        datasets: [{
+          label: "Rendimiento %",
+          data: points.map((h) => h.return_pct),
+          borderColor: "#c4a574",
+          backgroundColor: "rgba(196,165,116,0.12)",
+          fill: true,
+          tension: 0.25,
+          pointRadius: points.length > 40 ? 0 : 2,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: "#7d8fa3", maxTicksLimit: 6 }, grid: { color: "rgba(197,165,114,0.08)" } },
+          y: {
+            ticks: {
+              color: "#7d8fa3",
+              callback: (v) => `${v}%`,
+            },
+            grid: { color: "rgba(197,165,114,0.08)" },
+          },
+        },
+      },
+    });
+  } catch {
+    destroyChart("client-return-chart");
+  }
+}
+
 function renderPortfolioPies(p) {
   if (!p) { destroyChart("sector-chart"); destroyChart("cap-chart"); return; }
-  const sectorLabels = Object.keys(p.sector_weights || {});
-  const sectorData = Object.values(p.sector_weights || {});
-  if (sectorLabels.length) {
-    makeChart("sector-chart", {
-      type: "doughnut",
-      data: {
-        labels: sectorLabels,
-        datasets: [{ data: sectorData, backgroundColor: ["#c4a574","#3d9b6e","#d4a574","#d45d5d","#2d4a40","#9aaba3"] }],
-      },
-      options: { plugins: { legend: { position: "bottom", labels: { color: "#7d8fa3", font: { size: 10 } } } }, maintainAspectRatio: false },
-    });
-  }
-  const capLabels = Object.keys(p.cap_exposure || {}).filter((k) => p.cap_exposure[k] > 0).map(trCapLabel);
+  const sectorEntries = _allocEntries(p.sector_weights);
+  _renderDoughnut("sector-chart", sectorEntries);
   const capKeys = Object.keys(p.cap_exposure || {}).filter((k) => p.cap_exposure[k] > 0);
-  const capData = capKeys.map((k) => p.cap_exposure[k]);
-  if (capKeys.length) {
+  const capEntries = capKeys.map((k) => [trCapLabel(k), p.cap_exposure[k]]);
+  if (capEntries.length) {
     makeChart("cap-chart", {
       type: "pie",
       data: {
-        labels: capLabels,
-        datasets: [{ data: capData, backgroundColor: ["#c4a574","#3d9b6e","#d4a574"] }],
+        labels: capEntries.map(([k]) => k),
+        datasets: [{ data: capEntries.map(([, v]) => v), backgroundColor: ["#c4a574","#3d9b6e","#d4a574"] }],
       },
       options: { plugins: { legend: { position: "bottom", labels: { color: "#7d8fa3", font: { size: 10 } } } }, maintainAspectRatio: false },
     });
+  } else {
+    destroyChart("cap-chart");
   }
 }
 
@@ -1475,9 +1565,11 @@ function renderDashboard(d) {
   regime.className = `regime ${d.market_regime}`;
   renderCeoBar(d);
 
-  // Clients: capital / return / news only — skip research + firm book panels
+  // Clients: capital / return / markets + news — skip research + firm book $ panels
   if (!isDeskPrincipal()) {
     renderMarketNews(d.news_highlights || []);
+    renderClientMarkets(d.portfolio);
+    loadClientPerformanceHistory();
     renderProviderHealth({});
     return;
   }

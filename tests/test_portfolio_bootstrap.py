@@ -68,7 +68,10 @@ async def test_ensure_syncs_from_alpaca_when_empty():
     assert source == "alpaca"
     assert p.cash == 40.0
     assert len(p.positions) == 1
+    svc.create.assert_called_once()
+    assert svc.create.await_args.kwargs["initial_capital"] == 20.0
     svc.mirror_positions.assert_called_once()
+    assert svc.mirror_positions.await_args.kwargs["initial_capital"] == 20.0
 
 
 @pytest.mark.asyncio

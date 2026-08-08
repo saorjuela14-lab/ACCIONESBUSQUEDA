@@ -880,9 +880,35 @@ body.role-client.client-prospect .ceo-kpi-client-equity {
 body.role-client.client-investor .news-panel {
   display: block;
 }
-body.role-desk .client-banner { display: none !important; }
+body.role-desk .client-banner,
+body.role-desk .client-markets-panel { display: none !important; }
 body.role-client .client-banner { display: block; }
+body.role-client .client-markets-panel { display: block; }
 body.role-client .ceo-bar .ceo-kpi-desk-only { display: none !important; }
+.client-markets-panel {
+  margin: 0 0.5rem 0.85rem;
+}
+.client-markets-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+@media (max-width: 720px) {
+  .client-markets-grid { grid-template-columns: 1fr; }
+}
+.client-alloc-list {
+  list-style: none;
+  margin: 0.45rem 0 0;
+  padding: 0;
+  font-size: 12px;
+}
+.client-alloc-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+  border-bottom: 1px solid rgba(197, 165, 114, 0.12);
+}
 .client-banner {
   margin: 0 0.5rem 0.65rem;
   padding: 0.85rem 1rem;

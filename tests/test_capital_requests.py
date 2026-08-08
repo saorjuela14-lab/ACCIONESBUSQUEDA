@@ -174,12 +174,20 @@ async def test_client_sees_own_capital_not_firm_book_total():
         body = dash.json()
         assert body["client_view"]["has_invested"] is True
         assert body["client_view"]["net_capital_usd"] == 500
-        # Firm book dollar totals must not leak
-        assert (body.get("portfolio") or {}).get("total_value", 0) == 0
-        assert (body.get("portfolio") or {}).get("cash", 0) == 0
+        # Firm book dollar totals must not leak (when a book exists)
+        pf = body.get("portfolio")
+        if pf:
+            assert pf.get("total_value", 0) == 0
+            assert pf.get("cash", 0) == 0
+            assert pf.get("initial_capital") == 20.0
         assert body["watchlist"] == []
         assert body["top_opportunities"] == []
         assert body["recently_analyzed"] == []
+
+        hist = await client.get("/api/v1/dashboard/performance-history", headers=client_h)
+        assert hist.status_code == 200, hist.text
+        assert hist.json()["base_usd"] == 20.0
+        assert "points" in hist.json()
 
         # Analysis / firm book APIs forbidden for clients
         for path in (
