@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config.settings import get_settings
@@ -418,6 +418,11 @@ class CompanyAuthService:
         }
 
     async def list_companies(self, limit: int = 50, offset: int = 0) -> tuple[list[dict], int]:
+        # Drop previously soft-rejected rows so they never clutter the panel
+        try:
+            await self.purge_rejected_companies()
+        except Exception:
+            pass
         total_r = await self._session.execute(
             select(func.count()).select_from(OrganizationORM).where(OrganizationORM.id != "monarch")
         )
@@ -476,17 +481,36 @@ class CompanyAuthService:
         return {"ok": True, "id": org.id, "status": "approved", "name": org.name}
 
     async def reject_company(self, org_id: str) -> dict[str, Any]:
+        """Reject = hard delete the access request (org, users, sessions)."""
         org = await self._get_client_org(org_id)
-        org.active = False
-        users_r = await self._session.execute(select(UserORM).where(UserORM.org_id == org.id))
-        users = list(users_r.scalars().all())
-        if not users:
-            # Ensure rejected is distinguishable even without users
-            raise ValueError("Empresa sin usuario — no se puede rechazar")
-        for u in users:
-            u.active = False
+        name = org.name
+        oid = org.id
+        await self._session.execute(delete(AuthSessionORM).where(AuthSessionORM.org_id == oid))
+        await self._session.execute(delete(UserORM).where(UserORM.org_id == oid))
+        await self._session.execute(delete(OrganizationORM).where(OrganizationORM.id == oid))
         await self._session.commit()
-        return {"ok": True, "id": org.id, "status": "rejected", "name": org.name}
+        return {"ok": True, "id": oid, "status": "deleted", "name": name, "deleted": True}
+
+    async def purge_rejected_companies(self) -> int:
+        """Remove leftover rejected orgs (inactive org + inactive users) from older builds."""
+        r = await self._session.execute(
+            select(OrganizationORM).where(
+                OrganizationORM.id != "monarch",
+                OrganizationORM.active.is_(False),
+            )
+        )
+        removed = 0
+        for org in list(r.scalars().all()):
+            users_r = await self._session.execute(select(UserORM).where(UserORM.org_id == org.id))
+            users = list(users_r.scalars().all())
+            if users and all(not u.active for u in users):
+                await self._session.execute(delete(AuthSessionORM).where(AuthSessionORM.org_id == org.id))
+                await self._session.execute(delete(UserORM).where(UserORM.org_id == org.id))
+                await self._session.execute(delete(OrganizationORM).where(OrganizationORM.id == org.id))
+                removed += 1
+        if removed:
+            await self._session.commit()
+        return removed
 
     async def request_deposit(
         self,
