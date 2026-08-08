@@ -1,4 +1,4 @@
-"""User/org WhatsApp number for alert delivery."""
+"""Desk-only WhatsApp number for alert delivery."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -33,7 +33,7 @@ def _env(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_save_and_load_company_notify_phone():
+async def test_company_cannot_save_notify_phone():
     await init_db()
     app = create_app()
     transport = ASGITransport(app=app)
@@ -58,27 +58,17 @@ async def test_save_and_load_company_notify_phone():
         )
         tok = login.json()["token"]
 
-        bad = await client.patch(
-            "/api/v1/auth/me/notify",
-            headers={"Authorization": f"Bearer {tok}"},
-            json={"phone": "123"},
-        )
-        assert bad.status_code == 400
-
-        saved = await client.patch(
+        forbidden = await client.patch(
             "/api/v1/auth/me/notify",
             headers={"Authorization": f"Bearer {tok}"},
             json={"phone": "+573001112233", "whatsapp_api_key": "key-acme"},
         )
-        assert saved.status_code == 200, saved.text
-        assert saved.json()["notify_phone"] in ("+573001112233", "573001112233")
-        assert saved.json()["has_whatsapp_key"] is True
+        assert forbidden.status_code == 403
 
         me = await client.get(
             "/api/v1/auth/me/notify", headers={"Authorization": f"Bearer {tok}"}
         )
-        assert me.status_code == 200
-        assert "573001112233" in me.json()["notify_phone"]
+        assert me.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -107,20 +97,13 @@ async def test_alert_emit_fans_out_to_saved_phone():
     assert _session_factory is not None
     async with _session_factory() as session:
         svc = CompanyAuthService(session)
-        org, user, _ = await svc.create_company(
-            org_name="Beta",
-            email="b@beta.test",
-            password="segura1234",
-            full_name="Beta",
-        )
         await svc.update_notify_prefs(
-            user_id=user.id,
-            org_id=org.id,
-            role="company_admin",
+            user_id="desk",
+            org_id="monarch",
+            role="desk",
             phone="+573009998887",
-            whatsapp_api_key="user-key",
+            whatsapp_api_key="desk-key",
         )
-        org_id = org.id
 
     async with _session_factory() as session:
         push = MagicMock()
@@ -141,7 +124,7 @@ async def test_alert_emit_fans_out_to_saved_phone():
                 severity=AlertSeverity.HIGH,
                 title="Sube",
                 description="test",
-                org_id=org_id,
+                org_id="monarch",
             )
         )
         assert saved is not None

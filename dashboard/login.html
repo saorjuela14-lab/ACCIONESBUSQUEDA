@@ -10,13 +10,20 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/dashboard/static/styles.css" />
+  <script>
+    // Hide form until we know whether a valid session already exists
+    document.documentElement.classList.add("auth-checking");
+  </script>
+  <style>
+    html.auth-checking body { visibility: hidden; }
+  </style>
 </head>
 <body class="login-page">
   <div class="login-card">
     <div class="login-brand">
       <img src="/dashboard/static/assets/logo.png" alt="Monarch Capital" width="280" height="280" />
     </div>
-    <p class="muted" style="text-align:center;margin-bottom:0.75rem">Terminal para empresas · acceso seguro</p>
+    <p class="muted" style="text-align:center;margin-bottom:0.75rem">Inicia sesión para entrar al terminal</p>
 
     <div class="login-tabs" role="tablist">
       <button type="button" class="login-tab active" data-tab="company" id="tab-company">Empresa</button>
@@ -68,7 +75,29 @@
       if (meta) localStorage.setItem("monarch_auth", JSON.stringify(meta));
     }
 
-    if (localStorage.getItem("nexbuy_token")) location.href = "/dashboard";
+    function clearSessionLocal() {
+      localStorage.removeItem("nexbuy_token");
+      localStorage.removeItem("monarch_auth");
+    }
+
+    function revealLogin() {
+      document.documentElement.classList.remove("auth-checking");
+    }
+
+    async function validateExistingSession() {
+      const token = localStorage.getItem("nexbuy_token");
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      try {
+        const me = await fetch(`${API}/auth/me`, { headers, credentials: "same-origin" });
+        if (me.ok) {
+          location.replace("/dashboard");
+          return true;
+        }
+      } catch { /* stay on login */ }
+      // Stale local token — drop it so we don't bounce in a loop
+      clearSessionLocal();
+      return false;
+    }
 
     document.querySelectorAll(".login-tab").forEach((btn) => {
       btn.onclick = () => {
@@ -89,12 +118,13 @@
         const r = await fetch(`${API}/auth/company/login`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
           body: JSON.stringify({ email, password }),
         });
         const data = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(data.detail || "Login incorrecto");
         storeSession(data.token, { type: "company", org: data.organization, user: data.user });
-        location.href = "/dashboard";
+        location.replace("/dashboard");
       } catch (e) { showErr(e.message); }
     };
 
@@ -105,12 +135,13 @@
         const r = await fetch(`${API}/auth/login`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
           body: JSON.stringify({ token }),
         });
         const data = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(data.detail || "Token incorrecto");
         storeSession(data.token || token, { type: "desk", user: data.user });
-        location.href = "/dashboard";
+        location.replace("/dashboard");
       } catch (e) { showErr(e.message); }
     };
 
@@ -126,35 +157,38 @@
         const r = await fetch(`${API}/auth/companies`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
           body: JSON.stringify(body),
         });
         const data = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(data.detail || "No se pudo registrar");
         if (data.token) {
           storeSession(data.token, { type: "company", org: data.organization, user: data.user });
-          location.href = "/dashboard";
+          location.replace("/dashboard");
           return;
         }
         showErr("Empresa creada. Ahora inicia sesión con tu email.");
       } catch (e) { showErr(e.message); }
     };
 
-    fetch(`${API}/auth/status`).then((r) => r.json()).then((s) => {
-      if (!s.auth_required) {
-        statusEl.textContent = "Auth desactivado en este servidor — entrando…";
-        location.href = "/dashboard";
-        return;
+    (async () => {
+      // Only auto-enter if there is a *valid* session (cookie and/or local token)
+      const ok = await validateExistingSession();
+      if (ok) return;
+      revealLogin();
+      try {
+        const s = await fetch(`${API}/auth/status`).then((r) => r.json());
+        const users = s.modes?.company_users || 0;
+        statusEl.textContent = users
+          ? `${s.app_name} · inicia sesión para continuar`
+          : `${s.app_name} · puedes registrar la primera empresa abajo`;
+        if (users > 0) {
+          document.getElementById("register-box")?.classList.add("hidden");
+        }
+      } catch {
+        statusEl.textContent = "No se pudo contactar el servidor";
       }
-      const users = s.modes?.company_users || 0;
-      statusEl.textContent = users
-        ? `${s.app_name} · ${users} usuario(s) empresa`
-        : `${s.app_name} · puedes registrar la primera empresa abajo`;
-      if (users > 0) {
-        document.getElementById("register-box")?.classList.add("hidden");
-      }
-    }).catch(() => {
-      statusEl.textContent = "No se pudo contactar el servidor";
-    });
+    })();
   </script>
 </body>
 </html>

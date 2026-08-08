@@ -56,7 +56,12 @@ async def test_push_notification(
     session: AsyncSession = Depends(get_session),
     scope: OrgScope = Depends(get_org_scope),
 ) -> dict:
-    """Envía alerta de prueba a canales globales y al WhatsApp guardado en el panel."""
+    """Envía alerta de prueba — solo mesa/creador."""
+    if not scope.is_desk:
+        raise HTTPException(
+            status_code=403,
+            detail="Solo la mesa Monarch puede probar push",
+        )
     push = PushNotificationService()
     sample = Alert(
         ticker="TEST",

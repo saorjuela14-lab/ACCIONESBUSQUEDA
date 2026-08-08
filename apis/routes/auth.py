@@ -144,6 +144,25 @@ async def create_company(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # Seed an empty company book so the terminal is never "Sin portafolio"
+    try:
+        from providers.market.factory import get_market_provider
+        from services.portfolio_bootstrap_service import PortfolioBootstrapService
+        from services.portfolio_service import PortfolioService
+        from database.repositories.portfolio_repository import PortfolioRepository
+
+        boot = PortfolioBootstrapService(
+            PortfolioService(PortfolioRepository(session), get_market_provider())
+        )
+        await boot.ensure_portfolio(
+            org_id=org.id,
+            allow_alpaca=False,
+            default_name=f"Portafolio {org.name}"[:120],
+            default_cash=1000.0,
+        )
+    except Exception:
+        pass
+
     # If created by desk, don't replace desk cookie with company session
     out = {
         "ok": True,
@@ -183,13 +202,23 @@ async def auth_me(request: Request, session: AsyncSession = Depends(get_session)
     return {"ok": True, **resolved}
 
 
-@router.get("/auth/me/notify")
-async def get_notify_prefs(request: Request, session: AsyncSession = Depends(get_session)) -> dict:
-    token = _extract_bearer(request)
-    svc = CompanyAuthService(session)
-    resolved = await svc.resolve_bearer(token) if token else None
+def _require_desk(resolved: dict | None) -> dict:
     if not resolved:
         raise HTTPException(status_code=401, detail="No autenticado")
+    if resolved.get("role") != "desk":
+        raise HTTPException(
+            status_code=403,
+            detail="Solo la mesa Monarch (creador) configura WhatsApp de alertas",
+        )
+    return resolved
+
+
+@router.get("/auth/me/notify")
+async def get_notify_prefs(request: Request, session: AsyncSession = Depends(get_session)) -> dict:
+    """Preferencias WhatsApp — solo mesa/creador."""
+    token = _extract_bearer(request)
+    svc = CompanyAuthService(session)
+    resolved = _require_desk(await svc.resolve_bearer(token) if token else None)
     prefs = await svc.get_notify_prefs(
         user_id=resolved.get("user_id"), role=str(resolved.get("role") or "")
     )
@@ -202,12 +231,10 @@ async def update_notify_prefs(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Guarda el WhatsApp del usuario para recibir alertas del terminal."""
+    """Guarda el WhatsApp del creador (mesa) para recibir alertas."""
     token = _extract_bearer(request)
     svc = CompanyAuthService(session)
-    resolved = await svc.resolve_bearer(token) if token else None
-    if not resolved:
-        raise HTTPException(status_code=401, detail="No autenticado")
+    resolved = _require_desk(await svc.resolve_bearer(token) if token else None)
     try:
         result = await svc.update_notify_prefs(
             user_id=resolved.get("user_id"),
