@@ -65,8 +65,12 @@
         </span>
       </a>
       <div class="regime" id="market-regime">Mercado —</div>
-      <span id="auth-chip" class="auth-chip hidden" title="Sesión"></span>
-      <button type="button" id="btn-logout" class="btn auth-logout hidden" title="Cerrar sesión">Salir</button>
+      <div class="session-bar" id="session-bar">
+        <span id="auth-chip" class="auth-chip hidden" title="Sesión activa"></span>
+        <button type="button" id="btn-logout" class="btn auth-logout" title="Cerrar sesión en este dispositivo">
+          Cerrar sesión
+        </button>
+      </div>
       <div class="header-actions">
         <input id="global-ticker" type="text" placeholder="Ej. AAPL" maxlength="10" aria-label="Ticker" />
         <button id="btn-analyze" class="btn primary">Analizar</button>
