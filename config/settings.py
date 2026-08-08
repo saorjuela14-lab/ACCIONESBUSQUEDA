@@ -43,7 +43,11 @@ class Settings(BaseSettings):
 
     # ElevenLabs TTS — friendly desk assistant voice (secretary / Friday style)
     # Default voice: Sarah (warm, reassuring, professional) — speaks Spanish via multilingual models
-    elevenlabs_api_key: str = ""
+    # Accepts ELEVENLABS_API_KEY or Cursor secret alias ELEVEN_LABS
+    elevenlabs_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("ELEVENLABS_API_KEY", "ELEVEN_LABS"),
+    )
     elevenlabs_voice_id: str = "EXAVITQu4vr4xnSDxMaL"
     elevenlabs_model_id: str = "eleven_flash_v2_5"
     elevenlabs_output_format: str = "mp3_44100_128"
