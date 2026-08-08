@@ -53,11 +53,12 @@ class AccessTokenMiddleware(BaseHTTPMiddleware):
         if any(path.startswith(p) for p in PUBLIC_PREFIXES):
             return await call_next(request)
 
-        # Login page: public, but bounce already-authenticated users to the terminal
+        # Login page: public. After explicit logout (?logged_out=1) never bounce back.
         if path == "/login" and method == "GET":
-            if await self._auth_required():
+            forced_logout = request.query_params.get("logged_out") in ("1", "true", "yes")
+            if not forced_logout:
                 token = _extract_token(request)
-                principal = await self._resolve(token)
+                principal = await self._resolve(token) if token else None
                 if principal:
                     return RedirectResponse(url="/dashboard", status_code=302)
             return await call_next(request)

@@ -58,6 +58,16 @@ def _set_session_cookie(response: Response, token: str) -> None:
     )
 
 
+def _clear_session_cookies(response: Response) -> None:
+    """Expire auth cookies with the same flags used when setting them."""
+    settings = get_settings()
+    secure = settings.app_env == "production"
+    for key in ("nexbuy_token", "monarch_token"):
+        response.delete_cookie(key=key, path="/", secure=secure, samesite="lax")
+        # Fallback without secure (covers mismatched env / proxy quirks)
+        response.delete_cookie(key=key, path="/")
+
+
 @router.get("/auth/status")
 async def auth_status(session: AsyncSession = Depends(get_session)) -> dict:
     settings = get_settings()
@@ -200,10 +210,12 @@ async def auth_me(request: Request, session: AsyncSession = Depends(get_session)
 async def logout(request: Request, response: Response, session: AsyncSession = Depends(get_session)) -> dict:
     token = _extract_bearer(request)
     if token:
-        await CompanyAuthService(session).revoke_token(token)
-    response.delete_cookie("nexbuy_token", path="/")
-    response.delete_cookie("monarch_token", path="/")
-    return {"ok": True}
+        try:
+            await CompanyAuthService(session).revoke_token(token)
+        except Exception:
+            pass
+    _clear_session_cookies(response)
+    return {"ok": True, "logged_out": True}
 
 
 @router.post("/auth/client-error")
