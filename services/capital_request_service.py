@@ -61,7 +61,7 @@ def funding_package(*, client_email: str = "", amount_usd: float | None = None) 
     }
     return {
         "account_name": s.alpaca_funding_account_name or "Monarch Capital",
-        "funding_url": funding_url,  # empty unless a non-Alpaca custom page is configured
+        "funding_url": funding_url,
         "bank": bank,
         "instructions": instructions,
         "wire_details": wire,
@@ -71,20 +71,8 @@ def funding_package(*, client_email: str = "", amount_usd: float | None = None) 
         "shared_account": True,
         "no_alpaca_login": True,
         "paper": bool(s.effective_alpaca_paper),
-        "headline": (
-            "Transfiere desde TU banco hacia los datos de Monarch. "
-            "No abras Alpaca, no pulses «Select» ni conectes tu cuenta bancaria allí — eso solo lo hace la mesa."
-        ),
-        "steps": [
-            "Abre la app o web de TU banco (no Alpaca).",
-            "Crea una transferencia ACH o wire HACIA los datos de abajo (copiar/pegar).",
-            f"En referencia/memo escribe exactamente: {memo}",
-            "Cuando tu banco confirme el envío, pulsa «Ya deposité». La mesa verifica y marca recibido.",
-        ],
-        "desk_only_note": (
-            "La mesa obtiene estos datos en Alpaca → Funds → Incoming wire / ACH details. "
-            "El flujo «Deposit Funds → Select → login al banco» es solo para el dueño de la cuenta Alpaca."
-        ),
+        "headline": "",
+        "steps": [],
     }
 
 
@@ -205,10 +193,7 @@ class CapitalRequestService:
             "ok": True,
             "request": self._serialize(row),
             "funding": funding,
-            "message": (
-                "Listo. Transfiere a los datos bancarios de Monarch (sin entrar a Alpaca). "
-                "Luego pulsa «Ya deposité»."
-            ),
+            "message": "Listo. Usa los datos de transferencia y pulsa «Ya deposité» cuando envíes el dinero.",
         }
 
     async def client_confirm_deposit(self, *, org_id: str, user_id: str, request_id: str) -> dict[str, Any]:
@@ -223,7 +208,7 @@ class CapitalRequestService:
         return {
             "ok": True,
             "request": self._serialize(row),
-            "message": "Aviso enviado a la mesa. Confirmarán cuando el dinero aparezca en Alpaca.",
+            "message": "Aviso enviado a la mesa.",
         }
 
     async def request_withdrawal(

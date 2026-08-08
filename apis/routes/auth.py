@@ -344,7 +344,7 @@ async def capital_deposit(
             f"Monto: ${body.amount_usd:,.2f}\n"
             f"Ref/memo: {resolved.get('email')}\n"
             f"{(body.note or '')[:200]}\n"
-            f"El cliente recibió los datos bancarios de Monarch (sin login Alpaca)."
+            f"El cliente recibió los datos bancarios de transferencia."
         ),
     )
     metrics.inc("capital_deposit_requested")

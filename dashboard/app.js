@@ -153,11 +153,8 @@ function applyRoleMode(principal, clientView) {
   const copy = document.getElementById("client-mode-copy");
   if (copy && !desk) {
     copy.innerHTML = invested
-      ? `<strong>Tu inversión.</strong> Ves tu capital, tu estimado según el rendimiento de la cuenta, y noticias.
-        No analizas tickers ni ves el portafolio total de la mesa.`
-      : `<strong>Antes de invertir.</strong> Solo ves el <em>rendimiento</em> al que va la cuenta Monarch.
-        Para aportar: transfiere desde <strong>tu banco</strong> a los datos de abajo
-        (no uses Alpaca ni «conectar cuenta bancaria»).`;
+      ? `<strong>Tu inversión.</strong> Ves tu capital, tu estimado según el rendimiento de la cuenta, y noticias.`
+      : `<strong>Antes de invertir.</strong> Solo ves el rendimiento al que va la cuenta Monarch.`;
   }
 }
 
@@ -1822,20 +1819,18 @@ function renderFundingBox(funding) {
   const box = document.getElementById("funding-box");
   if (!box || !funding) return;
   const bank = funding.bank || {};
-  const steps = (funding.steps || []).map((s) => `<li>${s}</li>`).join("");
-  const wire = funding.wire_details
-    ? `<pre style="white-space:pre-wrap;margin:0.5rem 0 0;font-size:11px">${funding.wire_details}</pre>`
-    : "";
+  const wire = (funding.wire_details || "").trim();
+  // Always reserve rows — empty until mesa fills env bank details
   const rows = [
-    ["Beneficiario", bank.beneficiary],
-    ["Banco", bank.bank_name],
-    ["Routing ABA", bank.routing_number],
-    ["Número de cuenta", bank.account_number],
-    ["Tipo", bank.account_type],
-    ["SWIFT (si aplica)", bank.swift],
-    ["Monto", funding.amount_usd != null ? `$${Number(funding.amount_usd).toLocaleString()} USD` : ""],
-    ["Referencia / memo", funding.memo_reference],
-  ].filter(([, v]) => v);
+    ["Beneficiario", bank.beneficiary || "—"],
+    ["Banco", bank.bank_name || "—"],
+    ["Routing ABA", bank.routing_number || "—"],
+    ["Número de cuenta", bank.account_number || "—"],
+    ["Tipo", bank.account_type || "—"],
+    ["SWIFT", bank.swift || "—"],
+    ["Monto", funding.amount_usd != null ? `$${Number(funding.amount_usd).toLocaleString()} USD` : "—"],
+    ["Referencia / memo", funding.memo_reference || "—"],
+  ];
 
   const bankRows = rows.map(([label, value]) => `
     <div class="fund-row">
@@ -1843,31 +1838,18 @@ function renderFundingBox(funding) {
         <div class="fund-label">${label}</div>
         <div class="fund-value memo">${value}</div>
       </div>
-      <button type="button" class="btn" data-copy="${String(value).replace(/"/g, "&quot;")}" data-copy-label="${label}">Copiar</button>
+      ${value && value !== "—"
+        ? `<button type="button" class="btn" data-copy="${String(value).replace(/"/g, "&quot;")}" data-copy-label="${label}">Copiar</button>`
+        : ""}
     </div>
   `).join("");
 
-  const missing = !funding.configured
-    ? `<p class="muted" style="margin:0.5rem 0 0">La mesa aún debe publicar los datos bancarios de depósito. Si no los ves, escríbeles — no uses Alpaca login.</p>`
-    : "";
-
-  // Never show Alpaca login links (blocked server-side too)
-  const extraLink = funding.funding_url
-    ? `<p style="margin:0.45rem 0 0">Página adicional (opcional): <a href="${funding.funding_url}" target="_blank" rel="noopener">${funding.funding_url}</a></p>`
-    : "";
-
   box.innerHTML = `
-    <strong>Datos para tu transferencia — ${funding.account_name || "Monarch Capital"}</strong>
-    <p style="margin:0.35rem 0 0;color:#fde68a">${funding.headline || "Desde TU banco hacia estos datos. Sin Alpaca."}</p>
-    <ol>${steps}</ol>
-    <div class="fund-grid">${bankRows || "<p class='muted'>La mesa aún no publicó routing/cuenta. Pídeselos — no uses el «Select» de Alpaca.</p>"}</div>
-    ${funding.instructions ? `<p style="margin:0.55rem 0 0;white-space:pre-wrap">${funding.instructions}</p>` : ""}
-    ${wire}
-    ${extraLink}
-    ${missing}
-    <p class="muted" style="margin:0.55rem 0 0;font-size:11px">Si en Alpaca ves «Deposit Funds → Select», ignóralo: eso conecta el banco del dueño de la cuenta (solo la mesa).</p>
+    <strong>Datos para tu transferencia</strong>
+    <div class="fund-grid">${bankRows}</div>
+    ${wire ? `<pre style="white-space:pre-wrap;margin:0.5rem 0 0;font-size:11px">${wire}</pre>` : ""}
     <div style="margin-top:0.75rem">
-      <button type="button" class="btn primary" id="btn-deposit-confirm">Ya deposité — avisar a la mesa</button>
+      <button type="button" class="btn primary" id="btn-deposit-confirm">Ya deposité</button>
     </div>
   `;
   box.classList.remove("hidden");
@@ -1880,12 +1862,19 @@ function renderFundingBox(funding) {
   }
 }
 
+function hideFundingBox() {
+  const box = document.getElementById("funding-box");
+  if (!box) return;
+  box.classList.add("hidden");
+  box.innerHTML = "";
+}
+
 function _capitalStatusLabel(kind, status) {
   const map = {
     deposit: {
       requested: "depósito: pendiente de envío",
       client_confirmed: "depósito: cliente confirma envío",
-      received: "depósito: recibido en Alpaca",
+      received: "depósito: recibido",
       rejected: "depósito: rechazado",
     },
     withdrawal: {
@@ -1935,19 +1924,17 @@ async function loadClientCapital() {
       window.__pendingDepositId = openDep.id;
       if (depMsg) {
         depMsg.textContent = openDep.status === "client_confirmed"
-          ? `Aviso enviado. Monto $${Number(openDep.amount_usd).toLocaleString()} — la mesa confirmará en Alpaca.`
-          : `Depósito pendiente $${Number(openDep.amount_usd).toLocaleString()}. Usa el enlace de fondeo y luego «Ya deposité».`;
+          ? `Aviso enviado. Monto $${Number(openDep.amount_usd).toLocaleString()}.`
+          : `Depósito pendiente $${Number(openDep.amount_usd).toLocaleString()}.`;
       }
-      if (openDep.status === "requested") {
-        try {
-          const fund = await api(`${API}/auth/capital/funding`);
-          renderFundingBox(fund.funding);
-          const confirmBtn = document.getElementById("btn-deposit-confirm");
-          if (confirmBtn) confirmBtn.onclick = () => confirmClientDeposit(openDep.id);
-        } catch { /* ignore */ }
+      // Show bank details only right after pressing Depositar (and while still pending send)
+      if (!(window.__showFundingAfterDeposit && openDep.status === "requested")) {
+        hideFundingBox();
       }
-    } else if (depMsg) {
-      depMsg.textContent = "Indica el monto y pulsa Depositar para recibir el enlace a la cuenta Alpaca de Monarch.";
+    } else {
+      window.__showFundingAfterDeposit = false;
+      hideFundingBox();
+      if (depMsg) depMsg.textContent = "";
     }
     const openW = items.find((r) => r.kind === "withdrawal" && (r.status === "requested" || r.status === "approved"));
     if (wMsg) {
@@ -1973,10 +1960,11 @@ async function submitDepositRequest() {
       body: JSON.stringify({ amount_usd: amount, note }),
     });
     window.__pendingDepositId = r.request?.id;
+    window.__showFundingAfterDeposit = true;
     if (r.funding) renderFundingBox(r.funding);
     const depMsg = document.getElementById("deposit-status-msg");
-    if (depMsg) depMsg.textContent = r.message || "Usa el enlace para depositar en Alpaca.";
-    toast("Enlace de depósito listo — fondea la cuenta Alpaca de Monarch");
+    if (depMsg) depMsg.textContent = r.message || "Datos de transferencia listos.";
+    toast("Datos de transferencia listos");
     loadClientCapital();
   } catch (e) {
     toast(e.message);
