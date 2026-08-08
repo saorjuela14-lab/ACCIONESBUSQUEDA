@@ -27,7 +27,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/styles.css?v=17-shared-alpaca" />
+  <link rel="stylesheet" href="/dashboard/static/styles.css?v=18-bank-deposit" />
   <!-- Heavy chart libs: defer so login/session UI is not blocked on cold start -->
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script defer src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -132,11 +132,11 @@
 
     <section class="panel client-banner hidden" id="client-monitor-banner" aria-label="Modo cliente">
       <p><strong>Modo monitoreo.</strong> Ves la cuenta Monarch. Solo la mesa invierte.
-        Los depósitos van a la <strong>misma cuenta Alpaca de la mesa</strong> (compartida; no se abre una cuenta por cliente).
-        También puedes solicitar un retiro para que la mesa lo apruebe.</p>
+        Para aportar, solo haces una <strong>transferencia bancaria</strong> a los datos de Monarch
+        (misma cuenta compartida). <strong>No te registres ni inicies sesión en Alpaca.</strong></p>
 
       <div class="capital-block">
-        <h4>Depositar en la cuenta Alpaca compartida (Monarch)</h4>
+        <h4>Depositar (transferencia a Monarch)</h4>
         <div class="deposit-row" id="client-deposit-row">
           <input id="deposit-amount" type="number" min="1" step="0.01" placeholder="Monto USD" />
           <input id="deposit-note" type="text" maxlength="280" placeholder="Nota (opcional)" />
@@ -555,9 +555,9 @@
     </div>
   </div>
 
-  <script src="/dashboard/static/reliability.js?v=17-shared-alpaca"></script>
-  <script src="/dashboard/static/voice.js?v=17-shared-alpaca"></script>
-  <script src="/dashboard/static/app.js?v=17-shared-alpaca"></script>
+  <script src="/dashboard/static/reliability.js?v=18-bank-deposit"></script>
+  <script src="/dashboard/static/voice.js?v=18-bank-deposit"></script>
+  <script src="/dashboard/static/app.js?v=18-bank-deposit"></script>
   <script>
     // Permanently kill service workers — they were serving stale JS/CSS after deploy
     if ("serviceWorker" in navigator) {

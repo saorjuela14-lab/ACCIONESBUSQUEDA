@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from typing import Any
+from urllib.parse import urlparse
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,30 +15,71 @@ from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+# Never send clients to Alpaca auth — that forces signup/login per person.
+_BLOCKED_FUNDING_HOSTS = {
+    "app.alpaca.markets",
+    "alpaca.markets",
+    "broker-app.alpaca.markets",
+}
 
-def funding_package(*, client_email: str = "") -> dict[str, Any]:
-    """Instructions / links so the client can fund the ONE shared firm Alpaca account."""
+
+def _safe_funding_url(raw: str) -> str:
+    url = (raw or "").strip()
+    if not url:
+        return ""
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        return ""
+    if not host or host in _BLOCKED_FUNDING_HOSTS or host.endswith(".alpaca.markets"):
+        return ""
+    return url
+
+
+def funding_package(*, client_email: str = "", amount_usd: float | None = None) -> dict[str, Any]:
+    """Bank-transfer destination for the ONE shared firm account (no Alpaca login)."""
     s = get_settings()
     memo = (client_email or "tu-email@cliente.com").strip().lower()
+    bank_name = (s.alpaca_funding_bank_name or "").strip()
+    routing = (s.alpaca_funding_routing_number or "").strip()
+    account_no = (s.alpaca_funding_account_number or "").strip()
+    beneficiary = (s.alpaca_funding_beneficiary or s.alpaca_funding_account_name or "Monarch Capital").strip()
+    account_type = (s.alpaca_funding_account_type or "Checking").strip()
+    swift = (s.alpaca_funding_swift or "").strip()
     instructions = (s.alpaca_funding_instructions or "").strip()
     wire = (s.alpaca_funding_wire_details or "").strip()
+    funding_url = _safe_funding_url(s.alpaca_funding_url)
+    configured = bool(bank_name and routing and account_no) or bool(wire)
+
+    bank = {
+        "beneficiary": beneficiary,
+        "bank_name": bank_name,
+        "routing_number": routing,
+        "account_number": account_no,
+        "account_type": account_type,
+        "swift": swift,
+    }
     return {
         "account_name": s.alpaca_funding_account_name or "Monarch Capital",
-        "funding_url": s.alpaca_funding_url or "https://app.alpaca.markets/",
+        "funding_url": funding_url,  # empty unless a non-Alpaca custom page is configured
+        "bank": bank,
         "instructions": instructions,
         "wire_details": wire,
         "memo_reference": memo,
+        "amount_usd": amount_usd,
+        "configured": configured,
         "shared_account": True,
+        "no_alpaca_login": True,
         "paper": bool(s.effective_alpaca_paper),
         "headline": (
-            "Todos los clientes fondean la MISMA cuenta Alpaca de Monarch Capital "
-            "(la de la mesa). No se crea una cuenta Alpaca por cliente."
+            "Deposita solo con transferencia bancaria a la cuenta de Monarch. "
+            "No creas cuenta en Alpaca ni inicias sesión allí — todos fondean la misma cuenta de la mesa."
         ),
         "steps": [
-            "Abre el enlace de fondeo de la cuenta Alpaca ÚNICA de Monarch (mesa).",
-            "Transfiere el monto (ACH o wire) hacia ESA cuenta compartida — no a una cuenta tuya en Alpaca.",
-            f"En la referencia/memo escribe exactamente: {memo} (solo para identificar tu aporte dentro de la misma cuenta).",
-            "Cuando el banco confirme el envío, pulsa «Ya deposité» para avisar a la mesa.",
+            "Abre tu banca (app o web) — no uses Alpaca.",
+            "Haz una transferencia ACH o wire a los datos bancarios de Monarch que ves abajo.",
+            f"En referencia/memo escribe exactamente: {memo}",
+            "Cuando tu banco confirme el envío, pulsa «Ya deposité» para avisar a la mesa.",
         ],
     }
 
@@ -98,15 +140,15 @@ class CapitalRequestService:
         org.deposit_requested_usd = float(amount_usd)
         org.deposit_note = row.note
         await self._session.commit()
-        funding = funding_package(client_email=user.email)
+        funding = funding_package(client_email=user.email, amount_usd=float(amount_usd))
         logger.info("capital.deposit_requested", email=user.email, amount=amount_usd)
         return {
             "ok": True,
             "request": self._serialize(row),
             "funding": funding,
             "message": (
-                "Solicitud registrada. Usa el enlace e instrucciones para depositar "
-                "en la cuenta Alpaca de Monarch. Luego pulsa «Ya deposité»."
+                "Listo. Transfiere a los datos bancarios de Monarch (sin entrar a Alpaca). "
+                "Luego pulsa «Ya deposité»."
             ),
         }
 

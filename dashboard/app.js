@@ -1772,32 +1772,74 @@ async function deskSetClientPassword(email) {
   }
 }
 
+function _copyText(text, label) {
+  const v = (text || "").trim();
+  if (!v) return;
+  const done = () => toast(`${label || "Dato"} copiado`);
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(v).then(done).catch(() => {
+      window.prompt("Copia este valor:", v);
+    });
+  } else {
+    window.prompt("Copia este valor:", v);
+  }
+}
+
 function renderFundingBox(funding) {
   const box = document.getElementById("funding-box");
   if (!box || !funding) return;
+  const bank = funding.bank || {};
   const steps = (funding.steps || []).map((s) => `<li>${s}</li>`).join("");
   const wire = funding.wire_details
     ? `<pre style="white-space:pre-wrap;margin:0.5rem 0 0;font-size:11px">${funding.wire_details}</pre>`
     : "";
-  const paperNote = funding.paper
-    ? `<p class="muted" style="margin:0.4rem 0 0">Nota: la cuenta está en modo paper — el fondeo real aplica a la cuenta live de Alpaca.</p>`
+  const rows = [
+    ["Beneficiario", bank.beneficiary],
+    ["Banco", bank.bank_name],
+    ["Routing ABA", bank.routing_number],
+    ["Número de cuenta", bank.account_number],
+    ["Tipo", bank.account_type],
+    ["SWIFT (si aplica)", bank.swift],
+    ["Monto", funding.amount_usd != null ? `$${Number(funding.amount_usd).toLocaleString()} USD` : ""],
+    ["Referencia / memo", funding.memo_reference],
+  ].filter(([, v]) => v);
+
+  const bankRows = rows.map(([label, value]) => `
+    <div class="fund-row">
+      <div>
+        <div class="fund-label">${label}</div>
+        <div class="fund-value memo">${value}</div>
+      </div>
+      <button type="button" class="btn" data-copy="${String(value).replace(/"/g, "&quot;")}" data-copy-label="${label}">Copiar</button>
+    </div>
+  `).join("");
+
+  const missing = !funding.configured
+    ? `<p class="muted" style="margin:0.5rem 0 0">La mesa aún debe publicar los datos bancarios de depósito. Si no los ves, escríbeles — no uses Alpaca login.</p>`
     : "";
+
+  // Never show Alpaca login links (blocked server-side too)
+  const extraLink = funding.funding_url
+    ? `<p style="margin:0.45rem 0 0">Página adicional (opcional): <a href="${funding.funding_url}" target="_blank" rel="noopener">${funding.funding_url}</a></p>`
+    : "";
+
   box.innerHTML = `
-    <strong>Fondeo a la cuenta Alpaca compartida — ${funding.account_name || "Monarch Capital"}</strong>
-    <p style="margin:0.35rem 0 0;color:#fde68a">${funding.headline || "Todos fondean la misma cuenta de la mesa. No hay cuenta Alpaca individual."}</p>
-    <p style="margin:0.35rem 0 0">Enlace de fondeo (cuenta única de la mesa):
-      <a href="${funding.funding_url}" target="_blank" rel="noopener">${funding.funding_url}</a>
-    </p>
+    <strong>Dónde depositar — ${funding.account_name || "Monarch Capital"}</strong>
+    <p style="margin:0.35rem 0 0;color:#fde68a">${funding.headline || "Solo transferencia bancaria. Sin registro ni login en Alpaca."}</p>
     <ol>${steps}</ol>
-    <p>Referencia / memo (identifica tu aporte en la misma cuenta): <span class="memo">${funding.memo_reference || ""}</span></p>
-    ${funding.instructions ? `<p style="margin:0.45rem 0 0;white-space:pre-wrap">${funding.instructions}</p>` : ""}
+    <div class="fund-grid">${bankRows || "<p class='muted'>Sin datos bancarios configurados todavía.</p>"}</div>
+    ${funding.instructions ? `<p style="margin:0.55rem 0 0;white-space:pre-wrap">${funding.instructions}</p>` : ""}
     ${wire}
-    ${paperNote}
-    <div style="margin-top:0.65rem">
+    ${extraLink}
+    ${missing}
+    <div style="margin-top:0.75rem">
       <button type="button" class="btn primary" id="btn-deposit-confirm">Ya deposité — avisar a la mesa</button>
     </div>
   `;
   box.classList.remove("hidden");
+  box.querySelectorAll("[data-copy]").forEach((btn) => {
+    btn.onclick = () => _copyText(btn.getAttribute("data-copy"), btn.getAttribute("data-copy-label"));
+  });
   const confirmBtn = document.getElementById("btn-deposit-confirm");
   if (confirmBtn && window.__pendingDepositId) {
     confirmBtn.onclick = () => confirmClientDeposit(window.__pendingDepositId);

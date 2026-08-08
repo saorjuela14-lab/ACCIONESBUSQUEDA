@@ -17,7 +17,11 @@ def _env(monkeypatch, tmp_path):
     monkeypatch.setenv("WHATSAPP_BRIEFING_ENABLED", "false")
     monkeypatch.setenv("COMPANY_BOOTSTRAP_EMAIL", "")
     monkeypatch.setenv("COMPANY_BOOTSTRAP_PASSWORD", "")
-    monkeypatch.setenv("ALPACA_FUNDING_URL", "https://app.alpaca.markets/funding-test")
+    monkeypatch.setenv("ALPACA_FUNDING_URL", "https://app.alpaca.markets/")  # must be blocked
+    monkeypatch.setenv("ALPACA_FUNDING_BANK_NAME", "Test Bank")
+    monkeypatch.setenv("ALPACA_FUNDING_ROUTING_NUMBER", "021000021")
+    monkeypatch.setenv("ALPACA_FUNDING_ACCOUNT_NUMBER", "123456789")
+    monkeypatch.setenv("ALPACA_FUNDING_BENEFICIARY", "Monarch Capital")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -60,10 +64,14 @@ async def test_deposit_returns_funding_and_client_confirm():
         )
         assert dep.status_code == 200, dep.text
         body = dep.json()
-        assert body["funding"]["funding_url"] == "https://app.alpaca.markets/funding-test"
+        # Alpaca login URLs are blocked — clients only get bank transfer details
+        assert body["funding"]["funding_url"] == ""
+        assert body["funding"]["no_alpaca_login"] is True
+        assert body["funding"]["bank"]["routing_number"] == "021000021"
+        assert body["funding"]["bank"]["account_number"] == "123456789"
         assert body["funding"]["memo_reference"] == "fund@co.test"
         assert body["funding"]["shared_account"] is True
-        assert "MISMA cuenta" in (body["funding"].get("headline") or "")
+        assert "Alpaca" in (body["funding"].get("headline") or "")
         req_id = body["request"]["id"]
         assert body["request"]["status"] == "requested"
 

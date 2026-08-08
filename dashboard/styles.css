@@ -895,6 +895,15 @@ body.role-client .client-banner { display: block; }
   font-family: ui-monospace, monospace; letter-spacing: 0.02em;
   color: #fde68a;
 }
+.fund-grid { display: flex; flex-direction: column; gap: 0.45rem; margin-top: 0.55rem; }
+.fund-row {
+  display: flex; gap: 0.5rem; align-items: center; justify-content: space-between;
+  padding: 0.45rem 0.55rem; border: 1px solid rgba(196,165,116,0.25);
+  border-radius: 6px; background: rgba(0,0,0,0.18);
+}
+.fund-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.fund-value { font-size: 13px; margin-top: 0.1rem; word-break: break-all; }
+.fund-row .btn { flex-shrink: 0; min-height: 34px; font-size: 11px; }
 .access-list { display: flex; flex-direction: column; gap: 0.55rem; }
 .access-card {
   display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;
