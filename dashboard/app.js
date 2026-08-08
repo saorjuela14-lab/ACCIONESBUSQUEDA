@@ -1627,7 +1627,7 @@ async function _accessAction(orgId, action, btn) {
   if (!orgId || !action) return;
   if (btn) {
     btn.disabled = true;
-    btn.textContent = action === "reject" ? "Rechazando…" : action === "approve" ? "Autorizando…" : "Guardando…";
+      btn.textContent = action === "reject" ? "Eliminando…" : action === "approve" ? "Autorizando…" : "Guardando…";
   }
   try {
     const path = action === "deposit-received"
@@ -1635,7 +1635,7 @@ async function _accessAction(orgId, action, btn) {
       : `${API}/auth/companies/${orgId}/${action}`;
     await api(path, { method: "POST", body: JSON.stringify({}) });
     toast(
-      action === "reject" ? "Solicitud rechazada"
+      action === "reject" ? "Solicitud eliminada"
         : action === "approve" ? "Cliente autorizado"
           : "Depósito marcado como recibido"
     );
@@ -1661,12 +1661,13 @@ async function loadAccessRequests() {
       box.innerHTML = `<p class="muted">Sin solicitudes todavía.</p>`;
       return;
     }
-    // Pending first, then approved, rejected last
-    const rank = { pending: 0, approved: 1, rejected: 2 };
+    // Pending first, then approved (rejected are deleted server-side)
+    const rank = { pending: 0, approved: 1 };
     list.sort((a, b) => (rank[a.status] ?? 9) - (rank[b.status] ?? 9));
 
     box.innerHTML = list.map((c) => {
       const status = c.status || (c.active ? "approved" : "pending");
+      if (status === "rejected") return ""; // should already be purged
       const deposit = c.deposit_status || "none";
       const depLabel = deposit === "requested"
         ? ` · depósito $${Number(c.deposit_requested_usd || 0).toLocaleString()} solicitado`
@@ -1677,8 +1678,6 @@ async function loadAccessRequests() {
       if (status === "pending") {
         actions.push(`<button type="button" class="btn primary" data-access-action="approve" data-org-id="${c.id}">Autorizar</button>`);
         actions.push(`<button type="button" class="btn danger" data-access-action="reject" data-org-id="${c.id}">Rechazar</button>`);
-      } else if (status === "rejected") {
-        actions.push(`<button type="button" class="btn primary" data-access-action="approve" data-org-id="${c.id}">Autorizar de nuevo</button>`);
       }
       if (deposit === "requested") {
         actions.push(`<button type="button" class="btn" data-access-action="deposit-received" data-org-id="${c.id}">Marcar depósito recibido</button>`);

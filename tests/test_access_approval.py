@@ -98,7 +98,7 @@ async def test_public_register_is_pending_until_desk_approves():
 
 
 @pytest.mark.asyncio
-async def test_reject_marks_status_rejected_not_pending():
+async def test_reject_deletes_access_request():
     await init_db()
     app = create_app()
     transport = ASGITransport(app=app)
@@ -122,13 +122,12 @@ async def test_reject_marks_status_rejected_not_pending():
             json={},
         )
         assert rej.status_code == 200, rej.text
-        assert rej.json()["status"] == "rejected"
+        assert rej.json().get("deleted") is True
 
         listed = await client.get("/api/v1/auth/companies", headers=headers)
-        item = next(i for i in listed.json()["items"] if i["id"] == org_id)
-        assert item["status"] == "rejected"
+        assert all(i["id"] != org_id for i in listed.json()["items"])
 
-        # Still cannot login
+        # Cannot login — account gone
         login = await client.post(
             "/api/v1/auth/company/login",
             json={"email": "no@gracias.test", "password": "segura1234"},
