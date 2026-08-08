@@ -56,6 +56,9 @@ async def test_forgot_and_reset_password_flow():
         body = forgot.json()
         assert body.get("ok") is True
         assert "code" not in body  # never leak code publicly
+        assert body.get("request_id")
+        assert body.get("email") == email
+        request_id = body["request_id"]
 
         listed = await client.get("/api/v1/auth/password/resets", headers=desk_h)
         assert listed.status_code == 200
@@ -64,15 +67,37 @@ async def test_forgot_and_reset_password_flow():
         code = items[0]["code"]
         assert code and len(code) == 6
 
+        # Wrong email + same request_id must fail
+        wrong_email = await client.post(
+            "/api/v1/auth/password/reset",
+            json={
+                "email": "otro@co.test",
+                "code": code,
+                "new_password": "nueva1234",
+                "request_id": request_id,
+            },
+        )
+        assert wrong_email.status_code == 400
+
         bad = await client.post(
             "/api/v1/auth/password/reset",
-            json={"email": email, "code": "000000", "new_password": "nueva1234"},
+            json={
+                "email": email,
+                "code": "000000",
+                "new_password": "nueva1234",
+                "request_id": request_id,
+            },
         )
         assert bad.status_code == 400
 
         ok = await client.post(
             "/api/v1/auth/password/reset",
-            json={"email": email, "code": code, "new_password": "nueva1234"},
+            json={
+                "email": email,
+                "code": code,
+                "new_password": "nueva1234",
+                "request_id": request_id,
+            },
         )
         assert ok.status_code == 200, ok.text
 

@@ -795,6 +795,12 @@ html.session-ok #boot-splash {
 }
 .link-btn:hover { color: #e8dcc8; }
 #forgot-panel.hidden, #login-main.hidden { display: none; }
+#forgot-email[readonly] {
+  opacity: 0.9;
+  cursor: not-allowed;
+  background: rgba(0, 0, 0, 0.35);
+  color: #e8dcc8;
+}
 .login-tabs { display: flex; gap: 6px; margin-bottom: 0.85rem; }
 .login-tab {
   flex: 1; background: var(--surface); border: 1px solid var(--border); color: var(--muted);

@@ -606,6 +606,7 @@ class CompanyAuthService:
         return {
             **generic,
             "created": True,
+            "request_id": reset.id,
             "email": email,
             "org_name": org.name,
             "full_name": user.full_name,
@@ -619,6 +620,7 @@ class CompanyAuthService:
         email: str,
         code: str,
         new_password: str,
+        request_id: str | None = None,
     ) -> dict[str, Any]:
         email = (email or "").strip().lower()
         code = re.sub(r"\D", "", code or "")
@@ -639,10 +641,23 @@ class CompanyAuthService:
         if not org or not org.active:
             raise ValueError("Código inválido o expirado")
 
+        # If the browser sent a request_id, it must belong to this same email
+        if request_id:
+            rid = await self._session.execute(
+                select(PasswordResetORM).where(PasswordResetORM.id == request_id)
+            )
+            req_row = rid.scalar_one_or_none()
+            if not req_row or (req_row.email or "").lower() != email:
+                raise ValueError(
+                    "La solicitud no corresponde a este email. "
+                    "Usa el mismo correo con el que pediste el código."
+                )
+
         resets = await self._session.execute(
             select(PasswordResetORM)
             .where(
                 PasswordResetORM.user_id == user.id,
+                PasswordResetORM.email == email,
                 PasswordResetORM.used.is_(False),
             )
             .order_by(PasswordResetORM.created_at.desc())
@@ -656,6 +671,8 @@ class CompanyAuthService:
             if exp < now:
                 row.used = True
                 row.code_plain = None
+                continue
+            if request_id and row.id != request_id:
                 continue
             if hmac.compare_digest(row.code_hash, _hash_token(code)):
                 matched = row
