@@ -147,11 +147,8 @@ function applySessionUi(principal) {
     chip.classList.remove("hidden");
   }
   if (logoutBtn) logoutBtn.classList.toggle("hidden", !principal);
-
-  // WhatsApp creator controls: desk only
-  const notifyBox = document.getElementById("notify-phone-box");
-  if (notifyBox) {
-    notifyBox.classList.toggle("hidden", !isDeskPrincipal(principal));
+  if (principal) {
+    document.documentElement.classList.add("session-ok");
   }
 }
 
@@ -179,12 +176,6 @@ async function logoutSession() {
 
 async function ensureAuth() {
   try {
-    const s = await fetch(`${API}/auth/status`, { credentials: "same-origin" }).then((r) => r.json());
-    if (!s.auth_required) {
-      applySessionUi(null);
-      return true;
-    }
-
     const token = localStorage.getItem("nexbuy_token");
     let me = null;
     if (token) {
@@ -206,17 +197,18 @@ async function ensureAuth() {
       return false;
     }
     const principal = await me.json();
-    // Keep LS in sync for desk token logins so Authorization header stays set
     if (token && !localStorage.getItem("nexbuy_token")) {
       localStorage.setItem("nexbuy_token", token);
     }
     applySessionUi(principal);
-    if (isDeskPrincipal(principal)) {
-      await loadNotifyPhonePrefs();
-    }
     return true;
   } catch {
-    // Network blip: do not kick the user out
+    // Network blip with a local token: show UI; without token go to login
+    if (!localStorage.getItem("nexbuy_token")) {
+      location.replace("/login");
+      return false;
+    }
+    document.documentElement.classList.add("session-ok");
     return true;
   }
 }
@@ -1484,15 +1476,6 @@ function renderDashboard(d) {
 }
 
 async function loadPushStatus() {
-  if (!isDeskPrincipal()) {
-    const badge = $("#push-status-badge");
-    if (badge) {
-      badge.textContent = "";
-      badge.className = "push-badge muted";
-      badge.title = "";
-    }
-    return;
-  }
   try {
     const s = await api(`${API}/alerts/push-status`);
     const badge = $("#push-status-badge");
@@ -1510,76 +1493,18 @@ async function loadPushStatus() {
     } else {
       badge.textContent = "push off";
       badge.className = "push-badge off";
-      badge.title = "Configura Telegram/WhatsApp en el servidor o guarda tu número abajo";
+      badge.title = "Configura Telegram y/o WhatsApp (CallMeBot/Meta/Twilio) en el servidor";
     }
   } catch {
     /* ignore */
-  }
-}
-
-async function loadNotifyPhonePrefs() {
-  if (!isDeskPrincipal()) return;
-  const input = $("#notify-phone-input");
-  const keyInput = $("#notify-wa-key-input");
-  if (!input) return;
-  try {
-    const p = window.__monarchPrincipal;
-    if (p && typeof p.notify_phone === "string" && p.notify_phone) {
-      input.value = p.notify_phone;
-    } else {
-      const me = await api(`${API}/auth/me/notify`);
-      if (me.notify_phone) input.value = me.notify_phone;
-      if (keyInput && me.has_whatsapp_key) {
-        keyInput.placeholder = "Clave CallMeBot guardada · deja vacío para no cambiar";
-      }
-    }
-  } catch {
-    /* ignore */
-  }
-}
-
-async function saveNotifyPhone() {
-  if (!isDeskPrincipal()) return;
-  const input = $("#notify-phone-input");
-  const keyInput = $("#notify-wa-key-input");
-  if (!input) return;
-  const phone = (input.value || "").trim();
-  const payload = { phone };
-  const key = (keyInput?.value || "").trim();
-  if (key) payload.whatsapp_api_key = key;
-  toast("Guardando WhatsApp…");
-  try {
-    const r = await api(`${API}/auth/me/notify`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (window.__monarchPrincipal) {
-      window.__monarchPrincipal.notify_phone = r.notify_phone || "";
-      window.__monarchPrincipal.has_whatsapp_key = !!r.has_whatsapp_key;
-    }
-    if (keyInput) keyInput.value = "";
-    toast(
-      r.notify_phone
-        ? `Alertas mesa → ${r.notify_phone}`
-        : "Número eliminado (solo canales del servidor)"
-    );
-  } catch (e) {
-    toast("WhatsApp: " + e.message);
   }
 }
 
 async function testPushNotification() {
-  if (!isDeskPrincipal()) return;
   toast("Enviando alerta de prueba…");
   try {
     const r = await api(`${API}/alerts/test-push`, { method: "POST" });
-    const userOk = r.user_whatsapp && Object.values(r.user_whatsapp).some(Boolean);
-    if (r.ok) {
-      toast(userOk ? "Push enviado (incluye tu WhatsApp)" : "Push de prueba enviado");
-    } else {
-      toast("Push no entregado — guarda tu número o revisa la config del servidor");
-    }
+    toast(r.ok ? "Push de prueba enviado" : "Push no entregado — revisa configuración");
   } catch (e) { toast("Push: " + e.message); }
   try {
     const b = await api(`${API}/alerts/briefing/send?session_kind=manual`, { method: "POST" });
@@ -2756,8 +2681,6 @@ $("#btn-disc-research").onclick = runDiscoveryResearch;
 $("#btn-disc-analyze").onclick = runDiscoveryAnalyze;
 $("#btn-disc-proposal").onclick = runDiscoveryProposal;
 $("#btn-test-push") && ($("#btn-test-push").onclick = testPushNotification);
-const btnSaveNotify = $("#btn-save-notify-phone");
-if (btnSaveNotify) btnSaveNotify.onclick = saveNotifyPhone;
 $("#btn-logout") && ($("#btn-logout").onclick = logoutSession);
 $("#btn-shock").onclick = simulateShock;
 

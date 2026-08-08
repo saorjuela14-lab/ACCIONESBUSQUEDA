@@ -1,4 +1,4 @@
-const CACHE = "monarch-v5";
+const CACHE = "monarch-v6-login-first";
 const ASSETS = [
   "/dashboard/static/styles.css",
   "/dashboard/static/reliability.js",
@@ -24,9 +24,18 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
   const url = new URL(e.request.url);
-  if (url.pathname.startsWith("/api/")) return;
 
-  // JS/CSS: network first so voice fixes deploy immediately
+  // Never cache HTML entry points — login must always be server-gated
+  if (
+    url.pathname === "/" ||
+    url.pathname === "/login" ||
+    url.pathname === "/dashboard" ||
+    url.pathname.startsWith("/api/")
+  ) {
+    return; // network only (default browser fetch)
+  }
+
+  // JS/CSS: network first so auth/login fixes deploy immediately
   if (url.pathname.includes("/dashboard/static/") && /\.(js|css)$/.test(url.pathname)) {
     e.respondWith(
       fetch(e.request)
@@ -40,7 +49,10 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  e.respondWith(
-    caches.match(e.request).then((cached) => cached || fetch(e.request).catch(() => caches.match("/dashboard")))
-  );
+  // Static assets only
+  if (url.pathname.startsWith("/dashboard/static/")) {
+    e.respondWith(
+      caches.match(e.request).then((cached) => cached || fetch(e.request))
+    );
+  }
 });

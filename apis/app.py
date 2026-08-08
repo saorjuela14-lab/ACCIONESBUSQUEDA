@@ -3,13 +3,13 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apis.middleware.access_auth import AccessTokenMiddleware
+from apis.middleware.access_auth import AccessTokenMiddleware, _extract_token
 from apis.routes import alerts, allocation, analysis, auth, broker, correlations, dashboard, discovery, graph, health, market, ops, portfolio, proposal, providers, recommendations, reports, risk, sentiment, voice, watchlist
 from config.settings import get_settings
 from database.engine import get_session, init_db
@@ -102,17 +102,28 @@ def create_app() -> FastAPI:
         app.mount("/dashboard/static", StaticFiles(directory=dashboard_dir), name="dashboard-static")
 
         @app.get("/")
-        async def root():
-            # Product surface = terminal only (pitch deck lives in Canva / repo docs)
-            return RedirectResponse(url="/dashboard")
+        async def root(request: Request):
+            # Login first; only go to terminal when a session token is present.
+            if _extract_token(request):
+                return RedirectResponse(url="/dashboard", status_code=302)
+            return RedirectResponse(url="/login", status_code=302)
 
         @app.get("/dashboard")
-        async def dashboard_index():
-            return FileResponse(dashboard_dir / "index.html")
+        async def dashboard_index(request: Request):
+            # Never paint the terminal without a session token (cookie/header).
+            if not _extract_token(request):
+                return RedirectResponse(url="/login", status_code=302)
+            return FileResponse(
+                dashboard_dir / "index.html",
+                headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+            )
 
         @app.get("/login")
         async def login_page():
-            return FileResponse(dashboard_dir / "login.html")
+            return FileResponse(
+                dashboard_dir / "login.html",
+                headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+            )
 
     app.include_router(health.router, tags=["health"])
     app.include_router(auth.router, prefix="/api/v1", tags=["auth"])

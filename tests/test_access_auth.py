@@ -45,16 +45,34 @@ async def test_middleware_allows_when_no_token_configured(monkeypatch, tmp_path)
 
 
 @pytest.mark.asyncio
-async def test_middleware_redirects_dashboard_when_auth_required():
+async def test_middleware_redirects_dashboard_without_session():
     async def call_next(request):
         return Response("ok")
 
     mw = AccessTokenMiddleware(app=MagicMock())
-    mw._auth_required = AsyncMock(return_value=True)
     mw._resolve = AsyncMock(return_value=None)
 
     req = MagicMock()
     req.url.path = "/dashboard"
+    req.method = "GET"
+    req.headers = {}
+    req.query_params = {}
+    req.cookies = {}
+    resp = await mw.dispatch(req, call_next)
+    assert resp.status_code == 302
+    assert "/login" in resp.headers.get("location", "")
+
+
+@pytest.mark.asyncio
+async def test_middleware_root_goes_to_login_without_session():
+    async def call_next(request):
+        return Response("ok")
+
+    mw = AccessTokenMiddleware(app=MagicMock())
+    mw._resolve = AsyncMock(return_value=None)
+
+    req = MagicMock()
+    req.url.path = "/"
     req.method = "GET"
     req.headers = {}
     req.query_params = {}
