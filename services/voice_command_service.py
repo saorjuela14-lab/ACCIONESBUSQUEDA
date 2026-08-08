@@ -112,7 +112,9 @@ class VoiceCommandService:
         text: str,
         session: AsyncSession,
         portfolio_id: str | None = None,
+        org_id: str | None = None,
     ) -> VoiceCommandResult:
+        self._org_id = org_id
         raw = (text or "").strip()
         if not raw:
             return VoiceCommandResult(
@@ -543,6 +545,9 @@ class VoiceCommandService:
             ui_action=f"analyze:{ticker}",
         )
 
+    def _org(self) -> str | None:
+        return getattr(self, "_org_id", None) or "monarch"
+
     async def _scan_watchlist(self, session, params, portfolio_id) -> VoiceCommandResult:
         settings = get_settings()
         monitor = WatchlistMonitorService(
@@ -551,6 +556,7 @@ class VoiceCommandService:
             AlertService(AlertRepository(session), settings.alert_cooldown_hours),
             get_market_provider(),
             get_news_provider(),
+            org_id=self._org(),
         )
         result = await monitor.scan_all()
         alerts = result.get("alerts", 0)
@@ -604,7 +610,7 @@ class VoiceCommandService:
         )
 
     async def _watchlist_list(self, session, params, portfolio_id) -> VoiceCommandResult:
-        items = await WatchlistRepository(session).list_active()
+        items = await WatchlistRepository(session).list_active(org_id=self._org())
         if not items:
             return VoiceCommandResult(
                 intent="watchlist_list",
@@ -636,7 +642,9 @@ class VoiceCommandService:
                 speech=f"No pude validar {ticker}. Verifica el símbolo.",
             )
 
-        await WatchlistService(WatchlistRepository(session), market).add(ticker, notes="Agregado por voz")
+        await WatchlistService(WatchlistRepository(session), market).add(
+            ticker, notes="Agregado por voz", org_id=self._org()
+        )
         name = quote.get("company_name") or ticker
         return VoiceCommandResult(
             intent="watchlist_add",
@@ -649,7 +657,7 @@ class VoiceCommandService:
         ticker = params["ticker"].upper()
         removed = await WatchlistService(
             WatchlistRepository(session), get_market_provider()
-        ).remove(ticker)
+        ).remove(ticker, org_id=self._org())
         if not removed:
             return VoiceCommandResult(
                 intent="watchlist_remove",
@@ -664,7 +672,7 @@ class VoiceCommandService:
         )
 
     async def _alerts(self, session, params, portfolio_id) -> VoiceCommandResult:
-        alerts = await AlertRepository(session).list_unacknowledged(8)
+        alerts = await AlertRepository(session).list_unacknowledged(8, org_id=self._org())
         if not alerts:
             return VoiceCommandResult(
                 intent="alerts",
@@ -679,7 +687,7 @@ class VoiceCommandService:
         )
 
     async def _portfolio_summary(self, session, params, portfolio_id) -> VoiceCommandResult:
-        portfolios = await PortfolioRepository(session).list_all()
+        portfolios = await PortfolioRepository(session).list_all(org_id=self._org())
         if not portfolios:
             return VoiceCommandResult(
                 intent="portfolio",

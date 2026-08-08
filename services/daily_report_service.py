@@ -37,8 +37,9 @@ class DailyReportService:
     async def generate_daily_report(self) -> DailyInvestmentReport:
         market_report = await self._monitor.generate_market_report(MarketSession.POST_MARKET)
         scan_result = await self._watchlist_monitor.scan_all()
-        watchlist = await self._watchlist.list_active()
-        active_alerts = await self._alerts.list_unacknowledged(20)
+        # Firm daily report uses the desk book only (never mix company tenants).
+        watchlist = await self._watchlist.list_active(org_id="monarch")
+        active_alerts = await self._alerts.list_unacknowledged(20, org_id="monarch")
 
         performers = await self._rank_watchlist_performance(watchlist)
 

@@ -33,13 +33,14 @@ class ReconcileService:
         account = await self._broker.get_account()
         broker_positions = await self._broker.get_positions()
 
-        portfolios = await self._portfolios.list_all()
+        # Desk broker book only — never touch company tenant portfolios.
+        portfolios = await self._portfolios.list_all(org_id="monarch")
         if not portfolios:
             # Create via bootstrap path if missing
             from services.portfolio_bootstrap_service import PortfolioBootstrapService
 
             boot = PortfolioBootstrapService(self._portfolios, self._broker)
-            pf = await boot.sync_from_alpaca()
+            pf = await boot.sync_from_alpaca(org_id="monarch")
             await self._audit.record(
                 "reconcile",
                 message=f"Portafolio creado/sincronizado desde Alpaca id={pf.id}",
@@ -110,6 +111,7 @@ class ReconcileService:
                 mirrored,
                 cash=float(account.cash or 0),
                 initial_capital=float(equity or pf.initial_capital),
+                org_id="monarch",
             )
             pf = updated
             synced = True

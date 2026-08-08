@@ -18,6 +18,7 @@ class WatchlistORM(Base):
     __tablename__ = "watchlist"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    org_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     ticker: Mapped[str] = mapped_column(String(16), index=True)
     company_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -29,6 +30,7 @@ class PortfolioORM(Base):
     __tablename__ = "portfolios"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    org_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(128))
     strategy: Mapped[str] = mapped_column(String(64))
     initial_capital: Mapped[float] = mapped_column(Float)
@@ -72,6 +74,7 @@ class AlertORM(Base):
     __tablename__ = "alerts"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    org_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     ticker: Mapped[str] = mapped_column(String(16), index=True)
     alert_type: Mapped[str] = mapped_column(String(32))
     severity: Mapped[str] = mapped_column(String(16))

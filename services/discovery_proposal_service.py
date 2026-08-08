@@ -39,6 +39,7 @@ class DiscoveryProposalService:
         risk_profile: str = "balanced",
         instrument_mode: str = "auto",
         add_to_watchlist: bool = True,
+        org_id: str | None = None,
     ) -> DiscoveryProposalResult:
         policy = capital_price_policy(budget, target_positions=proposal_top)
         themes = discovery_themes_for_capital(policy, themes)
@@ -95,7 +96,9 @@ class DiscoveryProposalService:
         if add_to_watchlist and self._watchlist:
             for t in tickers:
                 try:
-                    await self._watchlist.add(t, notes="Descubierto automáticamente")
+                    await self._watchlist.add(
+                        t, notes="Descubierto automáticamente", org_id=org_id
+                    )
                     added.append(t)
                 except Exception as exc:
                     logger.warning("discover.proposal.watchlist_failed", ticker=t, error=str(exc))

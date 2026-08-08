@@ -14,9 +14,14 @@ class ProposalApplyService:
     def __init__(self, portfolio_service: PortfolioService) -> None:
         self._portfolio = portfolio_service
 
-    async def apply(self, portfolio_id: str, proposal: InvestmentProposal) -> tuple[Portfolio, list[str]]:
+    async def apply(
+        self,
+        portfolio_id: str,
+        proposal: InvestmentProposal,
+        org_id: str | None = None,
+    ) -> tuple[Portfolio, list[str]]:
         warnings: list[str] = []
-        portfolio = await self._portfolio.refresh_prices(portfolio_id)
+        portfolio = await self._portfolio.refresh_prices(portfolio_id, org_id=org_id)
 
         for line in sorted(proposal.allocations, key=lambda x: x.purchase_order):
             cost = line.allocation_usd
@@ -32,7 +37,7 @@ class ProposalApplyService:
 
             shares = line.units if line.units > 0 else line.allocation_usd / max(line.price, 0.01)
             portfolio = await self._portfolio.add_position(
-                portfolio_id, line.ticker, shares, line.price
+                portfolio_id, line.ticker, shares, line.price, org_id=org_id
             )
 
         logger.info("proposal.applied", portfolio_id=portfolio_id, positions=len(proposal.allocations))

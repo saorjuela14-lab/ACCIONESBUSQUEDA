@@ -28,6 +28,7 @@ class WatchlistMonitorService:
         alert_service: AlertService,
         market_provider: MarketDataProvider,
         news_provider: NewsProvider,
+        org_id: str | None = "monarch",
     ) -> None:
         self._watchlist = watchlist_repo
         self._snapshots = snapshot_repo
@@ -35,10 +36,11 @@ class WatchlistMonitorService:
         self._market = market_provider
         self._technical = TechnicalAgent(market_provider)
         self._news = NewsAgent(news_provider)
+        self._org_id = org_id
 
     async def scan_all(self) -> dict:
-        items = await self._watchlist.list_active()
-        results = {"scanned": 0, "alerts": 0, "changes": []}
+        items = await self._watchlist.list_active(org_id=self._org_id)
+        results = {"scanned": 0, "alerts": 0, "changes": [], "org_id": self._org_id}
 
         for item in items:
             try:
@@ -91,6 +93,8 @@ class WatchlistMonitorService:
         await self._snapshots.save(ticker, current)
 
         if alerts:
+            for a in alerts:
+                a.org_id = self._org_id
             await self._alerts.emit_batch(alerts)
 
         return changes, alerts

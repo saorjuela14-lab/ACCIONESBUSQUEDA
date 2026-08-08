@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apis.deps import OrgScope, get_org_scope
 from apis.routes.analysis import _build_analysis_service
 from database.engine import get_session
 from database.repositories.portfolio_repository import PortfolioRepository
@@ -24,11 +25,13 @@ router = APIRouter()
 async def create_proposal(
     request: InvestmentProposalRequest,
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> InvestmentProposal:
     tickers = [t.upper() for t in (request.tickers or [])]
+    org = scope.book_org_id()
 
     if not tickers and request.use_watchlist:
-        watchlist = await WatchlistRepository(session).list_active()
+        watchlist = await WatchlistRepository(session).list_active(org_id=org)
         tickers = [w.ticker.upper() for w in watchlist]
 
     if not tickers:
@@ -67,10 +70,14 @@ async def create_proposal(
 async def apply_proposal(
     request: ProposalApplyRequest,
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> Portfolio:
+    org = scope.book_org_id()
     svc = ProposalApplyService(PortfolioService(PortfolioRepository(session), get_market_provider()))
     try:
-        portfolio, warnings = await svc.apply(request.portfolio_id, request.proposal)
+        portfolio, warnings = await svc.apply(
+            request.portfolio_id, request.proposal, org_id=org
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if warnings:

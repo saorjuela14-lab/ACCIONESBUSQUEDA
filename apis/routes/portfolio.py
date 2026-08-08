@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apis.deps import OrgScope, get_org_scope
 from database.engine import get_session
 from database.repositories.portfolio_repository import PortfolioRepository
 from database.repositories.portfolio_snapshot_repository import PortfolioSnapshotRepository
@@ -23,14 +24,18 @@ def _build_service(session: AsyncSession) -> PortfolioService:
 
 
 @router.get("/portfolios", response_model=list[Portfolio])
-async def list_portfolios(session: AsyncSession = Depends(get_session)) -> list[Portfolio]:
-    return await _build_service(session).list_all()
+async def list_portfolios(
+    session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
+) -> list[Portfolio]:
+    return await _build_service(session).list_all(org_id=scope.read_org_id())
 
 
 @router.post("/portfolios", response_model=Portfolio)
 async def create_portfolio(
     request: PortfolioCreateRequest,
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> Portfolio:
     return await _build_service(session).create(
         name=request.name,
@@ -38,6 +43,7 @@ async def create_portfolio(
         initial_capital=request.initial_capital,
         cash=request.cash,
         mode=request.mode,
+        org_id=scope.write_org_id(),
     )
 
 
@@ -45,9 +51,11 @@ async def create_portfolio(
 async def create_default_portfolio(
     request: PortfolioCreateRequest | None = None,
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> Portfolio:
     """Create a portfolio with optional mode and capital (defaults: real, $1000)."""
     service = _build_service(session)
+    org = scope.write_org_id()
     if request:
         return await service.create(
             name=request.name,
@@ -55,8 +63,9 @@ async def create_default_portfolio(
             initial_capital=request.initial_capital,
             cash=request.cash,
             mode=request.mode,
+            org_id=org,
         )
-    existing = await service.list_all()
+    existing = await service.list_all(org_id=scope.read_org_id())
     if existing:
         return existing[0]
     return await service.create(
@@ -65,14 +74,18 @@ async def create_default_portfolio(
         initial_capital=1000.0,
         cash=1000.0,
         mode=PortfolioMode.REAL,
+        org_id=org,
     )
 
 
 @router.post("/portfolios/sync-alpaca", response_model=Portfolio)
 async def sync_portfolio_from_alpaca(
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> Portfolio:
     """Recrea/actualiza el portafolio NexBuy desde la cuenta Alpaca (tras redeploy)."""
+    if not scope.is_desk:
+        raise HTTPException(status_code=403, detail="Solo la mesa puede sincronizar Alpaca")
     from services.alpaca_order_service import AlpacaOrderService
     from services.portfolio_bootstrap_service import PortfolioBootstrapService
 
@@ -81,7 +94,7 @@ async def sync_portfolio_from_alpaca(
     if not alpaca.is_configured():
         raise HTTPException(status_code=503, detail="Alpaca no configurada")
     boot = PortfolioBootstrapService(svc, alpaca)
-    existing = await svc.list_all()
+    existing = await svc.list_all(org_id=scope.read_org_id())
     if existing:
         # Refresh cash/positions from Alpaca onto newest portfolio
         account = await alpaca.get_account()
@@ -112,8 +125,9 @@ async def sync_portfolio_from_alpaca(
             positions=positions,
             cash=round(cash, 2),
             initial_capital=round(max(equity, cash, p.initial_capital), 2),
+            org_id=scope.write_org_id(),
         )
-    synced = await boot.sync_from_alpaca()
+    synced = await boot.sync_from_alpaca(org_id=scope.write_org_id())
     if not synced:
         raise HTTPException(status_code=502, detail="No se pudo sincronizar desde Alpaca")
     return synced
@@ -124,9 +138,10 @@ async def portfolio_projections(
     portfolio_id: str,
     horizon_months: int = 12,
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> PortfolioProjectionReport:
     service = _build_service(session)
-    portfolio = await service.get_by_id(portfolio_id)
+    portfolio = await service.get_by_id(portfolio_id, org_id=scope.read_org_id())
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portafolio no encontrado")
     if portfolio.mode != PortfolioMode.DEMO:
@@ -141,9 +156,10 @@ async def portfolio_simulate(
     portfolio_id: str,
     request: DemoSimulateRequest,
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> PortfolioProjectionReport:
     service = _build_service(session)
-    portfolio = await service.get_by_id(portfolio_id)
+    portfolio = await service.get_by_id(portfolio_id, org_id=scope.read_org_id())
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portafolio no encontrado")
     if portfolio.mode != PortfolioMode.DEMO:
@@ -164,10 +180,15 @@ async def add_position(
     portfolio_id: str,
     request: PositionAddRequest,
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> Portfolio:
     try:
         return await _build_service(session).add_position(
-            portfolio_id, request.ticker, request.shares, request.average_cost
+            portfolio_id,
+            request.ticker,
+            request.shares,
+            request.average_cost,
+            org_id=scope.read_org_id(),
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -177,9 +198,10 @@ async def add_position(
 async def portfolio_metrics(
     portfolio_id: str,
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> dict:
     service = _build_service(session)
-    portfolio = await service.get_by_id(portfolio_id)
+    portfolio = await service.get_by_id(portfolio_id, org_id=scope.read_org_id())
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portafolio no encontrado")
     portfolio = await service.refresh_prices(portfolio_id)
@@ -191,5 +213,10 @@ async def portfolio_history(
     portfolio_id: str,
     limit: int = 120,
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> list[PortfolioHistoryPoint]:
+    # Ownership check
+    p = await _build_service(session).get_by_id(portfolio_id, org_id=scope.read_org_id())
+    if not p:
+        raise HTTPException(status_code=404, detail="Portafolio no encontrado")
     return await PortfolioSnapshotRepository(session).list_for_portfolio(portfolio_id, limit=limit)

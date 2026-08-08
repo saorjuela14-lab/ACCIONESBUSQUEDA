@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apis.deps import OrgScope, get_org_scope
 from database.engine import get_session
 from domain.voice import VoiceChatResult, VoiceCommandResult, VoiceHelpItem
 from models.schemas import VoiceChatRequest, VoiceCommandRequest, VoiceTTSRequest
@@ -18,12 +19,15 @@ router = APIRouter()
 async def voice_command(
     request: VoiceCommandRequest,
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> VoiceCommandResult:
     """Interpreta texto de voz y ejecuta acciones del panel (comandos rápidos)."""
+    org = "monarch" if scope.is_desk else scope.write_org_id()
     return await VoiceCommandService().handle(
         request.text,
         session,
         portfolio_id=request.portfolio_id,
+        org_id=org,
     )
 
 
@@ -31,13 +35,16 @@ async def voice_command(
 async def voice_chat(
     request: VoiceChatRequest,
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> VoiceChatResult:
     """Chat conversacional con Viernes (estrategia, simulaciones, ops, cambios de producto)."""
+    org = "monarch" if scope.is_desk else scope.write_org_id()
     return await VoiceAssistantService().chat(
         request.text,
         session,
         portfolio_id=request.portfolio_id,
         session_id=request.session_id,
+        org_id=org,
     )
 
 
