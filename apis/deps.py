@@ -9,7 +9,11 @@ from fastapi import HTTPException, Request
 
 @dataclass(frozen=True)
 class OrgScope:
-    """Tenant scope derived from the authenticated principal."""
+    """Tenant scope derived from the authenticated principal.
+
+    Clients (approved companies) only *monitor* the firm desk book (`monarch`).
+    Only the mesa (`desk`) can invest / mutate capital.
+    """
 
     role: str
     org_id: str | None
@@ -21,23 +25,36 @@ class OrgScope:
     def is_desk(self) -> bool:
         return self.role == "desk"
 
+    @property
+    def is_client(self) -> bool:
+        return not self.is_desk
+
     def read_org_id(self) -> str | None:
-        """Filter key for reads. None = desk sees everything."""
+        """Filter key for reads. None = desk admin sees every tenant row."""
         if self.is_desk:
             return None
-        return self.org_id
+        # Approved clients monitor the shared Monarch desk account only
+        return "monarch"
 
     def write_org_id(self) -> str:
-        """Stamp on creates. Desk data lands under 'monarch'."""
+        """Stamp on creates. Only the mesa may mutate the investment book."""
         if self.is_desk:
             return "monarch"
-        if not self.org_id:
-            raise HTTPException(status_code=403, detail="Sesión sin empresa")
-        return self.org_id
+        raise HTTPException(
+            status_code=403,
+            detail="Solo la mesa Monarch puede invertir o modificar la cuenta",
+        )
 
     def book_org_id(self) -> str:
-        """Operational book for discovery/watchlist/alerts flows (never cross-tenant)."""
-        return self.write_org_id()
+        """Operational book shown in the terminal (always the firm desk book)."""
+        return "monarch"
+
+    def require_desk(self) -> None:
+        if not self.is_desk:
+            raise HTTPException(
+                status_code=403,
+                detail="Solo la mesa Monarch puede ejecutar esta acción",
+            )
 
 
 def get_optional_principal(request: Request) -> dict | None:

@@ -20,12 +20,12 @@ PUBLIC_PREFIXES = (
     "/logout",
 )
 
-DESK_WRITE_PREFIXES = (
-    "/api/v1/ops/kill-switch",
-    "/api/v1/ops/autopilot",
-    "/api/v1/ops/intraday/flat",
-    "/api/v1/broker/execute",
-    "/api/v1/auth/companies",
+# Clients may only monitor. All mutating API calls (except auth deposit request)
+# require the mesa desk role.
+CLIENT_MUTATION_ALLOW_PREFIXES = (
+    "/api/v1/auth/deposit-request",
+    "/api/v1/auth/logout",
+    "/api/v1/auth/client-error",
 )
 
 
@@ -95,11 +95,27 @@ class AccessTokenMiddleware(BaseHTTPMiddleware):
 
         if principal:
             request.state.principal = principal
-            if principal.get("role") != "desk" and method != "GET":
-                if any(path.startswith(p) for p in DESK_WRITE_PREFIXES):
+            # Approved clients are read-only monitors of the firm account.
+            # Only the mesa invests / mutates capital, watchlist, broker, ops, etc.
+            if (
+                principal.get("role") != "desk"
+                and method not in ("GET", "HEAD", "OPTIONS")
+                and path.startswith("/api/")
+                and not any(path.startswith(p) for p in CLIENT_MUTATION_ALLOW_PREFIXES)
+            ):
+                # Auth login/register stay public via PUBLIC_PREFIXES; other auth
+                # mutations for clients are already limited inside the routes.
+                if path.startswith("/api/v1/auth/"):
+                    pass
+                else:
                     return JSONResponse(
                         status_code=403,
-                        content={"detail": "Solo la mesa Monarch puede ejecutar esta acción"},
+                        content={
+                            "detail": (
+                                "Solo lectura: la mesa Monarch es quien invierte. "
+                                "Tu acceso es para monitorear la cuenta."
+                            )
+                        },
                     )
 
         metrics.inc("http_requests")
