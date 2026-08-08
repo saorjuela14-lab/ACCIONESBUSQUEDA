@@ -177,6 +177,9 @@ class OrganizationORM(Base):
     name: Mapped[str] = mapped_column(String(160))
     slug: Mapped[str] = mapped_column(String(80), unique=True, index=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Company WhatsApp inbox (E.164 digits / +prefix). Optional CallMeBot key.
+    notify_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    notify_whatsapp_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
@@ -192,6 +195,9 @@ class UserORM(Base):
     full_name: Mapped[str] = mapped_column(String(160), default="")
     role: Mapped[str] = mapped_column(String(32), default="company_admin")  # desk | company_admin | viewer
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Personal WhatsApp for alert delivery (panel setting).
+    notify_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    notify_whatsapp_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

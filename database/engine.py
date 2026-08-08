@@ -78,6 +78,19 @@ async def _migrate_schema(conn, url: str) -> None:
                 text(f"UPDATE {table} SET org_id = 'monarch' WHERE org_id IS NULL")
             )
 
+    # WhatsApp notify fields on users / organizations
+    for table, columns in (
+        ("users", ("notify_phone", "notify_whatsapp_key")),
+        ("organizations", ("notify_phone", "notify_whatsapp_key")),
+    ):
+        tcols = await cols(table)
+        if not tcols:
+            continue
+        for col in columns:
+            if col not in tcols:
+                await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} VARCHAR(128)"))
+                logger.info("db.migrate.add_column", table=table, column=col)
+
 
 def _engine_kwargs(url: str) -> dict:
     kwargs: dict = {"echo": False}

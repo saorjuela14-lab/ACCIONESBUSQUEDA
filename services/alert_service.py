@@ -41,7 +41,27 @@ class AlertService:
         if self._push.any_channel_configured:
             push_result = await self._push.notify_alert(saved)
             logger.info("alert.push", ticker=saved.ticker, **push_result)
+        # Also deliver to phones saved in the terminal (user/org inbox)
+        user_result = await self._notify_saved_phones(saved)
+        if user_result:
+            logger.info("alert.push.users", ticker=saved.ticker, **user_result)
         return saved
+
+    async def _notify_saved_phones(self, alert: Alert) -> dict[str, bool]:
+        org_id = alert.org_id or "monarch"
+        try:
+            from services.company_auth_service import CompanyAuthService
+
+            targets = await CompanyAuthService(self._session).list_notify_targets(org_id)
+        except Exception as exc:
+            logger.warning("alert.push.users_lookup_failed", error=str(exc))
+            return {}
+        if not targets:
+            return {}
+        text = self._push._format_alert(alert)  # noqa: SLF001
+        from services.push_notification_service import _strip_html
+
+        return await self._push.notify_whatsapp_targets(_strip_html(text), targets)
 
     async def emit_batch(self, alerts: list[Alert]) -> list[Alert]:
         emitted: list[Alert] = []
