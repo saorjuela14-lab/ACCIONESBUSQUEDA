@@ -169,17 +169,22 @@ class OpsFlagORM(Base):
 
 
 class OrganizationORM(Base):
-    """B2B company tenant."""
+    """B2B client tenant (access request → mesa approval → read-only monitor)."""
 
     __tablename__ = "organizations"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     name: Mapped[str] = mapped_column(String(160))
     slug: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    # False = pending mesa authorization (cannot login until approved)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     # Company WhatsApp inbox (E.164 digits / +prefix). Optional CallMeBot key.
     notify_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     notify_whatsapp_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Client deposit intent (mesa invests; client only requests / monitors)
+    deposit_status: Mapped[str] = mapped_column(String(24), default="none")  # none|requested|received
+    deposit_requested_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    deposit_note: Mapped[str | None] = mapped_column(String(280), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 

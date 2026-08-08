@@ -81,7 +81,9 @@ class CompanyAuthService:
             email=email,
             password=password,
             full_name="Admin",
-            role="company_admin",
+            role="viewer",
+            pending=False,
+            issue_session=True,
         )
         logger.info("auth.bootstrap_company", org=org.slug, email=user.email)
         return {"org_id": org.id, "email": user.email, "bootstrapped": True}
@@ -93,7 +95,9 @@ class CompanyAuthService:
         email: str,
         password: str,
         full_name: str = "",
-        role: str = "company_admin",
+        role: str = "viewer",
+        pending: bool = False,
+        issue_session: bool = True,
     ) -> tuple[OrganizationORM, UserORM, str]:
         email = email.strip().lower()
         if not email or "@" not in email:
@@ -115,34 +119,53 @@ class CompanyAuthService:
             n += 1
             slug = f"{base_slug}-{n}"
 
-        org = OrganizationORM(id=str(uuid.uuid4()), name=org_name.strip()[:160], slug=slug)
+        # Clients are viewers of the firm book; pending orgs cannot login until approved
+        safe_role = role if role in ("desk", "company_admin", "viewer") else "viewer"
+        if pending:
+            safe_role = "viewer"
+        org = OrganizationORM(
+            id=str(uuid.uuid4()),
+            name=org_name.strip()[:160],
+            slug=slug,
+            active=not pending,
+            deposit_status="none",
+        )
         user = UserORM(
             id=str(uuid.uuid4()),
             org_id=org.id,
             email=email,
             password_hash=_hash_password(password),
             full_name=(full_name or org_name)[:160],
-            role=role if role in ("desk", "company_admin", "viewer") else "company_admin",
+            role=safe_role,
         )
         self._session.add(org)
         self._session.add(user)
         await self._session.commit()
-        token = await self._issue_session(user)
+        token = ""
+        if issue_session and not pending:
+            token = await self._issue_session(user)
         return org, user, token
 
     async def login_email(self, email: str, password: str) -> dict[str, Any]:
         email = (email or "").strip().lower()
         result = await self._session.execute(select(UserORM).where(UserORM.email == email))
         user = result.scalar_one_or_none()
-        if not user or not user.active or not _verify_password(password, user.password_hash):
+        if not user or not _verify_password(password, user.password_hash):
             raise ValueError("Email o contraseña incorrectos")
+        if not user.active:
+            raise ValueError("Usuario desactivado. Contacta a la mesa Monarch")
 
         org_r = await self._session.execute(
             select(OrganizationORM).where(OrganizationORM.id == user.org_id)
         )
         org = org_r.scalar_one_or_none()
-        if not org or not org.active:
-            raise ValueError("Empresa inactiva")
+        if not org:
+            raise ValueError("Empresa no encontrada")
+        if not org.active:
+            raise ValueError(
+                "Tu acceso está pendiente de autorización por la mesa Monarch. "
+                "Te avisaremos cuando puedas entrar a monitorear la cuenta."
+            )
 
         user.last_login_at = utc_now()
         await self._session.commit()
@@ -157,7 +180,13 @@ class CompanyAuthService:
                 "full_name": user.full_name,
                 "role": user.role,
             },
-            "organization": {"id": org.id, "name": org.name, "slug": org.slug},
+            "organization": {
+                "id": org.id,
+                "name": org.name,
+                "slug": org.slug,
+                "deposit_status": getattr(org, "deposit_status", "none") or "none",
+                "deposit_requested_usd": getattr(org, "deposit_requested_usd", None),
+            },
         }
 
     async def login_desk_token(self, token: str) -> dict[str, Any]:
@@ -206,12 +235,20 @@ class CompanyAuthService:
         user = user_r.scalar_one_or_none()
         if not user or not user.active:
             return None
+        org_r = await self._session.execute(
+            select(OrganizationORM).where(OrganizationORM.id == user.org_id)
+        )
+        org = org_r.scalar_one_or_none()
+        if not org or not org.active:
+            return None
         return {
             "auth_type": "session",
-            "role": user.role,
+            "role": user.role if user.role in ("desk", "company_admin", "viewer") else "viewer",
             "user_id": user.id,
             "org_id": user.org_id,
             "email": user.email,
+            "deposit_status": getattr(org, "deposit_status", "none") or "none",
+            "org_name": org.name,
         }
 
     async def revoke_token(self, token: str) -> None:
@@ -381,22 +418,104 @@ class CompanyAuthService:
         }
 
     async def list_companies(self, limit: int = 50, offset: int = 0) -> tuple[list[dict], int]:
-        total_r = await self._session.execute(select(func.count()).select_from(OrganizationORM))
+        total_r = await self._session.execute(
+            select(func.count()).select_from(OrganizationORM).where(OrganizationORM.id != "monarch")
+        )
         total = int(total_r.scalar() or 0)
         r = await self._session.execute(
             select(OrganizationORM)
+            .where(OrganizationORM.id != "monarch")
             .order_by(OrganizationORM.created_at.desc())
             .offset(offset)
             .limit(limit)
         )
-        orgs = [
-            {
-                "id": o.id,
-                "name": o.name,
-                "slug": o.slug,
-                "active": o.active,
-                "created_at": o.created_at.isoformat() if o.created_at else None,
-            }
-            for o in r.scalars().all()
-        ]
+        orgs = []
+        for o in r.scalars().all():
+            users_r = await self._session.execute(
+                select(UserORM).where(UserORM.org_id == o.id).order_by(UserORM.created_at.asc())
+            )
+            users = list(users_r.scalars().all())
+            primary = users[0] if users else None
+            orgs.append(
+                {
+                    "id": o.id,
+                    "name": o.name,
+                    "slug": o.slug,
+                    "active": o.active,
+                    "status": "approved" if o.active else "pending",
+                    "deposit_status": getattr(o, "deposit_status", "none") or "none",
+                    "deposit_requested_usd": getattr(o, "deposit_requested_usd", None),
+                    "deposit_note": getattr(o, "deposit_note", None),
+                    "email": primary.email if primary else None,
+                    "full_name": primary.full_name if primary else None,
+                    "user_role": primary.role if primary else None,
+                    "created_at": o.created_at.isoformat() if o.created_at else None,
+                }
+            )
         return orgs, total
+
+    async def approve_company(self, org_id: str) -> dict[str, Any]:
+        org = await self._get_client_org(org_id)
+        org.active = True
+        users_r = await self._session.execute(select(UserORM).where(UserORM.org_id == org.id))
+        for u in users_r.scalars().all():
+            u.active = True
+            if u.role not in ("viewer", "company_admin"):
+                u.role = "viewer"
+            # Force monitor-only role for clients
+            u.role = "viewer"
+        await self._session.commit()
+        return {"ok": True, "id": org.id, "status": "approved", "name": org.name}
+
+    async def reject_company(self, org_id: str) -> dict[str, Any]:
+        org = await self._get_client_org(org_id)
+        org.active = False
+        users_r = await self._session.execute(select(UserORM).where(UserORM.org_id == org.id))
+        for u in users_r.scalars().all():
+            u.active = False
+        await self._session.commit()
+        return {"ok": True, "id": org.id, "status": "rejected", "name": org.name}
+
+    async def request_deposit(
+        self,
+        *,
+        org_id: str,
+        amount_usd: float,
+        note: str = "",
+    ) -> dict[str, Any]:
+        if amount_usd <= 0:
+            raise ValueError("Indica un monto de depósito mayor a 0")
+        org = await self._get_client_org(org_id)
+        if not org.active:
+            raise ValueError("Tu acceso aún no está autorizado")
+        org.deposit_status = "requested"
+        org.deposit_requested_usd = float(amount_usd)
+        org.deposit_note = (note or "")[:280] or None
+        await self._session.commit()
+        return {
+            "ok": True,
+            "deposit_status": org.deposit_status,
+            "deposit_requested_usd": org.deposit_requested_usd,
+            "deposit_note": org.deposit_note,
+        }
+
+    async def mark_deposit_received(self, org_id: str, amount_usd: float | None = None) -> dict[str, Any]:
+        org = await self._get_client_org(org_id)
+        org.deposit_status = "received"
+        if amount_usd is not None and amount_usd > 0:
+            org.deposit_requested_usd = float(amount_usd)
+        await self._session.commit()
+        return {
+            "ok": True,
+            "deposit_status": org.deposit_status,
+            "deposit_requested_usd": org.deposit_requested_usd,
+        }
+
+    async def _get_client_org(self, org_id: str) -> OrganizationORM:
+        if not org_id or org_id == "monarch":
+            raise ValueError("Empresa inválida")
+        r = await self._session.execute(select(OrganizationORM).where(OrganizationORM.id == org_id))
+        org = r.scalar_one_or_none()
+        if not org:
+            raise ValueError("Empresa no encontrada")
+        return org

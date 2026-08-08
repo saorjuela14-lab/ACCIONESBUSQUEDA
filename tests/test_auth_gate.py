@@ -58,16 +58,22 @@ async def test_login_with_desk_opens_dashboard():
 
 
 @pytest.mark.asyncio
-async def test_company_gets_portfolio_on_create_and_default():
+async def test_client_monitors_firm_book_without_fake_seed():
     await init_db()
     app = create_app()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         desk = await client.post("/api/v1/auth/login", json={"token": "desk-secret"})
         desk_tok = desk.json()["token"]
+        desk_h = {"Authorization": f"Bearer {desk_tok}"}
+
+        default = await client.post("/api/v1/portfolios/default", headers=desk_h)
+        assert default.status_code == 200
+        assert default.json()["org_id"] == "monarch"
+
         created = await client.post(
             "/api/v1/auth/companies",
-            headers={"Authorization": f"Bearer {desk_tok}"},
+            headers=desk_h,
             json={
                 "org_name": "Acme",
                 "email": "ops@acme.test",
@@ -82,20 +88,11 @@ async def test_company_gets_portfolio_on_create_and_default():
             json={"email": "ops@acme.test", "password": "segura1234"},
         )
         tok = login.json()["token"]
-        books = await client.get(
-            "/api/v1/portfolios", headers={"Authorization": f"Bearer {tok}"}
-        )
-        assert books.status_code == 200
-        assert len(books.json()) >= 1
+        client_h = {"Authorization": f"Bearer {tok}"}
 
-        default = await client.post(
-            "/api/v1/portfolios/default",
-            headers={"Authorization": f"Bearer {tok}"},
-        )
-        assert default.status_code == 200
-        assert default.json()["org_id"]
-        # Idempotent — does not create a second book
-        books2 = await client.get(
-            "/api/v1/portfolios", headers={"Authorization": f"Bearer {tok}"}
-        )
-        assert len(books2.json()) == len(books.json())
+        books = await client.get("/api/v1/portfolios", headers=client_h)
+        assert books.status_code == 200
+        assert any(p.get("org_id") == "monarch" for p in books.json())
+
+        denied = await client.post("/api/v1/portfolios/default", headers=client_h)
+        assert denied.status_code == 403

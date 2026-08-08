@@ -58,23 +58,13 @@ async def get_terminal_dashboard(
     session: AsyncSession = Depends(get_session),
     scope: OrgScope = Depends(get_org_scope),
 ) -> TerminalDashboard:
-    # Desk reads all tenant rows when needed, but the default book is 'monarch'
-    org_read = scope.read_org_id()
-    book_org = "monarch" if scope.is_desk else scope.write_org_id()
+    # Everyone monitors the firm desk book (`monarch`). Only desk may bootstrap/sync Alpaca.
+    book_org = scope.book_org_id()
 
-    watchlist_items = await WatchlistRepository(session).list_active(
-        org_id=None if scope.is_desk else org_read
-    )
-    # Desk UI shows firm watchlist (monarch); companies see only theirs
-    if scope.is_desk:
-        watchlist_items = [w for w in watchlist_items if (w.org_id or "monarch") == "monarch"]
+    watchlist_items = await WatchlistRepository(session).list_active(org_id=book_org)
     watchlist = [w.ticker for w in watchlist_items]
 
-    alerts_raw = await AlertRepository(session).list_unacknowledged(
-        15, org_id=None if scope.is_desk else org_read
-    )
-    if scope.is_desk:
-        alerts_raw = [a for a in alerts_raw if (a.org_id or "monarch") == "monarch"]
+    alerts_raw = await AlertRepository(session).list_unacknowledged(15, org_id=book_org)
     alerts = [f"[{a.severity.value}] {a.ticker}: {a.title}" for a in alerts_raw[:15]]
 
     portfolio_slice = None
@@ -84,23 +74,31 @@ async def get_terminal_dashboard(
     from services.portfolio_service import PortfolioService
 
     svc = PortfolioService(PortfolioRepository(session), get_market_provider())
+    p = None
+    source = "none"
     try:
-        p, source = await PortfolioBootstrapService(svc).ensure_portfolio(
-            org_id=book_org,
-            allow_alpaca=scope.is_desk,
-            default_name="Portafolio empresa" if not scope.is_desk else "Portafolio CEO",
-            default_cash=1000.0 if not scope.is_desk else 22.0,
-        )
-        if source == "alpaca":
-            bootstrap_note = (
-                "Portafolio recreado desde Alpaca (la DB SQLite se reinicia en cada redeploy). "
-                "Para persistencia permanente usa Postgres en DATABASE_URL."
+        if scope.is_desk:
+            p, source = await PortfolioBootstrapService(svc).ensure_portfolio(
+                org_id=book_org,
+                allow_alpaca=True,
+                default_name="Portafolio CEO",
+                default_cash=22.0,
             )
-        elif source == "default":
-            bootstrap_note = (
-                "Portafolio por defecto recreado tras reinicio del servidor. "
-                "Conecta Alpaca o usa Postgres para no perder datos."
-            )
+            if source == "alpaca":
+                bootstrap_note = (
+                    "Portafolio recreado desde Alpaca (la DB SQLite se reinicia en cada redeploy). "
+                    "Para persistencia permanente usa Postgres en DATABASE_URL."
+                )
+            elif source == "default":
+                bootstrap_note = (
+                    "Portafolio por defecto recreado tras reinicio del servidor. "
+                    "Conecta Alpaca o usa Postgres para no perder datos."
+                )
+        else:
+            # Clients: never seed fake capital — only show the real firm book
+            portfolios = await PortfolioRepository(session).list_all(org_id=book_org)
+            p = sorted(portfolios, key=lambda x: x.updated_at, reverse=True)[0] if portfolios else None
+            source = "existing" if p else "none"
     except Exception:
         portfolios = await PortfolioRepository(session).list_all(org_id=book_org)
         p = sorted(portfolios, key=lambda x: x.updated_at, reverse=True)[0] if portfolios else None

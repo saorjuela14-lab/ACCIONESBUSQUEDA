@@ -27,7 +27,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/styles.css?v=10-hard-logout" />
+  <link rel="stylesheet" href="/dashboard/static/styles.css?v=11-access-approval" />
   <!-- Heavy chart libs: defer so login/session UI is not blocked on cold start -->
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script defer src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -122,17 +122,39 @@
       </div>
     </div>
 
-    <section class="ceo-bar" id="ceo-bar" aria-label="Resumen de tu dinero">
-      <div class="ceo-kpi highlight"><label>Tu dinero</label><div id="ceo-portfolio">—</div></div>
+    <section class="ceo-bar" id="ceo-bar" aria-label="Resumen de la cuenta">
+      <div class="ceo-kpi highlight"><label id="ceo-money-label">Cuenta Monarch</label><div id="ceo-portfolio">—</div></div>
       <div class="ceo-kpi"><label>Ganancia / pérdida</label><div id="ceo-return">—</div></div>
       <div class="ceo-kpi"><label>Alertas</label><div id="ceo-alerts">—</div></div>
       <div class="ceo-kpi"><label>En seguimiento</label><div id="ceo-watchlist-count">—</div></div>
       <div class="ceo-kpi"><label>Actualizado</label><div id="ceo-updated">—</div></div>
     </section>
 
+    <section class="panel client-banner hidden" id="client-monitor-banner" aria-label="Modo cliente">
+      <p><strong>Modo monitoreo.</strong> Ves la cuenta de la mesa Monarch. Solo la mesa invierte.
+        Si ya te autorizaron, puedes solicitar un depósito abajo.</p>
+      <div class="deposit-row" id="client-deposit-row">
+        <input id="deposit-amount" type="number" min="1" step="0.01" placeholder="Monto USD a depositar" />
+        <input id="deposit-note" type="text" maxlength="280" placeholder="Nota (opcional)" />
+        <button type="button" id="btn-deposit-request" class="btn primary">Solicitar depósito</button>
+      </div>
+      <p id="deposit-status-msg" class="muted" style="margin:0.4rem 0 0;font-size:12px"></p>
+    </section>
+
+    <section class="panel access-panel desk-only hidden" id="access-panel" aria-label="Solicitudes de acceso">
+      <div class="panel-head">
+        <h3>Accesos de clientes</h3>
+        <button type="button" id="btn-access-refresh" class="btn">Actualizar</button>
+      </div>
+      <p class="muted" style="margin:0 0 0.6rem;font-size:12px">
+        Autoriza solicitudes. Los clientes solo monitorean; tú eres quien invierte.
+      </p>
+      <div id="access-list" class="access-list muted">Cargando solicitudes…</div>
+    </section>
+
     <section class="indices-row" id="indices-row" aria-label="Índices del mercado"></section>
 
-    <section class="panel status-panel" aria-label="Estado del escritorio">
+    <section class="panel status-panel desk-only" aria-label="Estado del escritorio">
       <div class="panel-head">
         <h3>Estado en 3 líneas</h3>
         <span class="muted hint-pill">Lee esto primero</span>
@@ -501,9 +523,9 @@
     </div>
   </div>
 
-  <script src="/dashboard/static/reliability.js?v=10-hard-logout"></script>
-  <script src="/dashboard/static/voice.js?v=10-hard-logout"></script>
-  <script src="/dashboard/static/app.js?v=10-hard-logout"></script>
+  <script src="/dashboard/static/reliability.js?v=11-access-approval"></script>
+  <script src="/dashboard/static/voice.js?v=11-access-approval"></script>
+  <script src="/dashboard/static/app.js?v=11-access-approval"></script>
   <script>
     // Permanently kill service workers — they were serving stale JS/CSS after deploy
     if ("serviceWorker" in navigator) {

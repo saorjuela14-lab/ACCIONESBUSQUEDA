@@ -68,11 +68,12 @@ async def create_default_portfolio(
             mode=request.mode,
             org_id=org,
         )
+    scope.require_desk()
     return await service.create(
-        name="Portafolio empresa" if not scope.is_desk else "Portafolio CEO",
+        name="Portafolio CEO",
         strategy=StrategyType.GROWTH,
-        initial_capital=1000.0,
-        cash=1000.0,
+        initial_capital=22.0,
+        cash=22.0,
         mode=PortfolioMode.REAL,
         org_id=org,
     )

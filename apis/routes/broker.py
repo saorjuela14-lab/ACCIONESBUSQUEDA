@@ -4,8 +4,9 @@ Inspired by https://github.com/alpacahq/cli command surface
 (account, clock, doctor, order, position) — implemented as HTTP for NexBuy.
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from apis.deps import OrgScope, get_org_scope
 from domain.broker import (
     BrokerAccount,
     BrokerClock,
@@ -20,7 +21,14 @@ from domain.broker import (
 from models.schemas import MicroPlanExecuteRequest, TradePickExecuteRequest
 from services.alpaca_order_service import AlpacaOrderService
 
-router = APIRouter()
+
+async def _require_desk(scope: OrgScope = Depends(get_org_scope)) -> OrgScope:
+    """Alpaca broker surface is mesa-only — clients monitor via dashboard book."""
+    scope.require_desk()
+    return scope
+
+
+router = APIRouter(dependencies=[Depends(_require_desk)])
 
 
 def _svc() -> AlpacaOrderService:

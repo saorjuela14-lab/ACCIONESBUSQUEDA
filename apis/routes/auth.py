@@ -31,6 +31,15 @@ class CompanyCreateRequest(BaseModel):
     full_name: str = Field(default="", max_length=160)
 
 
+class DepositRequestBody(BaseModel):
+    amount_usd: float = Field(gt=0, le=1_000_000_000)
+    note: str = Field(default="", max_length=280)
+
+
+class DepositReceivedBody(BaseModel):
+    amount_usd: float | None = Field(default=None, gt=0, le=1_000_000_000)
+
+
 class ClientErrorReport(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     source: str = Field(default="window", max_length=64)
@@ -124,61 +133,73 @@ async def create_company(
     response: Response,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Crear empresa. Permitido: mesa (desk) o bootstrap cuando no hay usuarios."""
+    """Solicitud de acceso (público) o alta inmediata si la crea la mesa.
+
+    Público → org pendiente (active=False), sin sesión, notifica a la mesa.
+    Mesa → org aprobada de una vez (solo lectura para el cliente).
+    No se crea portafolio ni capital inventado ($1000).
+    """
     svc = CompanyAuthService(session)
-    users = await svc.user_count()
-    principal = getattr(request.state, "principal", None)
     token = _extract_bearer(request)
     is_desk = False
     if token:
         resolved = await svc.resolve_bearer(token)
         is_desk = bool(resolved and resolved.get("role") == "desk")
-        principal = resolved or principal
 
-    if users > 0 and not is_desk:
-        raise HTTPException(status_code=403, detail="Solo la mesa puede crear empresas")
-
+    pending = not is_desk
     try:
         org, user, raw = await svc.create_company(
             org_name=body.org_name,
             email=body.email,
             password=body.password,
             full_name=body.full_name,
+            role="viewer",
+            pending=pending,
+            issue_session=False,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # Seed an empty company book so the terminal is never "Sin portafolio"
-    try:
-        from providers.market.factory import get_market_provider
-        from services.portfolio_bootstrap_service import PortfolioBootstrapService
-        from services.portfolio_service import PortfolioService
-        from database.repositories.portfolio_repository import PortfolioRepository
+    if pending:
+        # Notify mesa (Telegram/WhatsApp env) — never block registration on push failure
+        try:
+            from services.push_notification_service import PushNotificationService
 
-        boot = PortfolioBootstrapService(
-            PortfolioService(PortfolioRepository(session), get_market_provider())
-        )
-        await boot.ensure_portfolio(
-            org_id=org.id,
-            allow_alpaca=False,
-            default_name=f"Portafolio {org.name}"[:120],
-            default_cash=1000.0,
-        )
-    except Exception:
-        pass
+            await PushNotificationService().notify_message(
+                "Solicitud de acceso Monarch",
+                (
+                    f"Empresa: {org.name}\n"
+                    f"Contacto: {user.full_name or '—'}\n"
+                    f"Email: {user.email}\n"
+                    f"Estado: pendiente de autorización.\n"
+                    f"Entra a la mesa → panel Accesos para aprobar."
+                ),
+            )
+        except Exception:
+            pass
+        metrics.inc("auth_access_requests")
+        return {
+            "ok": True,
+            "pending": True,
+            "status": "pending",
+            "message": (
+                "Solicitud enviada. La mesa Monarch debe autorizar tu acceso. "
+                "Cuando te aprueben podrás entrar a monitorear la cuenta y solicitar depósito. "
+                "Solo la mesa invierte."
+            ),
+            "organization": {"id": org.id, "name": org.name, "slug": org.slug, "active": False},
+            "user": {"id": user.id, "email": user.email, "role": user.role},
+        }
 
-    # If created by desk, don't replace desk cookie with company session
-    out = {
+    metrics.inc("auth_companies_created")
+    return {
         "ok": True,
-        "organization": {"id": org.id, "name": org.name, "slug": org.slug},
+        "pending": False,
+        "status": "approved",
+        "message": "Cliente creado y autorizado (solo lectura).",
+        "organization": {"id": org.id, "name": org.name, "slug": org.slug, "active": True},
         "user": {"id": user.id, "email": user.email, "role": user.role},
     }
-    if not is_desk:
-        out["token"] = raw
-        out["auth_type"] = "session"
-        _set_session_cookie(response, raw)
-    metrics.inc("auth_companies_created")
-    return out
 
 
 @router.get("/auth/companies")
@@ -195,6 +216,97 @@ async def list_companies(
         raise HTTPException(status_code=403, detail="Solo la mesa puede listar empresas")
     items, total = await svc.list_companies(limit=min(limit, 100), offset=max(offset, 0))
     return Page.of(items, total=total, limit=min(limit, 100), offset=max(offset, 0))
+
+
+@router.post("/auth/companies/{org_id}/approve")
+async def approve_company(
+    org_id: str,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    svc = CompanyAuthService(session)
+    token = _extract_bearer(request)
+    resolved = await svc.resolve_bearer(token) if token else None
+    if not resolved or resolved.get("role") != "desk":
+        raise HTTPException(status_code=403, detail="Solo la mesa puede autorizar accesos")
+    try:
+        return await svc.approve_company(org_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/auth/companies/{org_id}/reject")
+async def reject_company(
+    org_id: str,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    svc = CompanyAuthService(session)
+    token = _extract_bearer(request)
+    resolved = await svc.resolve_bearer(token) if token else None
+    if not resolved or resolved.get("role") != "desk":
+        raise HTTPException(status_code=403, detail="Solo la mesa puede rechazar accesos")
+    try:
+        return await svc.reject_company(org_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/auth/deposit-request")
+async def deposit_request(
+    body: DepositRequestBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Cliente aprobado solicita depositar; la mesa invierte el capital."""
+    svc = CompanyAuthService(session)
+    token = _extract_bearer(request)
+    resolved = await svc.resolve_bearer(token) if token else None
+    if not resolved or resolved.get("role") == "desk":
+        raise HTTPException(status_code=403, detail="Solo un cliente autorizado puede solicitar depósito")
+    org_id = resolved.get("org_id")
+    if not org_id:
+        raise HTTPException(status_code=403, detail="Sesión sin empresa")
+    try:
+        result = await svc.request_deposit(
+            org_id=org_id,
+            amount_usd=body.amount_usd,
+            note=body.note,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        from services.push_notification_service import PushNotificationService
+
+        await PushNotificationService().notify_message(
+            "Depósito solicitado",
+            (
+                f"Cliente: {resolved.get('email')}\n"
+                f"Monto: ${body.amount_usd:,.2f}\n"
+                f"{(body.note or '')[:200]}"
+            ),
+        )
+    except Exception:
+        pass
+    return result
+
+
+@router.post("/auth/companies/{org_id}/deposit-received")
+async def deposit_received(
+    org_id: str,
+    body: DepositReceivedBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    svc = CompanyAuthService(session)
+    token = _extract_bearer(request)
+    resolved = await svc.resolve_bearer(token) if token else None
+    if not resolved or resolved.get("role") != "desk":
+        raise HTTPException(status_code=403, detail="Solo la mesa puede confirmar depósitos")
+    try:
+        return await svc.mark_deposit_received(org_id, body.amount_usd)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/auth/me")

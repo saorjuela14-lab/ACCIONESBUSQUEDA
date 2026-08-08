@@ -91,6 +91,25 @@ async def _migrate_schema(conn, url: str) -> None:
                 await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} VARCHAR(128)"))
                 logger.info("db.migrate.add_column", table=table, column=col)
 
+    # Client deposit / access fields on organizations
+    ocols = await cols("organizations")
+    if ocols:
+        if "deposit_status" not in ocols:
+            await conn.execute(
+                text("ALTER TABLE organizations ADD COLUMN deposit_status VARCHAR(24) DEFAULT 'none'")
+            )
+            logger.info("db.migrate.add_column", table="organizations", column="deposit_status")
+        if "deposit_requested_usd" not in ocols:
+            await conn.execute(
+                text("ALTER TABLE organizations ADD COLUMN deposit_requested_usd FLOAT")
+            )
+            logger.info("db.migrate.add_column", table="organizations", column="deposit_requested_usd")
+        if "deposit_note" not in ocols:
+            await conn.execute(
+                text("ALTER TABLE organizations ADD COLUMN deposit_note VARCHAR(280)")
+            )
+            logger.info("db.migrate.add_column", table="organizations", column="deposit_note")
+
 
 def _engine_kwargs(url: str) -> dict:
     kwargs: dict = {"echo": False}

@@ -1,4 +1,4 @@
-"""Org-scoped data isolation for B2B tenants."""
+"""Clients monitor the shared firm book; only the mesa mutates capital."""
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -23,83 +23,59 @@ def _env(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_company_cannot_see_other_org_watchlist():
+async def test_client_is_read_only_and_sees_firm_book():
     await init_db()
     app = create_app()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         desk = await client.post("/api/v1/auth/login", json={"token": "desk-secret"})
         desk_tok = desk.json()["token"]
+        desk_h = {"Authorization": f"Bearer {desk_tok}"}
 
-        # Create two companies via desk
-        for email, name in (("a@acme.test", "Acme"), ("b@beta.test", "Beta")):
-            r = await client.post(
-                "/api/v1/auth/companies",
-                headers={"Authorization": f"Bearer {desk_tok}"},
-                json={
-                    "org_name": name,
-                    "email": email,
-                    "password": "segura1234",
-                    "full_name": name,
-                },
-            )
-            assert r.status_code == 200, r.text
+        # Desk seeds the firm watchlist + book
+        add = await client.post(
+            "/api/v1/watchlist",
+            headers=desk_h,
+            json={"ticker": "NVDA"},
+        )
+        assert add.status_code == 200, add.text
+
+        created = await client.post(
+            "/api/v1/auth/companies",
+            headers=desk_h,
+            json={
+                "org_name": "Acme",
+                "email": "a@acme.test",
+                "password": "segura1234",
+                "full_name": "Acme",
+            },
+        )
+        assert created.status_code == 200, created.text
 
         login_a = await client.post(
             "/api/v1/auth/company/login",
             json={"email": "a@acme.test", "password": "segura1234"},
         )
         tok_a = login_a.json()["token"]
-        login_b = await client.post(
-            "/api/v1/auth/company/login",
-            json={"email": "b@beta.test", "password": "segura1234"},
-        )
-        tok_b = login_b.json()["token"]
+        client_h = {"Authorization": f"Bearer {tok_a}"}
 
-        # A adds NVDA
-        add = await client.post(
-            "/api/v1/watchlist",
-            headers={"Authorization": f"Bearer {tok_a}"},
-            json={"ticker": "NVDA"},
-        )
-        assert add.status_code == 200, add.text
-
-        list_a = await client.get(
-            "/api/v1/watchlist", headers={"Authorization": f"Bearer {tok_a}"}
-        )
-        list_b = await client.get(
-            "/api/v1/watchlist", headers={"Authorization": f"Bearer {tok_b}"}
-        )
+        # Client can READ firm watchlist (monarch)
+        list_a = await client.get("/api/v1/watchlist", headers=client_h)
+        assert list_a.status_code == 200
         assert any(i["ticker"] == "NVDA" for i in list_a.json())
-        assert list_b.json() == []
 
-        # Portfolios isolated
-        pa = await client.post(
-            "/api/v1/portfolios",
-            headers={"Authorization": f"Bearer {tok_a}"},
-            json={
-                "name": "Acme Book",
-                "strategy": "growth_investing",
-                "initial_capital": 5000,
-                "mode": "demo",
-            },
+        # Client cannot WRITE
+        denied = await client.post(
+            "/api/v1/watchlist",
+            headers=client_h,
+            json={"ticker": "TSLA"},
         )
-        assert pa.status_code == 200, pa.text
-        books_b = await client.get(
-            "/api/v1/portfolios", headers={"Authorization": f"Bearer {tok_b}"}
-        )
-        assert all(p["name"] != "Acme Book" for p in books_b.json())
+        assert denied.status_code == 403
 
-        # B cannot sync Alpaca (desk-only)
-        sync_b = await client.post(
-            "/api/v1/portfolios/sync-alpaca",
-            headers={"Authorization": f"Bearer {tok_b}"},
-        )
+        sync_b = await client.post("/api/v1/portfolios/sync-alpaca", headers=client_h)
         assert sync_b.status_code == 403
 
-        # Desk can see Acme watchlist in unfiltered admin list
-        desk_wl = await client.get(
-            "/api/v1/watchlist", headers={"Authorization": f"Bearer {desk_tok}"}
-        )
+        # Desk still sees NVDA
+        desk_wl = await client.get("/api/v1/watchlist", headers=desk_h)
         assert desk_wl.status_code == 200
         assert any(i["ticker"] == "NVDA" for i in desk_wl.json())

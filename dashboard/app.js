@@ -135,6 +135,18 @@ function isDeskPrincipal(p = window.__monarchPrincipal) {
   return !!(p && p.role === "desk");
 }
 
+function applyRoleMode(principal) {
+  const desk = isDeskPrincipal(principal);
+  document.body.classList.toggle("role-desk", desk);
+  document.body.classList.toggle("role-client", !desk);
+  const moneyLabel = document.getElementById("ceo-money-label");
+  if (moneyLabel) moneyLabel.textContent = desk ? "Tu dinero" : "Cuenta Monarch";
+  const accessPanel = document.getElementById("access-panel");
+  if (accessPanel) accessPanel.classList.toggle("hidden", !desk);
+  const clientBanner = document.getElementById("client-monitor-banner");
+  if (clientBanner) clientBanner.classList.toggle("hidden", desk);
+}
+
 function setBootMsg(msg) {
   const el = document.getElementById("boot-splash-msg");
   if (el && msg) el.textContent = msg;
@@ -163,19 +175,19 @@ function applySessionUi(principal) {
   if (chip && principal) {
     const label = principal.role === "desk"
       ? "Mesa"
-      : (principal.email || "Empresa");
+      : (principal.email || principal.org_name || "Cliente");
     chip.textContent = label;
     chip.classList.remove("hidden");
   } else if (chip) {
     chip.classList.add("hidden");
   }
   // Logout is a real <a href="/logout"> — always visible on the gated terminal
-  const hasSession = !!(principal || localStorage.getItem("nexbuy_token"));
   if (logoutBtn) {
     logoutBtn.classList.remove("hidden");
     logoutBtn.textContent = "Cerrar sesión";
   }
   if (sessionBar) sessionBar.classList.add("session-bar-on");
+  applyRoleMode(principal);
   hideBootSplash();
 }
 
@@ -246,8 +258,13 @@ async function ensureAuth() {
       return false;
     }
     setBootMsg("Servidor lento — abriendo igual…");
+    let fallbackRole = "viewer";
+    try {
+      const meta = JSON.parse(localStorage.getItem("monarch_auth") || "{}");
+      if (meta.type === "desk") fallbackRole = "desk";
+    } catch { /* ignore */ }
     applySessionUi({
-      role: "desk",
+      role: fallbackRole,
       email: "sesión local",
       auth_type: "local_fallback",
     });
@@ -1174,11 +1191,13 @@ function renderMicroPlan(plan) {
 }
 
 function currentPortfolioCapital() {
-  // 1) Live Alpaca book (source of truth for real money)
-  const alpaca = alpacaBookCapital();
-  if (alpaca) return alpaca;
+  // Clients never pull Alpaca — they only see the firm dashboard book
+  if (isDeskPrincipal()) {
+    const alpaca = alpacaBookCapital();
+    if (alpaca) return alpaca;
+  }
 
-  // 2) NexBuy portfolio from dashboard (after sync-alpaca)
+  // Firm portfolio from dashboard (mesa book)
   if (lastDashboardPortfolio) {
     for (const key of ["cash", "total_value", "initial_capital"]) {
       const n = Number(lastDashboardPortfolio[key]);
@@ -1579,19 +1598,129 @@ async function loadDashboard() {
     const d = await apiWithRetry(`${API}/dashboard`, {}, { retries: 2, label: "dashboard" });
     hideBootSplash();
     renderDashboard(d);
-    await Promise.all([
+    const jobs = [
       loadDailyBriefing(),
       loadDailyTradeRecommendations(),
       loadWatchlistMatrix(),
       loadPushStatus(),
-      loadAlpacaStatus(),
-      loadRiskDesk(),
-      loadOpsDesk(),
-    ]);
+    ];
+    if (isDeskPrincipal()) {
+      jobs.push(loadAlpacaStatus(), loadRiskDesk(), loadOpsDesk(), loadAccessRequests());
+    } else {
+      refreshClientDepositStatus();
+    }
+    await Promise.all(jobs);
   } catch (e) {
     hideBootSplash();
     showDashboardError(e);
     toast("Panel: " + e.message);
+  }
+}
+
+async function loadAccessRequests() {
+  const box = document.getElementById("access-list");
+  if (!box || !isDeskPrincipal()) return;
+  try {
+    const page = await api(`${API}/auth/companies?limit=50`);
+    const items = page.items || page.data || page || [];
+    const list = Array.isArray(items) ? items : (items.items || []);
+    if (!list.length) {
+      box.innerHTML = `<p class="muted">Sin solicitudes todavía.</p>`;
+      return;
+    }
+    box.innerHTML = list.map((c) => {
+      const status = c.status || (c.active ? "approved" : "pending");
+      const deposit = c.deposit_status || "none";
+      const depLabel = deposit === "requested"
+        ? ` · depósito $${Number(c.deposit_requested_usd || 0).toLocaleString()} solicitado`
+        : deposit === "received"
+          ? " · depósito recibido"
+          : "";
+      return `<div class="access-card" data-org="${c.id}">
+        <div class="meta">
+          <strong>${c.name || "Cliente"}</strong>
+          <span class="pill ${status}">${status === "pending" ? "pendiente" : "autorizado"}</span>
+          <div class="muted" style="font-size:12px;margin-top:0.2rem">
+            ${c.full_name || "—"} · ${c.email || "—"} ${depLabel}
+          </div>
+        </div>
+        <div class="actions">
+          ${status === "pending" ? `<button type="button" class="btn primary" data-approve="${c.id}">Autorizar</button>
+          <button type="button" class="btn" data-reject="${c.id}">Rechazar</button>` : ""}
+          ${deposit === "requested" ? `<button type="button" class="btn" data-deposit-ok="${c.id}">Marcar depósito recibido</button>` : ""}
+        </div>
+      </div>`;
+    }).join("");
+    box.querySelectorAll("[data-approve]").forEach((btn) => {
+      btn.onclick = async () => {
+        try {
+          await api(`${API}/auth/companies/${btn.dataset.approve}/approve`, { method: "POST" });
+          toast("Cliente autorizado");
+          loadAccessRequests();
+        } catch (e) { toast(e.message); }
+      };
+    });
+    box.querySelectorAll("[data-reject]").forEach((btn) => {
+      btn.onclick = async () => {
+        try {
+          await api(`${API}/auth/companies/${btn.dataset.reject}/reject`, { method: "POST" });
+          toast("Solicitud rechazada");
+          loadAccessRequests();
+        } catch (e) { toast(e.message); }
+      };
+    });
+    box.querySelectorAll("[data-deposit-ok]").forEach((btn) => {
+      btn.onclick = async () => {
+        try {
+          await api(`${API}/auth/companies/${btn.dataset.depositOk}/deposit-received`, {
+            method: "POST",
+            body: JSON.stringify({}),
+          });
+          toast("Depósito marcado como recibido");
+          loadAccessRequests();
+        } catch (e) { toast(e.message); }
+      };
+    });
+  } catch (e) {
+    box.innerHTML = `<p class="muted">No se pudieron cargar accesos: ${e.message}</p>`;
+  }
+}
+
+function refreshClientDepositStatus() {
+  const el = document.getElementById("deposit-status-msg");
+  if (!el) return;
+  const p = window.__monarchPrincipal || {};
+  const st = p.deposit_status || "none";
+  const amt = p.deposit_requested_usd;
+  if (st === "requested") {
+    el.textContent = `Depósito solicitado${amt ? `: $${Number(amt).toLocaleString()} USD` : ""}. La mesa lo confirmará.`;
+  } else if (st === "received") {
+    el.textContent = "Depósito recibido. La mesa Monarch gestiona la inversión; tú solo monitoreas.";
+  } else {
+    el.textContent = "Aún no hay depósito solicitado.";
+  }
+}
+
+async function submitDepositRequest() {
+  const amount = parseFloat(document.getElementById("deposit-amount")?.value || "");
+  const note = document.getElementById("deposit-note")?.value || "";
+  if (!(amount > 0)) {
+    toast("Indica un monto válido");
+    return;
+  }
+  try {
+    const r = await api(`${API}/auth/deposit-request`, {
+      method: "POST",
+      body: JSON.stringify({ amount_usd: amount, note }),
+    });
+    if (window.__monarchPrincipal) {
+      window.__monarchPrincipal.deposit_status = r.deposit_status;
+      window.__monarchPrincipal.deposit_requested_usd = r.deposit_requested_usd;
+    }
+    refreshClientDepositStatus();
+    toast("Solicitud de depósito enviada a la mesa");
+  } catch (e) {
+    toast(e.message);
   }
 }
 
@@ -2783,8 +2912,12 @@ document.addEventListener("keydown", (e) => {
     });
   }
   setBootMsg("Cargando panel…");
-  // Seed book in background — do not block first paint
-  api(`${API}/portfolios/default`, { method: "POST" }).catch(() => {});
+  // Only the mesa may seed/sync the firm book
+  if (isDeskPrincipal()) {
+    api(`${API}/portfolios/default`, { method: "POST" }).catch(() => {});
+  }
+  document.getElementById("btn-access-refresh")?.addEventListener("click", () => loadAccessRequests());
+  document.getElementById("btn-deposit-request")?.addEventListener("click", () => submitDepositRequest());
   loadDashboard();
   setInterval(loadDashboard, REFRESH_MS);
 })();
