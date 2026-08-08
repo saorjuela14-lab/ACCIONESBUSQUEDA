@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from domain.entities import Portfolio, PortfolioPosition
 from domain.enums import PortfolioMode, StrategyType
+from domain.firm_capital import FIRM_RETURN_BASE_USD
 from services.alpaca_order_service import AlpacaOrderService
 from services.portfolio_service import PortfolioService
 from utils.logging import get_logger
@@ -31,7 +32,7 @@ class PortfolioBootstrapService:
         org_id: str | None = None,
         allow_alpaca: bool = True,
         default_name: str = "Portafolio CEO",
-        default_cash: float = 22.0,
+        default_cash: float = FIRM_RETURN_BASE_USD,
     ) -> tuple[Portfolio, str]:
         """Return existing newest portfolio, or create from Alpaca / defaults.
 
@@ -68,12 +69,8 @@ class PortfolioBootstrapService:
         broker_positions = await self._alpaca.get_positions()
 
         cash = float(account.cash or 0)
-        equity = float(account.equity or account.portfolio_value or cash)
-        if equity <= 0 and cash <= 0:
-            cash = 0.0
-            equity = 22.0
-
-        initial = max(equity, cash, 1.0)
+        # Return baseline is always $20 — never stamp Alpaca equity (~21.68) as initial.
+        initial = FIRM_RETURN_BASE_USD
         positions: list[PortfolioPosition] = []
         for pos in broker_positions:
             qty = float(pos.qty or 0)
@@ -95,7 +92,7 @@ class PortfolioBootstrapService:
         portfolio = await self._portfolios.create(
             name="Alpaca LIVE",
             strategy=StrategyType.GROWTH,
-            initial_capital=round(initial, 2),
+            initial_capital=initial,
             cash=round(cash, 2),
             mode=PortfolioMode.REAL,
             org_id=org_id or "monarch",
@@ -104,7 +101,7 @@ class PortfolioBootstrapService:
             portfolio.id,
             positions=positions,
             cash=round(cash, 2),
-            initial_capital=round(initial, 2),
+            initial_capital=initial,
             org_id=org_id or "monarch",
         )
         logger.info(

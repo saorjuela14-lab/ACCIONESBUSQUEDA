@@ -72,8 +72,8 @@ async def create_default_portfolio(
     return await service.create(
         name="Portafolio CEO",
         strategy=StrategyType.GROWTH,
-        initial_capital=22.0,
-        cash=22.0,
+        initial_capital=20.0,
+        cash=20.0,
         mode=PortfolioMode.REAL,
         org_id=org,
     )
@@ -102,8 +102,9 @@ async def sync_portfolio_from_alpaca(
         broker_positions = await alpaca.get_positions()
         from domain.entities import PortfolioPosition
 
+        from domain.firm_capital import FIRM_RETURN_BASE_USD
+
         cash = float(account.cash or 0)
-        equity = float(account.equity or account.portfolio_value or cash)
         positions = []
         for pos in broker_positions:
             qty = float(pos.qty or 0)
@@ -125,7 +126,8 @@ async def sync_portfolio_from_alpaca(
             p.id,
             positions=positions,
             cash=round(cash, 2),
-            initial_capital=round(max(equity, cash, p.initial_capital), 2),
+            # Keep $20 return base — do not overwrite with live Alpaca equity
+            initial_capital=FIRM_RETURN_BASE_USD,
             org_id=scope.write_org_id(),
         )
     synced = await boot.sync_from_alpaca(org_id=scope.write_org_id())

@@ -27,7 +27,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/styles.css?v=20-deposit-clean" />
+  <link rel="stylesheet" href="/dashboard/static/styles.css?v=21-markets-base20" />
   <!-- Heavy chart libs: defer so login/session UI is not blocked on cold start -->
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script defer src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -160,6 +160,27 @@
         <h4>Mis movimientos</h4>
         <div id="client-capital-list" class="access-list muted">Sin movimientos todavía.</div>
       </div>
+    </section>
+
+    <section class="panel client-markets-panel hidden" id="client-markets-panel" aria-label="Mercados y rendimiento">
+      <div class="panel-head">
+        <h3>Mercados y rendimiento</h3>
+        <span class="muted" id="client-return-base-hint">Base $20</span>
+      </div>
+      <div class="client-markets-grid">
+        <div>
+          <h4 class="subhead">Dónde está invertido</h4>
+          <div class="chart-box"><canvas id="client-sector-chart"></canvas></div>
+          <ul id="client-sector-list" class="client-alloc-list muted"></ul>
+        </div>
+        <div>
+          <h4 class="subhead">Por país / mercado</h4>
+          <div class="chart-box"><canvas id="client-country-chart"></canvas></div>
+          <ul id="client-country-list" class="client-alloc-list muted"></ul>
+        </div>
+      </div>
+      <h4 class="subhead" style="margin-top:0.85rem">Rendimiento de la cuenta</h4>
+      <div class="chart-box"><canvas id="client-return-chart"></canvas></div>
     </section>
 
     <section class="panel access-panel desk-only hidden" id="access-panel" aria-label="Solicitudes de acceso">
@@ -556,9 +577,9 @@
     </div>
   </div>
 
-  <script src="/dashboard/static/reliability.js?v=20-deposit-clean"></script>
-  <script src="/dashboard/static/voice.js?v=20-deposit-clean"></script>
-  <script src="/dashboard/static/app.js?v=20-deposit-clean"></script>
+  <script src="/dashboard/static/reliability.js?v=21-markets-base20"></script>
+  <script src="/dashboard/static/voice.js?v=21-markets-base20"></script>
+  <script src="/dashboard/static/app.js?v=21-markets-base20"></script>
   <script>
     // Permanently kill service workers — they were serving stale JS/CSS after deploy
     if ("serviceWorker" in navigator) {
