@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/styles.css?v=14-password-reset" />
+  <link rel="stylesheet" href="/dashboard/static/styles.css?v=15-reset-email-lock" />
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
 </head>
 <body class="login-page">
@@ -51,12 +51,13 @@
 
       <div id="forgot-panel" class="hidden">
         <p class="muted" style="font-size:12px;margin:0 0 0.65rem">
-          Escribe tu email. La mesa Monarch te dará un código de 6 dígitos (Telegram/WhatsApp o panel Accesos).
-          Luego pon tu nueva contraseña.
+          La recuperación solo aplica al <strong>mismo email</strong> con el que intentas entrar.
+          No se puede cambiar por otro. La mesa te dará un código de 6 dígitos (válido 30 min).
         </p>
-        <label for="forgot-email">Email</label>
-        <input id="forgot-email" type="email" placeholder="tu@empresa.com" autocomplete="username" />
-        <button id="btn-forgot-send" class="btn primary" style="width:100%;margin-top:0.65rem;padding:0.65rem">Pedir código</button>
+        <label>Email de la cuenta</label>
+        <input id="forgot-email" type="email" readonly tabindex="-1" autocomplete="username" />
+        <p class="muted" style="font-size:11px;margin:0.25rem 0 0.5rem">Fijado al email del login — así nadie usa otro correo para intentar tomar la cuenta.</p>
+        <button id="btn-forgot-send" class="btn primary" style="width:100%;margin-top:0.5rem;padding:0.65rem">Pedir código</button>
         <label for="forgot-code" style="margin-top:0.75rem">Código de 6 dígitos</label>
         <input id="forgot-code" type="text" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code" />
         <label for="forgot-pass" style="margin-top:0.55rem">Nueva contraseña</label>
@@ -120,15 +121,41 @@
       okEl.textContent = "";
     }
 
+    function normalizeEmail(v) {
+      return (v || "").trim().toLowerCase();
+    }
+
+    function lockedLoginEmail() {
+      return normalizeEmail(document.getElementById("company-email").value);
+    }
+
     function showForgot(on) {
+      if (on) {
+        const email = lockedLoginEmail();
+        if (!email || email.indexOf("@") < 1) {
+          showErr("Primero escribe el email con el que intentas entrar. La recuperación queda fijada a ese correo.");
+          return;
+        }
+        document.getElementById("forgot-email").value = email;
+        try { sessionStorage.setItem("monarch_reset_email", email); } catch { /* ignore */ }
+      }
       document.getElementById("login-main").classList.toggle("hidden", on);
       document.getElementById("forgot-panel").classList.toggle("hidden", !on);
       document.getElementById("register-box")?.classList.toggle("hidden", on);
       clearErr();
-      if (on) {
-        const email = document.getElementById("company-email").value.trim();
-        if (email) document.getElementById("forgot-email").value = email;
+    }
+
+    function assertSameLoginEmail(email) {
+      const locked = lockedLoginEmail();
+      const stored = normalizeEmail(sessionStorage.getItem("monarch_reset_email") || "");
+      const target = normalizeEmail(email);
+      if (!target || target !== locked) {
+        throw new Error("El email de recuperación debe ser el mismo con el que intentas entrar.");
       }
+      if (stored && target !== stored) {
+        throw new Error("El email no coincide con el de esta solicitud. Vuelve al login e inténtalo de nuevo.");
+      }
+      return target;
     }
 
     function storeSession(token, meta) {
@@ -258,9 +285,10 @@
 
     document.getElementById("btn-forgot-send").onclick = async () => {
       clearErr();
-      const email = document.getElementById("forgot-email").value.trim();
-      if (!email) return showErr("Escribe tu email");
       try {
+        // Always re-lock from login email (never trust a typed alternate)
+        const email = assertSameLoginEmail(lockedLoginEmail());
+        document.getElementById("forgot-email").value = email;
         const r = await fetch(`${API}/auth/password/forgot`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -269,28 +297,41 @@
         });
         const data = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : "No se pudo pedir el código");
+        if (data.request_id) {
+          try { sessionStorage.setItem("monarch_reset_request_id", data.request_id); } catch { /* ignore */ }
+        }
         showOk(data.message || "Si el email existe, la mesa recibió el código.");
       } catch (e) { showErr(e.message); }
     };
 
     document.getElementById("btn-forgot-reset").onclick = async () => {
       clearErr();
-      const email = document.getElementById("forgot-email").value.trim();
-      const code = document.getElementById("forgot-code").value.trim();
-      const pass = document.getElementById("forgot-pass").value;
-      const pass2 = document.getElementById("forgot-pass2").value;
-      if (!email || !code) return showErr("Email y código son obligatorios");
-      if (pass.length < 8) return showErr("La contraseña debe tener al menos 8 caracteres");
-      if (pass !== pass2) return showErr("Las contraseñas no coinciden");
       try {
+        const email = assertSameLoginEmail(document.getElementById("forgot-email").value);
+        const code = document.getElementById("forgot-code").value.trim();
+        const pass = document.getElementById("forgot-pass").value;
+        const pass2 = document.getElementById("forgot-pass2").value;
+        if (!code) throw new Error("Ingresa el código que te dio la mesa");
+        if (pass.length < 8) throw new Error("La contraseña debe tener al menos 8 caracteres");
+        if (pass !== pass2) throw new Error("Las contraseñas no coinciden");
+        const requestId = sessionStorage.getItem("monarch_reset_request_id") || "";
         const r = await fetch(`${API}/auth/password/reset`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "same-origin",
-          body: JSON.stringify({ email, code, new_password: pass }),
+          body: JSON.stringify({
+            email,
+            code,
+            new_password: pass,
+            request_id: requestId || undefined,
+          }),
         });
         const data = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : "No se pudo actualizar");
+        try {
+          sessionStorage.removeItem("monarch_reset_email");
+          sessionStorage.removeItem("monarch_reset_request_id");
+        } catch { /* ignore */ }
         showOk(data.message || "Contraseña actualizada. Ya puedes iniciar sesión.");
         document.getElementById("company-email").value = email;
         document.getElementById("company-password").value = "";

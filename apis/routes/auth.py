@@ -48,6 +48,8 @@ class ResetPasswordRequest(BaseModel):
     email: str = Field(min_length=3, max_length=255)
     code: str = Field(min_length=4, max_length=12)
     new_password: str = Field(min_length=8, max_length=128)
+    # Optional: ties reset to the same forgot request started in this browser
+    request_id: str | None = Field(default=None, max_length=36)
 
 
 class DeskSetPasswordRequest(BaseModel):
@@ -350,10 +352,12 @@ async def forgot_password(
         except Exception:
             pass
         metrics.inc("auth_password_reset_requested")
-    # Never expose the code in the public HTTP response
+    # Never expose the code publicly; request_id only binds this browser to the email
     return {
         "ok": True,
         "message": result.get("message"),
+        "request_id": result.get("request_id"),
+        "email": (body.email or "").strip().lower(),
     }
 
 
@@ -368,6 +372,7 @@ async def reset_password(
             email=body.email,
             code=body.code,
             new_password=body.new_password,
+            request_id=body.request_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
