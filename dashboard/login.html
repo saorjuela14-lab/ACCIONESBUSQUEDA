@@ -10,13 +10,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/dashboard/static/styles.css" />
-  <script>
-    // Hide form until we know whether a valid session already exists
-    document.documentElement.classList.add("auth-checking");
-  </script>
-  <style>
-    html.auth-checking body { visibility: hidden; }
-  </style>
 </head>
 <body class="login-page">
   <div class="login-card">
@@ -80,20 +73,24 @@
       localStorage.removeItem("monarch_auth");
     }
 
-    function revealLogin() {
-      document.documentElement.classList.remove("auth-checking");
-    }
-
     async function validateExistingSession() {
       const token = localStorage.getItem("nexbuy_token");
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      if (!token) return false;
+      const headers = { Authorization: `Bearer ${token}` };
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
       try {
-        const me = await fetch(`${API}/auth/me`, { headers, credentials: "same-origin" });
+        const me = await fetch(`${API}/auth/me`, {
+          headers,
+          credentials: "same-origin",
+          signal: ctrl.signal,
+        });
         if (me.ok) {
           location.replace("/dashboard");
           return true;
         }
-      } catch { /* stay on login */ }
+      } catch { /* stay on login — cold start / offline */ }
+      finally { clearTimeout(timer); }
       // Stale local token — drop it so we don't bounce in a loop
       clearSessionLocal();
       return false;
@@ -171,13 +168,13 @@
       } catch (e) { showErr(e.message); }
     };
 
+    // Show login form immediately; session check runs in background
+    statusEl.textContent = "Comprobando sesión…";
     (async () => {
-      // Only auto-enter if there is a *valid* session (cookie and/or local token)
       const ok = await validateExistingSession();
       if (ok) return;
-      revealLogin();
       try {
-        const s = await fetch(`${API}/auth/status`).then((r) => r.json());
+        const s = await fetch(`${API}/auth/status`, { credentials: "same-origin" }).then((r) => r.json());
         const users = s.modes?.company_users || 0;
         statusEl.textContent = users
           ? `${s.app_name} · inicia sesión para continuar`
@@ -186,7 +183,7 @@
           document.getElementById("register-box")?.classList.add("hidden");
         }
       } catch {
-        statusEl.textContent = "No se pudo contactar el servidor";
+        statusEl.textContent = "Servidor despertando… puedes intentar entrar igual";
       }
     })();
   </script>
