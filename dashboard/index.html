@@ -11,6 +11,7 @@
   <link rel="icon" href="/dashboard/static/icon.png" type="image/png" />
   <link rel="apple-touch-icon" href="/dashboard/static/apple-touch-icon.png" />
   <title>Monarch Capital — Terminal</title>
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
   <script>
     // No token → login immediately (do NOT hide the page forever)
     (function () {
@@ -26,7 +27,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/styles.css" />
+  <link rel="stylesheet" href="/dashboard/static/styles.css?v=10-hard-logout" />
   <!-- Heavy chart libs: defer so login/session UI is not blocked on cold start -->
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script defer src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -41,6 +42,33 @@
       <div class="boot-splash-bar" aria-hidden="true"></div>
     </div>
   </div>
+  <script>
+    // Hard splash kill — runs even if cached app.js never calls hideBootSplash()
+    (function () {
+      function killSplash() {
+        document.documentElement.classList.add("session-ok");
+        var s = document.getElementById("boot-splash");
+        if (!s) return;
+        s.style.cssText = "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;";
+        s.setAttribute("hidden", "true");
+        try { s.remove(); } catch (_) {}
+      }
+      window.__monarchKillSplash = killSplash;
+      // Failsafe: never leave "Entrando al terminal…" stuck
+      setTimeout(killSplash, 3500);
+      document.addEventListener("DOMContentLoaded", function () {
+        var regime = document.getElementById("market-regime");
+        if (!regime) return;
+        var obs = new MutationObserver(function () {
+          if ((regime.textContent || "").trim() && regime.textContent.indexOf("—") === -1) {
+            killSplash();
+            obs.disconnect();
+          }
+        });
+        obs.observe(regime, { childList: true, characterData: true, subtree: true });
+      });
+    })();
+  </script>
   <div id="global-error-banner" class="global-error-banner hidden" role="alert">
     <span class="msg">Error de interfaz</span>
     <span class="banner-actions">
@@ -67,9 +95,9 @@
       <div class="regime" id="market-regime">Mercado —</div>
       <div class="session-bar" id="session-bar">
         <span id="auth-chip" class="auth-chip hidden" title="Sesión activa"></span>
-        <button type="button" id="btn-logout" class="btn auth-logout" title="Cerrar sesión en este dispositivo">
+        <a id="btn-logout" class="btn auth-logout" href="/logout" title="Cerrar sesión en este dispositivo">
           Cerrar sesión
-        </button>
+        </a>
       </div>
       <div class="header-actions">
         <input id="global-ticker" type="text" placeholder="Ej. AAPL" maxlength="10" aria-label="Ticker" />
@@ -473,17 +501,20 @@
     </div>
   </div>
 
-  <script src="/dashboard/static/reliability.js"></script>
-  <script src="/dashboard/static/voice.js"></script>
-  <script src="/dashboard/static/app.js"></script>
+  <script src="/dashboard/static/reliability.js?v=10-hard-logout"></script>
+  <script src="/dashboard/static/voice.js?v=10-hard-logout"></script>
+  <script src="/dashboard/static/app.js?v=10-hard-logout"></script>
   <script>
+    // Permanently kill service workers — they were serving stale JS/CSS after deploy
     if ("serviceWorker" in navigator) {
-      // Drop stale SW caches that used to serve /dashboard HTML without login
-      navigator.serviceWorker.getRegistrations().then((regs) => {
-        Promise.all(regs.map((r) => r.unregister())).finally(() => {
-          navigator.serviceWorker.register("/dashboard/static/sw.js").catch(() => {});
-        });
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        regs.forEach(function (r) { r.unregister(); });
       });
+      if (window.caches && caches.keys) {
+        caches.keys().then(function (keys) {
+          keys.forEach(function (k) { caches.delete(k); });
+        });
+      }
     }
   </script>
 </html>

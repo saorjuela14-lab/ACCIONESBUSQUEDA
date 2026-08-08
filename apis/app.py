@@ -115,7 +115,7 @@ def create_app() -> FastAPI:
                 return RedirectResponse(url="/login", status_code=302)
             return FileResponse(
                 dashboard_dir / "index.html",
-                headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+                headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
             )
 
         @app.get("/login")
@@ -124,11 +124,30 @@ def create_app() -> FastAPI:
 
             resp = FileResponse(
                 dashboard_dir / "login.html",
-                headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+                headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
             )
             # Explicit logout: wipe cookies so the desk token cannot auto-reenter
             if request.query_params.get("logged_out") in ("1", "true", "yes"):
                 _clear_session_cookies(resp)
+            return resp
+
+        @app.get("/logout")
+        async def logout_page(request: Request):
+            """Hard logout: clear cookies server-side and land on login (no JS required)."""
+            from apis.routes.auth import _clear_session_cookies
+            from services.company_auth_service import CompanyAuthService
+            from database.engine import get_session
+
+            token = _extract_token(request)
+            if token:
+                try:
+                    async for session in get_session():
+                        await CompanyAuthService(session).revoke_token(token)
+                        break
+                except Exception:
+                    pass
+            resp = RedirectResponse(url="/login?logged_out=1", status_code=302)
+            _clear_session_cookies(resp)
             return resp
 
     app.include_router(health.router, tags=["health"])

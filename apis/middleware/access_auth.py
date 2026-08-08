@@ -17,6 +17,7 @@ PUBLIC_PREFIXES = (
     "/metrics",
     "/api/v1/auth/",
     "/dashboard/static/",
+    "/logout",
 )
 
 DESK_WRITE_PREFIXES = (
@@ -71,12 +72,17 @@ class AccessTokenMiddleware(BaseHTTPMiddleware):
                 return RedirectResponse(url="/dashboard", status_code=302)
             return RedirectResponse(url="/login", status_code=302)
 
-        if path == "/dashboard" and method == "GET":
+        if path in ("/dashboard", "/dashboard/") and method == "GET":
             token = _extract_token(request)
             principal = await self._resolve(token) if token else None
             if not principal:
                 return RedirectResponse(url="/login", status_code=302)
+            if path == "/dashboard/":
+                return RedirectResponse(url="/dashboard", status_code=302)
             request.state.principal = principal
+            return await call_next(request)
+
+        if path == "/logout" and method == "GET":
             return await call_next(request)
 
         token = _extract_token(request)

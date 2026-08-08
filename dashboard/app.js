@@ -141,6 +141,10 @@ function setBootMsg(msg) {
 }
 
 function hideBootSplash() {
+  if (typeof window.__monarchKillSplash === "function") {
+    window.__monarchKillSplash();
+    return;
+  }
   document.documentElement.classList.add("session-ok");
   const splash = document.getElementById("boot-splash");
   if (!splash) return;
@@ -165,41 +169,30 @@ function applySessionUi(principal) {
   } else if (chip) {
     chip.classList.add("hidden");
   }
-  // Always show logout when we have a local session token (any device)
+  // Logout is a real <a href="/logout"> — always visible on the gated terminal
   const hasSession = !!(principal || localStorage.getItem("nexbuy_token"));
   if (logoutBtn) {
-    logoutBtn.classList.toggle("hidden", !hasSession);
+    logoutBtn.classList.remove("hidden");
     logoutBtn.textContent = "Cerrar sesión";
   }
-  if (sessionBar) sessionBar.classList.toggle("session-bar-on", hasSession);
+  if (sessionBar) sessionBar.classList.add("session-bar-on");
   hideBootSplash();
 }
 
-let _authRedirecting = false;
-
 async function clearSessionAndGoLogin() {
-  if (_authRedirecting) return;
-  _authRedirecting = true;
   try {
     sessionStorage.setItem("monarch_logged_out", "1");
   } catch { /* private mode */ }
   localStorage.removeItem("nexbuy_token");
   localStorage.removeItem("monarch_auth");
-  try {
-    await fetch(`${API}/auth/logout`, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: authHeaders({ json: false }),
-      cache: "no-store",
-    });
-  } catch { /* ignore — still force login page */ }
-  // logged_out=1 clears cookies server-side and blocks auto-bounce to dashboard
-  location.replace("/login?logged_out=1");
+  // Hard server logout — clears httponly cookies even if fetch/JS is broken
+  location.replace("/logout");
 }
 
 async function logoutSession(ev) {
+  // Prefer native <a href="/logout"> navigation; only intercept to clear localStorage first
   if (ev) {
-    try { ev.preventDefault(); ev.stopPropagation(); } catch { /* ignore */ }
+    try { ev.preventDefault(); } catch { /* ignore */ }
   }
   try { toast("Cerrando sesión…"); } catch { /* ignore */ }
   await clearSessionAndGoLogin();

@@ -9,9 +9,23 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/styles.css" />
+  <link rel="stylesheet" href="/dashboard/static/styles.css?v=10-hard-logout" />
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
 </head>
 <body class="login-page">
+  <script>
+    // Kill stale service workers on login too (covers users who never open the terminal)
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        regs.forEach(function (r) { r.unregister(); });
+      });
+      if (window.caches && caches.keys) {
+        caches.keys().then(function (keys) {
+          keys.forEach(function (k) { caches.delete(k); });
+        });
+      }
+    }
+  </script>
   <div class="login-card">
     <div class="login-brand">
       <img src="/dashboard/static/assets/logo.png" alt="Monarch Capital" width="280" height="280" />
