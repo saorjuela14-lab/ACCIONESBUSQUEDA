@@ -736,7 +736,7 @@ body.tech-chart-fs { overflow: hidden; }
     var(--bg);
 }
 .login-card {
-  width: 100%; max-width: 360px; background: var(--panel); border: 1px solid var(--border);
+  width: 100%; max-width: 380px; background: var(--panel); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 1.5rem;
 }
 .login-card label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 4px; }
@@ -746,6 +746,46 @@ body.tech-chart-fs { overflow: hidden; }
 }
 .login-error { color: var(--red); font-size: 12px; margin-top: 0.5rem; }
 .login-error.hidden { display: none; }
+.login-tabs { display: flex; gap: 6px; margin-bottom: 0.85rem; }
+.login-tab {
+  flex: 1; background: var(--surface); border: 1px solid var(--border); color: var(--muted);
+  padding: 0.45rem; border-radius: 6px; cursor: pointer; font-size: 12px;
+}
+.login-tab.active { border-color: var(--gold, #c4a574); color: var(--text); }
+.login-panel.hidden { display: none; }
+.login-register { margin-top: 0.85rem; font-size: 12px; color: var(--muted); }
+.login-register summary { cursor: pointer; margin-bottom: 0.5rem; color: var(--gold, #c4a574); }
+
+/* Reliability UI */
+.global-error-banner {
+  position: sticky; top: 0; z-index: 100;
+  display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;
+  padding: 0.55rem 1rem; background: rgba(127,29,29,0.92); border-bottom: 1px solid #ef4444;
+  color: #fecaca; font-size: 12px;
+}
+.global-error-banner.hidden { display: none; }
+.global-error-banner .banner-actions { display: flex; gap: 6px; }
+.panel-error {
+  margin: 0.75rem 1rem; padding: 1rem; border: 1px solid rgba(239,68,68,0.35);
+  border-radius: 8px; background: rgba(127,29,29,0.15);
+}
+.panel-error.hidden { display: none; }
+.ui-state { text-align: center; padding: 1rem 0.5rem; color: var(--muted); font-size: 12px; }
+.ui-state-error p:first-child { color: #fca5a5; }
+.ui-retry, .ui-state .btn { margin-top: 0.55rem; }
+.ui-spinner {
+  width: 22px; height: 22px; margin: 0 auto 0.45rem;
+  border: 2px solid var(--border); border-top-color: var(--gold, #c4a574);
+  border-radius: 50%; animation: spin 0.8s linear infinite;
+}
+.pager-bar {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  margin-top: 0.5rem; font-size: 11px; color: var(--muted);
+}
+.auth-chip {
+  font-size: 10px; color: var(--muted); padding: 2px 8px; border: 1px solid var(--border);
+  border-radius: 999px; margin-left: 0.35rem;
+}
 
 /* Mobile bottom nav */
 .mobile-nav {

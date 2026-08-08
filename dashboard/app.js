@@ -139,18 +139,37 @@ async function ensureAuth() {
       location.href = "/login";
       return;
     }
-    const check = await fetch(`${API}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
+    const me = await fetch(`${API}/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
     });
-    if (!check.ok) {
+    if (!me.ok) {
       localStorage.removeItem("nexbuy_token");
+      localStorage.removeItem("monarch_auth");
       location.href = "/login";
+      return;
+    }
+    const principal = await me.json();
+    window.__monarchPrincipal = principal;
+    const chip = document.getElementById("auth-chip");
+    if (chip) {
+      const label = principal.role === "desk"
+        ? "Mesa"
+        : (principal.email || "Empresa");
+      chip.textContent = label;
+      chip.classList.remove("hidden");
     }
   } catch {
     /* offline / dev */
   }
+}
+
+function formatApiDetail(detail) {
+  if (!detail) return "Error";
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((d) => d.msg || JSON.stringify(d)).join("; ");
+  }
+  return String(detail);
 }
 
 async function api(path, opts = {}) {
@@ -160,14 +179,21 @@ async function api(path, opts = {}) {
   });
   if (r.status === 401) {
     localStorage.removeItem("nexbuy_token");
+    localStorage.removeItem("monarch_auth");
     location.href = "/login";
     throw new Error("Sesión expirada");
   }
   if (!r.ok) {
     const err = await r.json().catch(() => ({}));
-    throw new Error(err.detail || r.statusText);
+    throw new Error(formatApiDetail(err.detail) || r.statusText);
   }
   return r.json();
+}
+
+async function apiWithRetry(path, opts = {}, retryOpts = {}) {
+  const runner = window.MonarchUI?.apiRetry
+    || (async (fn) => fn());
+  return runner(() => api(path, opts), { label: path, ...retryOpts });
 }
 
 function toast(msg, ms = 3500) {
@@ -787,22 +813,41 @@ async function runAutopilot() {
   });
 }
 
-async function loadAuditLog() {
+let auditPageOffset = 0;
+const AUDIT_PAGE_SIZE = 15;
+
+async function loadAuditLog(offset = auditPageOffset) {
   const el = $("#ops-audit-log");
   if (!el) return;
   el.classList.remove("hidden");
+  window.MonarchUI?.renderState(el, "loading", { title: "Cargando auditoría…" });
   try {
-    const rows = await api(`${API}/ops/audit?limit=15`);
-    if (!rows?.length) {
-      el.textContent = "Sin eventos de audit aún.";
+    const page = await apiWithRetry(`${API}/ops/audit?limit=${AUDIT_PAGE_SIZE}&offset=${offset}`);
+    const rows = page.items || page || [];
+    auditPageOffset = page.offset ?? offset;
+    if (!rows.length) {
+      window.MonarchUI?.renderState(el, "empty", {
+        title: "Sin eventos de audit aún",
+        detail: "Las acciones de la mesa aparecerán aquí.",
+      });
       return;
     }
+    const total = page.total ?? rows.length;
     el.innerHTML = rows.map((e) =>
-      `<div>${new Date(e.created_at).toLocaleString(LOCALE)} · <b>${e.action}</b>` +
-      `${e.symbol ? " " + e.symbol : ""} · ${e.success ? "OK" : "FAIL"} · ${(e.message || "").slice(0, 80)}</div>`
-    ).join("");
+      `<div>${new Date(e.created_at).toLocaleString(LOCALE)} · <b>${escapeHtml(e.action)}</b>` +
+      `${e.symbol ? " " + escapeHtml(e.symbol) : ""} · ${e.success ? "OK" : "FAIL"} · ${escapeHtml((e.message || "").slice(0, 80))}</div>`
+    ).join("") +
+    `<div class="pager-bar"><span>${auditPageOffset + 1}–${auditPageOffset + rows.length} de ${total}</span>` +
+    `<span><button type="button" class="btn" id="audit-prev" ${auditPageOffset <= 0 ? "disabled" : ""}>Anterior</button> ` +
+    `<button type="button" class="btn" id="audit-next" ${page.has_more ? "" : "disabled"}>Siguiente</button></span></div>`;
+    $("#audit-prev")?.addEventListener("click", () => loadAuditLog(Math.max(0, auditPageOffset - AUDIT_PAGE_SIZE)));
+    $("#audit-next")?.addEventListener("click", () => loadAuditLog(auditPageOffset + AUDIT_PAGE_SIZE));
   } catch (e) {
-    el.textContent = "Audit: " + e.message;
+    window.MonarchUI?.renderState(el, "error", {
+      title: "No se pudo cargar el audit",
+      detail: e.message,
+      retryId: "audit",
+    });
   }
 }
 
@@ -1286,7 +1331,20 @@ function renderDashboard(d) {
   $("#m-msent").textContent = fmtScore(d.market_sentiment_score);
   $("#watchlist").innerHTML = (d.watchlist || []).map((t) => `<div class="wl-item" data-t="${t}">${t}</div>`).join("") || "—";
   $$(".wl-item").forEach((el) => el.onclick = () => { $("#global-ticker").value = el.dataset.t; runAnalyze(); });
-  $("#alerts-panel").innerHTML = (d.active_alerts || []).map((a) => `<div>${a}</div>`).join("") || "Sin alertas";
+  {
+    const alerts = d.active_alerts || [];
+    const alertsEl = $("#alerts-panel");
+    if (alertsEl) {
+      if (!alerts.length) {
+        window.MonarchUI?.renderState(alertsEl, "empty", {
+          title: "Sin alertas",
+          detail: "Cuando haya riesgos o señales, las verás aquí.",
+        });
+      } else {
+        alertsEl.innerHTML = alerts.map((a) => `<div>${escapeHtml(typeof a === "string" ? a : (a.title || a))}</div>`).join("");
+      }
+    }
+  }
   $("#recent-panel").innerHTML = (d.recently_analyzed || []).map((t) => `<div class="wl-item" data-t="${t}">${t}</div>`).join("") || "—";
   $$("#recent-panel .wl-item").forEach((el) => el.onclick = () => { $("#global-ticker").value = el.dataset.t; runAnalyze(); });
 
@@ -1374,9 +1432,27 @@ async function testPushNotification() {
   }
 }
 
+function showDashboardError(err) {
+  const box = $("#panel-error");
+  if (!box) {
+    toast("Panel: " + (err?.message || err));
+    return;
+  }
+  box.classList.remove("hidden");
+  const title = $("#panel-error-title");
+  const detail = $("#panel-error-detail");
+  if (title) title.textContent = "No se pudo cargar el terminal";
+  if (detail) detail.textContent = err?.message || String(err);
+}
+
+function hideDashboardError() {
+  $("#panel-error")?.classList.add("hidden");
+}
+
 async function loadDashboard() {
+  hideDashboardError();
   try {
-    const d = await api(`${API}/dashboard`);
+    const d = await apiWithRetry(`${API}/dashboard`, {}, { retries: 2, label: "dashboard" });
     renderDashboard(d);
     await Promise.all([
       loadDailyBriefing(),
@@ -1387,7 +1463,10 @@ async function loadDashboard() {
       loadRiskDesk(),
       loadOpsDesk(),
     ]);
-  } catch (e) { toast("Panel: " + e.message); }
+  } catch (e) {
+    showDashboardError(e);
+    toast("Panel: " + e.message);
+  }
 }
 
 async function loadPriceChart(t) {
@@ -2532,6 +2611,14 @@ document.addEventListener("keydown", (e) => {
 });
 
 (async () => {
+  if (window.MonarchUI) {
+    window.MonarchUI.installErrorBoundary();
+    window.MonarchUI.bindRetries(document, {
+      audit: () => loadAuditLog(auditPageOffset),
+      dashboard: () => loadDashboard(),
+    });
+  }
+  $("#btn-dashboard-retry")?.addEventListener("click", () => loadDashboard());
   await ensureAuth();
   setupMobileNav();
   setupTechMobileControls();

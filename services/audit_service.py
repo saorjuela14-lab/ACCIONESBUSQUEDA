@@ -47,5 +47,10 @@ class AuditService:
         )
         return saved
 
-    async def recent(self, limit: int = 50, action: str | None = None) -> list[AuditEvent]:
-        return await self._repo.list_recent(limit=limit, action=action)
+    async def recent(self, limit: int = 50, action: str | None = None, offset: int = 0) -> list[AuditEvent]:
+        return await self._repo.list_recent(limit=limit, action=action, offset=offset)
+
+    async def recent_page(
+        self, *, limit: int = 40, offset: int = 0, action: str | None = None
+    ) -> tuple[list[AuditEvent], int]:
+        return await self._repo.list_recent_page(limit=limit, offset=offset, action=action)

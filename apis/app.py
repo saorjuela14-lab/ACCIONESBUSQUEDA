@@ -40,6 +40,18 @@ async def lifespan(app: FastAPI):
             await ensure_firm_autonomy_flags(session, firm_autonomy=True)
             break
 
+    # Optional B2B bootstrap company (email/password) when DB has no users
+    try:
+        from services.company_auth_service import CompanyAuthService
+
+        async for session in get_session():
+            boot = await CompanyAuthService(session).bootstrap_if_needed()
+            if boot:
+                logger.info("app.company_bootstrap", email=boot.get("email"))
+            break
+    except Exception as exc:
+        logger.warning("app.company_bootstrap_failed", error=str(exc))
+
     scheduler = None
     if settings.scheduler_enabled:
         from services.scheduler_service import start_scheduler

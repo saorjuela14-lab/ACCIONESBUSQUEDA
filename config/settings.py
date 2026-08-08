@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     dashboard_access_token: str = ""
     public_base_url: str = ""
 
+    # Auth / B2B
+    force_auth: bool = False  # require login even without desk token
+    expose_api_docs: bool = False  # /docs in production
+    company_bootstrap_email: str = ""
+    company_bootstrap_password: str = ""
+    company_bootstrap_name: str = "Empresa demo"
+
     # Voice assistant persona ("Viernes" — habla al jefe)
     voice_assistant_name: str = "Viernes"
     voice_boss_title: str = "jefe"

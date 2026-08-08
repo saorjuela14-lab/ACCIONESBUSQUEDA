@@ -9,7 +9,6 @@
     "role": "CEO — capital, kill-switch, strategic override",
     "github": "saorjuela14-lab"
   },
-
   "identity": {
     "product_name": "Monarch Capital",
     "former_name": "NexBuy",
@@ -39,7 +38,11 @@
         "mark_png": "dashboard/assets/mark.png",
         "logo_svg": "dashboard/assets/logo.svg",
         "mark_svg": "dashboard/assets/mark.svg",
-        "icons": ["dashboard/icon.png", "dashboard/icon-192.png", "dashboard/icon-512.png"]
+        "icons": [
+          "dashboard/icon.png",
+          "dashboard/icon-192.png",
+          "dashboard/icon-512.png"
+        ]
       },
       "compat_notes": [
         "Internal keys/DB paths may still say nexbuy_* for backward compatibility",
@@ -48,7 +51,6 @@
       ]
     }
   },
-
   "north_star": {
     "model": "Firm autonomy LIVE with multi-agent committee + Risk Desk",
     "human_role": "CEO: capital, kill-switch, override — not click-to-trade every order",
@@ -68,7 +70,6 @@
       "Prefer always-on host (Railway) over sleeping hobby edge"
     ]
   },
-
   "urls": {
     "repo": "https://github.com/saorjuela14-lab/ACCIONESBUSQUEDA",
     "production_terminal": "https://accionesbusqueda.fastapicloud.dev",
@@ -84,7 +85,6 @@
     "legacy_handoff": "HANDOFF.json",
     "this_file": "PROJECT_MEMORY.json"
   },
-
   "live_snapshot": {
     "as_of": "2026-08-07T17:55:00Z",
     "source": "accionesbusqueda.fastapicloud.dev",
@@ -138,7 +138,6 @@
     },
     "note": "Positions and equity change continuously; refresh via /api/v1/broker/status and /api/v1/ops/status."
   },
-
   "architecture": {
     "style": "Clean Architecture layers",
     "layers": {
@@ -174,7 +173,6 @@
       "reports/": "Generated report artifacts"
     }
   },
-
   "pipeline": {
     "name": "How a stock is chosen and managed",
     "flow": [
@@ -193,12 +191,36 @@
     "discovery": {
       "orchestrator": "CompanyDiscoveryService",
       "sources": [
-        {"id": "stocktwits", "module": "providers/discovery/stocktwits_trending.py", "weight": 1.2},
-        {"id": "news", "module": "providers/discovery/news_scanner.py", "weight": 1.1},
-        {"id": "x_twitter", "module": "providers/discovery/x_search_provider.py", "weight": 1.0, "method": "DuckDuckGo site:x.com"},
-        {"id": "reddit", "module": "providers/discovery/reddit_discovery.py", "weight": 0.9, "method": "DuckDuckGo site:reddit.com"},
-        {"id": "micro_seeds", "via": "MicroPortfolioManagerService"},
-        {"id": "watchlist", "interval_minutes": 30}
+        {
+          "id": "stocktwits",
+          "module": "providers/discovery/stocktwits_trending.py",
+          "weight": 1.2
+        },
+        {
+          "id": "news",
+          "module": "providers/discovery/news_scanner.py",
+          "weight": 1.1
+        },
+        {
+          "id": "x_twitter",
+          "module": "providers/discovery/x_search_provider.py",
+          "weight": 1.0,
+          "method": "DuckDuckGo site:x.com"
+        },
+        {
+          "id": "reddit",
+          "module": "providers/discovery/reddit_discovery.py",
+          "weight": 0.9,
+          "method": "DuckDuckGo site:reddit.com"
+        },
+        {
+          "id": "micro_seeds",
+          "via": "MicroPortfolioManagerService"
+        },
+        {
+          "id": "watchlist",
+          "interval_minutes": 30
+        }
       ],
       "capital_fit": {
         "module": "services/capital_fit.py",
@@ -211,16 +233,46 @@
       "director": "agents/investment_director.py",
       "strategy_lab": "services/strategy_lab.py",
       "voting_agents_strict_10": [
-        {"id": "fundamental_agent", "looks_at": "Business / fundamentals"},
-        {"id": "technical_agent", "looks_at": "Multi-TF price, gaps, volume, structure, playbook"},
-        {"id": "valuation_agent", "looks_at": "Valuation"},
-        {"id": "macro_agent", "looks_at": "Macro regime (FRED when keyed)"},
-        {"id": "news_agent", "looks_at": "News / catalysts"},
-        {"id": "sentiment_agent", "looks_at": "Social sentiment"},
-        {"id": "country_risk_agent", "looks_at": "Country risk"},
-        {"id": "company_risk_agent", "looks_at": "Company risk"},
-        {"id": "corporate_actions_agent", "looks_at": "Splits, dividends, events"},
-        {"id": "market_dependency_agent", "looks_at": "Market/sector dependencies"}
+        {
+          "id": "fundamental_agent",
+          "looks_at": "Business / fundamentals"
+        },
+        {
+          "id": "technical_agent",
+          "looks_at": "Multi-TF price, gaps, volume, structure, playbook"
+        },
+        {
+          "id": "valuation_agent",
+          "looks_at": "Valuation"
+        },
+        {
+          "id": "macro_agent",
+          "looks_at": "Macro regime (FRED when keyed)"
+        },
+        {
+          "id": "news_agent",
+          "looks_at": "News / catalysts"
+        },
+        {
+          "id": "sentiment_agent",
+          "looks_at": "Social sentiment"
+        },
+        {
+          "id": "country_risk_agent",
+          "looks_at": "Country risk"
+        },
+        {
+          "id": "company_risk_agent",
+          "looks_at": "Company risk"
+        },
+        {
+          "id": "corporate_actions_agent",
+          "looks_at": "Splits, dividends, events"
+        },
+        {
+          "id": "market_dependency_agent",
+          "looks_at": "Market/sector dependencies"
+        }
       ],
       "book_agents_non_voting": [
         "portfolio_agent",
@@ -229,9 +281,18 @@
         "investment_memory"
       ],
       "strategy_horizons": {
-        "short": ["momentum", "swing", "breakout"],
-        "long": ["value", "growth"],
-        "long_optional": ["dividend"]
+        "short": [
+          "momentum",
+          "swing",
+          "breakout"
+        ],
+        "long": [
+          "value",
+          "growth"
+        ],
+        "long_optional": [
+          "dividend"
+        ]
       },
       "consensus": {
         "module": "services/committee_consensus.py",
@@ -250,7 +311,10 @@
           "why": "Full 10-agent committee often times out on sleeping edge hosts",
           "still_required": "Some actionable source tag before auto-execute"
         },
-        "score_thresholds": {"buy_ge": 15, "sell_le": -15}
+        "score_thresholds": {
+          "buy_ge": 15,
+          "sell_le": -15
+        }
       }
     },
     "risk_desk": {
@@ -326,12 +390,15 @@
       "behavior": "Bank greens/flat; carry moderate reds overnight; cut ≤−8% or sell thesis"
     }
   },
-
   "product_surfaces": {
     "web": {
       "entry": "/ redirects to /dashboard",
       "login": "/login",
-      "not_on_web_entry": ["landing page", "pitch HTML", "investor marketing site"],
+      "not_on_web_entry": [
+        "landing page",
+        "pitch HTML",
+        "investor marketing site"
+      ],
       "terminal_features": [
         "CEO equity bar (Tu dinero)",
         "Estado en 3 líneas",
@@ -358,13 +425,37 @@
       "stt": "Web Speech API (browser)",
       "tts_provider": "ElevenLabs Bella hpp4J3VqNfWAUOO0d1Us / eleven_multilingual_v2 (natural) + browser fallback",
       "chat": "OpenAI tool-calling (market, ops, simulate, allocation, queue product/code changes)",
-      "env": ["OPENAI_API_KEY", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID", "ELEVENLABS_MODEL_ID", "GITHUB_TOKEN"],
-      "endpoints": ["POST /api/v1/voice/chat", "POST /api/v1/voice/command", "POST /api/v1/voice/tts", "GET /api/v1/voice/assistant/status"],
-      "examples": ["jefe cómo está el mercado", "simula 3200 al 12%", "cambia el hero de la página", "compra 1 AAPL"]
+      "env": [
+        "OPENAI_API_KEY",
+        "ELEVENLABS_API_KEY",
+        "ELEVENLABS_VOICE_ID",
+        "ELEVENLABS_MODEL_ID",
+        "GITHUB_TOKEN"
+      ],
+      "endpoints": [
+        "POST /api/v1/voice/chat",
+        "POST /api/v1/voice/command",
+        "POST /api/v1/voice/tts",
+        "GET /api/v1/voice/assistant/status"
+      ],
+      "examples": [
+        "jefe cómo está el mercado",
+        "simula 3200 al 12%",
+        "cambia el hero de la página",
+        "compra 1 AAPL"
+      ]
     },
     "messaging": {
-      "whatsapp_briefings_et": ["09:35", "12:30", "16:05"],
-      "providers": ["callmebot", "meta", "twilio"],
+      "whatsapp_briefings_et": [
+        "09:35",
+        "12:30",
+        "16:05"
+      ],
+      "providers": [
+        "callmebot",
+        "meta",
+        "twilio"
+      ],
       "catchup": "StatusBriefingCatchupService (no spam, max 1 per slot)",
       "telegram_alerts": true,
       "webhook_alerts": true
@@ -380,14 +471,30 @@
       ]
     }
   },
-
   "api_surface": {
     "prefix": "/api/v1",
     "route_modules": [
-      "health", "auth", "analysis", "watchlist", "portfolio", "alerts", "reports",
-      "providers", "correlations", "dashboard", "market", "graph", "proposal",
-      "allocation", "sentiment", "discovery", "recommendations", "risk", "ops",
-      "broker", "voice"
+      "health",
+      "auth",
+      "analysis",
+      "watchlist",
+      "portfolio",
+      "alerts",
+      "reports",
+      "providers",
+      "correlations",
+      "dashboard",
+      "market",
+      "graph",
+      "proposal",
+      "allocation",
+      "sentiment",
+      "discovery",
+      "recommendations",
+      "risk",
+      "ops",
+      "broker",
+      "voice"
     ],
     "ops_critical": [
       "GET /api/v1/ops/status",
@@ -408,36 +515,76 @@
       "GET /api/v1/voice/tts/status"
     ]
   },
-
   "modules_inventory": {
     "agents": [
-      "fundamental_agent", "technical_agent", "valuation_agent", "macro_agent",
-      "news_agent", "sentiment_agent", "country_risk_agent", "company_risk_agent",
-      "corporate_actions_agent", "market_dependency_agent", "portfolio_agent",
-      "watchlist_agent", "alert_agent", "investment_memory", "investment_director",
+      "fundamental_agent",
+      "technical_agent",
+      "valuation_agent",
+      "macro_agent",
+      "news_agent",
+      "sentiment_agent",
+      "country_risk_agent",
+      "company_risk_agent",
+      "corporate_actions_agent",
+      "market_dependency_agent",
+      "portfolio_agent",
+      "watchlist_agent",
+      "alert_agent",
+      "investment_memory",
+      "investment_director",
       "market_monitor"
     ],
     "technical_submodules": [
-      "indicators", "historical_setups", "adx", "market_opinion", "context",
-      "confluence", "structure", "volume_analysis", "gaps", "playbook"
+      "indicators",
+      "historical_setups",
+      "adx",
+      "market_opinion",
+      "context",
+      "confluence",
+      "structure",
+      "volume_analysis",
+      "gaps",
+      "playbook"
     ],
     "key_services": [
-      "analysis_service", "autopilot_service", "auto_execute_service",
-      "committee_consensus", "company_discovery_service", "daily_trade_recommendation_service",
-      "micro_portfolio_manager_service", "risk_policy_service", "macro_regime_service",
-      "position_lifecycle_service", "holdings_strategy_review_service",
-      "intraday_flat_service", "reconcile_service", "kill_switch_service",
-      "alpaca_order_service", "voice_command_service", "daily_status_briefing_service",
-      "status_briefing_catchup_service", "scheduler_service", "capital_fit",
-      "strategy_lab", "audit_service", "firm_autonomy_bootstrap"
+      "analysis_service",
+      "autopilot_service",
+      "auto_execute_service",
+      "committee_consensus",
+      "company_discovery_service",
+      "daily_trade_recommendation_service",
+      "micro_portfolio_manager_service",
+      "risk_policy_service",
+      "macro_regime_service",
+      "position_lifecycle_service",
+      "holdings_strategy_review_service",
+      "intraday_flat_service",
+      "reconcile_service",
+      "kill_switch_service",
+      "alpaca_order_service",
+      "voice_command_service",
+      "daily_status_briefing_service",
+      "status_briefing_catchup_service",
+      "scheduler_service",
+      "capital_fit",
+      "strategy_lab",
+      "audit_service",
+      "firm_autonomy_bootstrap"
     ]
   },
-
   "data_model_highlights": {
     "orm_tables_examples": [
-      "watchlist", "portfolios", "investment_memory", "agent_weights", "alerts",
-      "daily_trade_reports", "audit_events", "ops_flags", "position_mandates",
-      "market_reports", "portfolio_snapshots"
+      "watchlist",
+      "portfolios",
+      "investment_memory",
+      "agent_weights",
+      "alerts",
+      "daily_trade_reports",
+      "audit_events",
+      "ops_flags",
+      "position_mandates",
+      "market_reports",
+      "portfolio_snapshots"
     ],
     "domain_concepts": [
       "Portfolio / PortfolioPosition",
@@ -449,7 +596,6 @@
     ],
     "persistence_warning": "SQLite on FastAPI Cloud Hobby is ephemeral across redeploys — use Neon DATABASE_URL for durable state; PortfolioBootstrapService can rebuild from Alpaca."
   },
-
   "configuration_defaults": {
     "file": "config/settings.py",
     "highlights": {
@@ -469,49 +615,126 @@
       "database_url_default": "sqlite+aiosqlite:///./data/nexbuy.db"
     },
     "env_keys_critical": [
-      "ALPACA_API_KEY", "ALPACA_SECRET_KEY", "ALPACA_LIVE_TRADE",
-      "DASHBOARD_ACCESS_TOKEN", "DATABASE_URL",
-      "FRED_API_KEY", "POLYGON_API_KEY", "OPENAI_API_KEY",
-      "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
-      "WHATSAPP_PHONE", "WHATSAPP_API_KEY",
-      "FIRM_AUTONOMY", "AUTO_EXECUTE_MAX_NOTIONAL", "AUTOPILOT_INTERVAL_MINUTES"
+      "ALPACA_API_KEY",
+      "ALPACA_SECRET_KEY",
+      "ALPACA_LIVE_TRADE",
+      "DASHBOARD_ACCESS_TOKEN",
+      "DATABASE_URL",
+      "FRED_API_KEY",
+      "POLYGON_API_KEY",
+      "OPENAI_API_KEY",
+      "TELEGRAM_BOT_TOKEN",
+      "TELEGRAM_CHAT_ID",
+      "WHATSAPP_PHONE",
+      "WHATSAPP_API_KEY",
+      "FIRM_AUTONOMY",
+      "AUTO_EXECUTE_MAX_NOTIONAL",
+      "AUTOPILOT_INTERVAL_MINUTES"
     ]
   },
-
   "hosts_and_deploy": {
     "current_public": "FastAPI Cloud (accionesbusqueda.fastapicloud.dev)",
     "hobby_limitation": "Sleeps — may miss crons; keepalive + catch-up mitigate",
     "recommended": "Railway always-on (Dockerfile + railway.toml present)",
-    "artifacts": ["Dockerfile", "railway.toml", ".github workflows for keepalive if present"],
+    "artifacts": [
+      "Dockerfile",
+      "railway.toml",
+      ".github workflows for keepalive if present"
+    ],
     "pwa_cache": "monarch-v5"
   },
-
   "history_merged_prs": {
     "branch_suffix_convention": "-1bd5",
     "branch_prefix": "cursor/",
     "milestones": [
-      {"pr": 35, "title": "Cerrar comité fundacional + broker autónomo"},
-      {"pr": 41, "title": "Voice agent ES — analyze/buy/sell with confirm"},
-      {"pr": 44, "title": "Require unanimous committee BUY for autonomous capital"},
-      {"pr": 45, "title": "Enable firm autonomy LIVE"},
-      {"pr": 46, "title": "WhatsApp open/close briefings"},
-      {"pr": 49, "title": "WhatsApp 3×/day only"},
-      {"pr": 50, "title": "Autopilot every 10 min + USDT→USD sweep"},
-      {"pr": 54, "title": "Railway always-on + keepalive"},
-      {"pr": 55, "title": "Continuous hunt until committee approves"},
-      {"pr": 58, "title": "Ultra-micro fast path hunt seeds and buy"},
-      {"pr": 59, "title": "Micro technical desk (avoid committee timeout)"},
-      {"pr": 60, "title": "Soft-warn VaR on ultra-micro"},
-      {"pr": 61, "title": "GTC stops + faster micro time-stop"},
-      {"pr": 62, "title": "Continuous holdings strategy review"},
-      {"pr": 64, "title": "Smart EOD — bank greens, carry moderate reds"},
-      {"pr": 67, "title": "Risk discipline 2R, trail arm, post-stop cooldown"},
-      {"pr": 68, "title": "Monarch Capital rebrand + Shark Tank surface"},
-      {"pr": 69, "title": "Terminal UX for dummies / easy Spanish"},
-      {"pr": 71, "title": "Monarch crown logo + brand system"},
-      {"pr": 73, "title": "Terminal-only web entry; remove public landing"},
-      {"pr": 74, "title": "Pitch rewrite around full committee process"},
-      {"pr": 75, "title": "Canva links with full process content"}
+      {
+        "pr": 35,
+        "title": "Cerrar comité fundacional + broker autónomo"
+      },
+      {
+        "pr": 41,
+        "title": "Voice agent ES — analyze/buy/sell with confirm"
+      },
+      {
+        "pr": 44,
+        "title": "Require unanimous committee BUY for autonomous capital"
+      },
+      {
+        "pr": 45,
+        "title": "Enable firm autonomy LIVE"
+      },
+      {
+        "pr": 46,
+        "title": "WhatsApp open/close briefings"
+      },
+      {
+        "pr": 49,
+        "title": "WhatsApp 3×/day only"
+      },
+      {
+        "pr": 50,
+        "title": "Autopilot every 10 min + USDT→USD sweep"
+      },
+      {
+        "pr": 54,
+        "title": "Railway always-on + keepalive"
+      },
+      {
+        "pr": 55,
+        "title": "Continuous hunt until committee approves"
+      },
+      {
+        "pr": 58,
+        "title": "Ultra-micro fast path hunt seeds and buy"
+      },
+      {
+        "pr": 59,
+        "title": "Micro technical desk (avoid committee timeout)"
+      },
+      {
+        "pr": 60,
+        "title": "Soft-warn VaR on ultra-micro"
+      },
+      {
+        "pr": 61,
+        "title": "GTC stops + faster micro time-stop"
+      },
+      {
+        "pr": 62,
+        "title": "Continuous holdings strategy review"
+      },
+      {
+        "pr": 64,
+        "title": "Smart EOD — bank greens, carry moderate reds"
+      },
+      {
+        "pr": 67,
+        "title": "Risk discipline 2R, trail arm, post-stop cooldown"
+      },
+      {
+        "pr": 68,
+        "title": "Monarch Capital rebrand + Shark Tank surface"
+      },
+      {
+        "pr": 69,
+        "title": "Terminal UX for dummies / easy Spanish"
+      },
+      {
+        "pr": 71,
+        "title": "Monarch crown logo + brand system"
+      },
+      {
+        "pr": 73,
+        "title": "Terminal-only web entry; remove public landing"
+      },
+      {
+        "pr": 74,
+        "title": "Pitch rewrite around full committee process"
+      },
+      {
+        "pr": 75,
+        "title": "Canva links with full process content"
+      }
     ],
     "agent_lineage": {
       "origin_agent_name": "Comité de inversión IA",
@@ -519,7 +742,6 @@
       "note": "Transcripts may live in other Cursor environments; this JSON + HANDOFF.json are the portable memory."
     }
   },
-
   "known_tensions_and_truths": [
     {
       "topic": "HANDOFF.json micro stop/TP (5%/6%) vs settings.py (8%/16%)",
@@ -542,7 +764,6 @@
       "truth": "Intentionally NOT on web entry. Canva + MD only. Terminal is the product."
     }
   ],
-
   "how_to_onboard_another_person_or_agent": {
     "read_order": [
       "PROJECT_MEMORY.json (this file)",
@@ -567,7 +788,6 @@
       "Hard-refresh PWA (monarch-v5) after UI/asset changes"
     ]
   },
-
   "pending_and_recommended_next": [
     "Keep live book transparent for pitch (equity, vs yesterday, open position, gates ON)",
     "If logo still imperfect vs owner's exact file, replace dashboard/assets/logo.png + mark.png from source PNG",
@@ -575,7 +795,6 @@
     "Fill Shark Tank ask (amount + equity %) in Canva/oral before the day",
     "Optional: deepen Canva visuals with official crown logo asset once public URL available"
   ],
-
   "glossary_es": {
     "comité": "Conjunto de agentes especializados que votan evidencia; el Director consolida la tesis.",
     "gate": "Regla dura: sin tag de consenso/mesa, no hay auto-compra.",
@@ -586,5 +805,25 @@
     "Smart EOD": "A las 15:40 ET asegura verdes; carry rojos moderados; corta ≤−8%.",
     "Mesa técnica micro": "Aprobación rápida por cotización/técnico cuando el comité completo no cabe en tiempo.",
     "Terminal": "La UI del producto; no es una landing de marketing."
+  },
+  "auth": {
+    "modes": [
+      "desk_token",
+      "company_email_password"
+    ],
+    "endpoints": [
+      "/auth/company/login",
+      "/auth/login",
+      "/auth/companies",
+      "/auth/me",
+      "/metrics"
+    ],
+    "reliability": [
+      "loading/empty/error states",
+      "error boundary",
+      "api retry",
+      "pagination alerts+audit",
+      "client-error reporting"
+    ]
   }
 }

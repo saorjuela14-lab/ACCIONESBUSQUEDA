@@ -51,8 +51,11 @@ class AlertService:
                 emitted.append(saved)
         return emitted
 
-    async def list_active(self, limit: int = 50) -> list[Alert]:
-        return await self._repo.list_unacknowledged(limit)
+    async def list_active(self, limit: int = 50, offset: int = 0) -> list[Alert]:
+        return await self._repo.list_unacknowledged(limit=limit, offset=offset)
+
+    async def list_active_page(self, *, limit: int = 25, offset: int = 0) -> tuple[list[Alert], int]:
+        return await self._repo.list_unacknowledged_page(limit=limit, offset=offset)
 
     async def acknowledge(self, alert_id: str) -> bool:
         result = await self._session.execute(select(AlertORM).where(AlertORM.id == alert_id))

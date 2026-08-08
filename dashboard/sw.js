@@ -1,6 +1,7 @@
 const CACHE = "monarch-v5";
 const ASSETS = [
   "/dashboard/static/styles.css",
+  "/dashboard/static/reliability.js",
   "/dashboard/static/voice.js",
   "/dashboard/static/app.js",
   "/dashboard/static/icon.png",

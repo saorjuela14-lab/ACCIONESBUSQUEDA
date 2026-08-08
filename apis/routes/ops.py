@@ -93,13 +93,19 @@ async def deactivate_kill_switch(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.get("/ops/audit", response_model=list[AuditEvent])
+@router.get("/ops/audit", response_model=None)
 async def list_audit(
     limit: int = Query(default=40, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     action: str | None = None,
     session: AsyncSession = Depends(get_session),
-) -> list[AuditEvent]:
-    return await AuditService(session).recent(limit=limit, action=action)
+):
+    from domain.pagination import Page
+
+    items, total = await AuditService(session).recent_page(
+        limit=limit, offset=offset, action=action
+    )
+    return Page.of(items, total=total, limit=limit, offset=offset)
 
 
 @router.post("/ops/reconcile", response_model=ReconcileReport)

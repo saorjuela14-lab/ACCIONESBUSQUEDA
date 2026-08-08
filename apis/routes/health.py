@@ -8,6 +8,7 @@ from sqlalchemy import text
 from config.settings import get_settings
 from database.engine import get_session
 from database.url import is_postgres, is_sqlite, normalize_database_url
+from utils.metrics import metrics
 
 router = APIRouter()
 
@@ -77,4 +78,16 @@ async def readiness_check() -> dict:
         "database": "unavailable",
         "dialect": dialect,
         "persistent": dialect == "postgresql",
+    }
+
+
+@router.get("/metrics")
+async def metrics_snapshot() -> dict:
+    """Simple in-process counters (auth failures, HTTP codes, client errors)."""
+    snap = metrics.snapshot()
+    settings = get_settings()
+    return {
+        "service": "monarch-capital",
+        "env": settings.app_env,
+        **snap,
     }

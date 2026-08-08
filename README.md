@@ -279,7 +279,10 @@ En el dashboard de tu app → **Environment Variables** → añade:
 
 | Variable | Valor |
 |----------|--------|
-| `DASHBOARD_ACCESS_TOKEN` | `Portafolio111` |
+| `DASHBOARD_ACCESS_TOKEN` | Token de **mesa** Monarch (interno) |
+| `FORCE_AUTH` | `true` recomendado en prod |
+| `COMPANY_BOOTSTRAP_EMAIL` | *(opcional)* primer admin empresa |
+| `COMPANY_BOOTSTRAP_PASSWORD` | *(opcional)* password ≥8 chars |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./data/nexbuy.db` **o** Postgres Neon (ver abajo) |
 | `REDIS_ENABLED` | `false` |
 | `APP_ENV` | `production` |

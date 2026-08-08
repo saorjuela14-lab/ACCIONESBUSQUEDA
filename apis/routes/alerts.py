@@ -8,6 +8,7 @@ from database.engine import get_session
 from database.repositories.alert_repository import AlertRepository
 from domain.entities import Alert
 from domain.enums import AlertSeverity, AlertType
+from domain.pagination import Page
 from services.alert_service import AlertService
 from services.daily_status_briefing_service import DailyStatusBriefingService
 from services.push_notification_service import PushNotificationService
@@ -19,9 +20,14 @@ def _alert_service(session: AsyncSession) -> AlertService:
     return AlertService(AlertRepository(session), get_settings().alert_cooldown_hours)
 
 
-@router.get("/alerts", response_model=list[Alert])
-async def list_alerts(session: AsyncSession = Depends(get_session)) -> list[Alert]:
-    return await _alert_service(session).list_active()
+@router.get("/alerts", response_model=Page[Alert])
+async def list_alerts(
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    session: AsyncSession = Depends(get_session),
+) -> Page[Alert]:
+    items, total = await _alert_service(session).list_active_page(limit=limit, offset=offset)
+    return Page.of(items, total=total, limit=limit, offset=offset)
 
 
 @router.get("/alerts/push-status")

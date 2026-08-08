@@ -20,6 +20,20 @@
   <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
 </head>
 <body>
+  <div id="global-error-banner" class="global-error-banner hidden" role="alert">
+    <span class="msg">Error de interfaz</span>
+    <span class="banner-actions">
+      <button type="button" class="btn" data-reload>Recargar</button>
+      <button type="button" class="btn" data-dismiss>Cerrar</button>
+    </span>
+  </div>
+  <div id="panel-error" class="panel-error hidden" aria-live="polite">
+    <div class="ui-state ui-state-error">
+      <p id="panel-error-title">No se pudo cargar el terminal</p>
+      <p class="muted" id="panel-error-detail"></p>
+      <button type="button" class="btn primary" id="btn-dashboard-retry">Reintentar</button>
+    </div>
+  </div>
   <div class="terminal">
     <header class="term-header">
       <a class="term-brand" href="/dashboard" aria-label="Monarch Capital">
@@ -30,6 +44,7 @@
         </span>
       </a>
       <div class="regime" id="market-regime">Mercado —</div>
+      <span id="auth-chip" class="auth-chip hidden" title="Sesión"></span>
       <div class="header-actions">
         <input id="global-ticker" type="text" placeholder="Ej. AAPL" maxlength="10" aria-label="Ticker" />
         <button id="btn-analyze" class="btn primary">Analizar</button>
@@ -432,6 +447,7 @@
     </div>
   </div>
 
+  <script src="/dashboard/static/reliability.js"></script>
   <script src="/dashboard/static/voice.js"></script>
   <script src="/dashboard/static/app.js"></script>
   <script>

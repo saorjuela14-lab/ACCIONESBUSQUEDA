@@ -16,35 +16,144 @@
     <div class="login-brand">
       <img src="/dashboard/static/assets/logo.png" alt="Monarch Capital" width="280" height="280" />
     </div>
-    <p class="muted" style="text-align:center;margin-bottom:1rem">Terminal · acceso seguro</p>
-    <label for="access-token">Token de acceso</label>
-    <input id="access-token" type="password" placeholder="Pega tu token" autocomplete="current-password" />
-    <button id="btn-login" class="btn primary" style="width:100%;margin-top:0.75rem;padding:0.65rem">Entrar al terminal</button>
+    <p class="muted" style="text-align:center;margin-bottom:0.75rem">Terminal para empresas · acceso seguro</p>
+
+    <div class="login-tabs" role="tablist">
+      <button type="button" class="login-tab active" data-tab="company" id="tab-company">Empresa</button>
+      <button type="button" class="login-tab" data-tab="desk" id="tab-desk">Mesa</button>
+    </div>
+
+    <div id="panel-company" class="login-panel">
+      <label for="company-email">Email corporativo</label>
+      <input id="company-email" type="email" placeholder="tu@empresa.com" autocomplete="username" />
+      <label for="company-password" style="margin-top:0.55rem">Contraseña</label>
+      <input id="company-password" type="password" placeholder="Mínimo 8 caracteres" autocomplete="current-password" />
+      <button id="btn-login-company" class="btn primary" style="width:100%;margin-top:0.75rem;padding:0.65rem">Entrar</button>
+      <details class="login-register" id="register-box">
+        <summary>Registrar mi empresa (primera vez)</summary>
+        <label for="reg-org">Nombre de la empresa</label>
+        <input id="reg-org" type="text" placeholder="Acme Capital" />
+        <label for="reg-name" style="margin-top:0.45rem">Tu nombre</label>
+        <input id="reg-name" type="text" placeholder="Ana Pérez" />
+        <label for="reg-email" style="margin-top:0.45rem">Email admin</label>
+        <input id="reg-email" type="email" placeholder="admin@empresa.com" />
+        <label for="reg-pass" style="margin-top:0.45rem">Contraseña</label>
+        <input id="reg-pass" type="password" placeholder="Mínimo 8 caracteres" />
+        <button id="btn-register" class="btn" style="width:100%;margin-top:0.65rem">Crear empresa</button>
+      </details>
+    </div>
+
+    <div id="panel-desk" class="login-panel hidden">
+      <label for="access-token">Token de mesa Monarch</label>
+      <input id="access-token" type="password" placeholder="Token de acceso interno" autocomplete="current-password" />
+      <button id="btn-login-desk" class="btn primary" style="width:100%;margin-top:0.75rem;padding:0.65rem">Entrar al terminal</button>
+    </div>
+
     <p id="login-error" class="login-error hidden"></p>
+    <p id="login-status" class="muted" style="text-align:center;margin-top:0.75rem;font-size:11px"></p>
   </div>
   <script>
     const API = "/api/v1";
+    const err = document.getElementById("login-error");
+    const statusEl = document.getElementById("login-status");
+
+    function showErr(msg) {
+      err.textContent = msg || "Error";
+      err.classList.remove("hidden");
+    }
+    function clearErr() { err.classList.add("hidden"); err.textContent = ""; }
+
+    function storeSession(token, meta) {
+      localStorage.setItem("nexbuy_token", token);
+      if (meta) localStorage.setItem("monarch_auth", JSON.stringify(meta));
+    }
+
     if (localStorage.getItem("nexbuy_token")) location.href = "/dashboard";
 
-    document.getElementById("btn-login").onclick = async () => {
+    document.querySelectorAll(".login-tab").forEach((btn) => {
+      btn.onclick = () => {
+        document.querySelectorAll(".login-tab").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        const tab = btn.dataset.tab;
+        document.getElementById("panel-company").classList.toggle("hidden", tab !== "company");
+        document.getElementById("panel-desk").classList.toggle("hidden", tab !== "desk");
+        clearErr();
+      };
+    });
+
+    document.getElementById("btn-login-company").onclick = async () => {
+      clearErr();
+      const email = document.getElementById("company-email").value.trim();
+      const password = document.getElementById("company-password").value;
+      try {
+        const r = await fetch(`${API}/auth/company/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.detail || "Login incorrecto");
+        storeSession(data.token, { type: "company", org: data.organization, user: data.user });
+        location.href = "/dashboard";
+      } catch (e) { showErr(e.message); }
+    };
+
+    document.getElementById("btn-login-desk").onclick = async () => {
+      clearErr();
       const token = document.getElementById("access-token").value.trim();
-      const err = document.getElementById("login-error");
       try {
         const r = await fetch(`${API}/auth/login`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token }),
         });
-        if (!r.ok) throw new Error("Token incorrecto");
-        localStorage.setItem("nexbuy_token", token);
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.detail || "Token incorrecto");
+        storeSession(data.token || token, { type: "desk", user: data.user });
         location.href = "/dashboard";
-      } catch (e) {
-        err.textContent = e.message;
-        err.classList.remove("hidden");
-      }
+      } catch (e) { showErr(e.message); }
     };
-    fetch(`${API}/auth/status`).then(r => r.json()).then(s => {
-      if (!s.auth_required) location.href = "/dashboard";
+
+    document.getElementById("btn-register").onclick = async () => {
+      clearErr();
+      const body = {
+        org_name: document.getElementById("reg-org").value.trim(),
+        full_name: document.getElementById("reg-name").value.trim(),
+        email: document.getElementById("reg-email").value.trim(),
+        password: document.getElementById("reg-pass").value,
+      };
+      try {
+        const r = await fetch(`${API}/auth/companies`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.detail || "No se pudo registrar");
+        if (data.token) {
+          storeSession(data.token, { type: "company", org: data.organization, user: data.user });
+          location.href = "/dashboard";
+          return;
+        }
+        showErr("Empresa creada. Ahora inicia sesión con tu email.");
+      } catch (e) { showErr(e.message); }
+    };
+
+    fetch(`${API}/auth/status`).then((r) => r.json()).then((s) => {
+      if (!s.auth_required) {
+        statusEl.textContent = "Auth desactivado en este servidor — entrando…";
+        location.href = "/dashboard";
+        return;
+      }
+      const users = s.modes?.company_users || 0;
+      statusEl.textContent = users
+        ? `${s.app_name} · ${users} usuario(s) empresa`
+        : `${s.app_name} · puedes registrar la primera empresa abajo`;
+      if (users > 0) {
+        document.getElementById("register-box")?.classList.add("hidden");
+      }
+    }).catch(() => {
+      statusEl.textContent = "No se pudo contactar el servidor";
     });
   </script>
 </body>
