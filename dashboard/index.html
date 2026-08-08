@@ -15,6 +15,18 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/dashboard/static/styles.css" />
+  <script>
+    // Soft client gate: if there is no local token, go to login immediately
+    // (server also redirects unauthenticated /dashboard → /login).
+    (function () {
+      try {
+        if (!localStorage.getItem("nexbuy_token")) {
+          // Cookie-only sessions still work via server middleware; don't hard-block.
+          document.documentElement.dataset.authPending = "1";
+        }
+      } catch (_) { /* private mode */ }
+    })();
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
@@ -45,6 +57,7 @@
       </a>
       <div class="regime" id="market-regime">Mercado —</div>
       <span id="auth-chip" class="auth-chip hidden" title="Sesión"></span>
+      <button type="button" id="btn-logout" class="btn auth-logout hidden" title="Cerrar sesión">Salir</button>
       <div class="header-actions">
         <input id="global-ticker" type="text" placeholder="Ej. AAPL" maxlength="10" aria-label="Ticker" />
         <button id="btn-analyze" class="btn primary">Analizar</button>
@@ -382,11 +395,12 @@
         <div class="panel">
           <h3>Alertas <span id="push-status-badge" class="push-badge muted" title="Estado push"></span></h3>
           <div class="alert-actions">
-            <div class="notify-phone-box" id="notify-phone-box">
-              <label class="notify-phone-label" for="notify-phone-input">Tu WhatsApp (alertas)</label>
+            <!-- Creator/desk only: WhatsApp personal + test push -->
+            <div class="notify-phone-box hidden" id="notify-phone-box" data-desk-only="1">
+              <label class="notify-phone-label" for="notify-phone-input">WhatsApp mesa (creador)</label>
               <input id="notify-phone-input" class="notify-phone-input" type="tel" inputmode="tel" autocomplete="tel" placeholder="+57 300 123 4567" />
               <input id="notify-wa-key-input" class="notify-phone-input" type="password" autocomplete="off" placeholder="Clave CallMeBot (opcional)" />
-              <p class="muted notify-phone-hint">Las alertas de tu empresa también llegan a este número. Con CallMeBot activa el bot y pega aquí tu apikey.</p>
+              <p class="muted notify-phone-hint">Solo mesa Monarch: alertas del book a tu WhatsApp.</p>
               <div class="notify-phone-row">
                 <button id="btn-save-notify-phone" class="btn" type="button">Guardar número</button>
                 <button id="btn-test-push" class="btn" type="button">Probar push</button>

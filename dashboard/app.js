@@ -123,43 +123,101 @@ function trCapLabel(label) {
   return map[label?.toLowerCase()] || label;
 }
 
-function authHeaders() {
+function authHeaders(opts = {}) {
   const token = localStorage.getItem("nexbuy_token");
-  const h = { "Content-Type": "application/json" };
+  const h = {};
+  if (opts.json !== false) h["Content-Type"] = "application/json";
   if (token) h.Authorization = `Bearer ${token}`;
   return h;
 }
 
+function isDeskPrincipal(p = window.__monarchPrincipal) {
+  return !!(p && p.role === "desk");
+}
+
+function applySessionUi(principal) {
+  window.__monarchPrincipal = principal || null;
+  const chip = document.getElementById("auth-chip");
+  const logoutBtn = document.getElementById("btn-logout");
+  if (chip && principal) {
+    const label = principal.role === "desk"
+      ? "Mesa"
+      : (principal.email || "Empresa");
+    chip.textContent = label;
+    chip.classList.remove("hidden");
+  }
+  if (logoutBtn) logoutBtn.classList.toggle("hidden", !principal);
+
+  // WhatsApp creator controls: desk only
+  const notifyBox = document.getElementById("notify-phone-box");
+  if (notifyBox) {
+    notifyBox.classList.toggle("hidden", !isDeskPrincipal(principal));
+  }
+}
+
+let _authRedirecting = false;
+
+async function clearSessionAndGoLogin() {
+  if (_authRedirecting) return;
+  _authRedirecting = true;
+  try {
+    await fetch(`${API}/auth/logout`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: authHeaders(),
+    });
+  } catch { /* ignore */ }
+  localStorage.removeItem("nexbuy_token");
+  localStorage.removeItem("monarch_auth");
+  location.replace("/login");
+}
+
+async function logoutSession() {
+  toast("Cerrando sesión…");
+  await clearSessionAndGoLogin();
+}
+
 async function ensureAuth() {
   try {
-    const s = await fetch(`${API}/auth/status`).then((r) => r.json());
-    if (!s.auth_required) return;
-    const token = localStorage.getItem("nexbuy_token");
-    if (!token) {
-      location.href = "/login";
-      return;
+    const s = await fetch(`${API}/auth/status`, { credentials: "same-origin" }).then((r) => r.json());
+    if (!s.auth_required) {
+      applySessionUi(null);
+      return true;
     }
-    const me = await fetch(`${API}/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+
+    const token = localStorage.getItem("nexbuy_token");
+    let me = null;
+    if (token) {
+      me = await fetch(`${API}/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "same-origin",
+      });
+    }
+    // Cookie-only session (httponly) — recover without localStorage bounce loop
+    if (!me || !me.ok) {
+      if (token) {
+        localStorage.removeItem("nexbuy_token");
+        localStorage.removeItem("monarch_auth");
+      }
+      me = await fetch(`${API}/auth/me`, { credentials: "same-origin" });
+    }
     if (!me.ok) {
-      localStorage.removeItem("nexbuy_token");
-      localStorage.removeItem("monarch_auth");
-      location.href = "/login";
-      return;
+      await clearSessionAndGoLogin();
+      return false;
     }
     const principal = await me.json();
-    window.__monarchPrincipal = principal;
-    const chip = document.getElementById("auth-chip");
-    if (chip) {
-      const label = principal.role === "desk"
-        ? "Mesa"
-        : (principal.email || "Empresa");
-      chip.textContent = label;
-      chip.classList.remove("hidden");
+    // Keep LS in sync for desk token logins so Authorization header stays set
+    if (token && !localStorage.getItem("nexbuy_token")) {
+      localStorage.setItem("nexbuy_token", token);
     }
+    applySessionUi(principal);
+    if (isDeskPrincipal(principal)) {
+      await loadNotifyPhonePrefs();
+    }
+    return true;
   } catch {
-    /* offline / dev */
+    // Network blip: do not kick the user out
+    return true;
   }
 }
 
@@ -173,14 +231,14 @@ function formatApiDetail(detail) {
 }
 
 async function api(path, opts = {}) {
+  const hasBody = opts.body !== undefined && opts.body !== null;
   const r = await fetch(path, {
     ...opts,
-    headers: { ...authHeaders(), ...opts.headers },
+    credentials: "same-origin",
+    headers: { ...authHeaders({ json: hasBody }), ...opts.headers },
   });
   if (r.status === 401) {
-    localStorage.removeItem("nexbuy_token");
-    localStorage.removeItem("monarch_auth");
-    location.href = "/login";
+    await clearSessionAndGoLogin();
     throw new Error("Sesión expirada");
   }
   if (!r.ok) {
@@ -1364,17 +1422,50 @@ function renderDashboard(d) {
     <div>Drawdown: ${p.max_drawdown?.toFixed(2) ?? "—"}%</div>
     <div>P&amp;L no realizado: $${p.unrealized_pnl?.toFixed(2)}</div>
     <div>Países: ${Object.entries(p.country_weights || {}).map(([k,v]) => `${k} ${v}%`).join(", ") || "—"}</div>
-    <button type="button" id="btn-sync-alpaca-pf" class="btn" style="margin-top:6px;width:100%;font-size:11px">Sincronizar desde Alpaca</button>
-    <p class="muted" style="font-size:10px;margin-top:6px">Persistencia: configura <code>DATABASE_URL</code> de Neon Postgres en FastAPI Cloud para no perder datos en redeploy. Mientras, usa «Sincronizar desde Alpaca».</p>
-  ` : "Sin portafolio — créalo con el botón de arriba o sincroniza Alpaca";
+    ${isDeskPrincipal()
+      ? `<button type="button" id="btn-sync-alpaca-pf" class="btn" style="margin-top:6px;width:100%;font-size:11px">Sincronizar desde Alpaca</button>
+         <p class="muted" style="font-size:10px;margin-top:6px">Mesa: sincroniza el book Alpaca. Usa Postgres (<code>DATABASE_URL</code>) para no perder datos en redeploy.</p>`
+      : `<p class="muted" style="font-size:10px;margin-top:6px">Portafolio de tu empresa — revisa capital, posiciones y rendimiento.</p>`
+    }
+  ` : (isDeskPrincipal()
+    ? `<div class="ui-state"><p>Sin portafolio</p><button type="button" id="btn-create-default-pf" class="btn primary" style="margin-top:6px;width:100%">Crear / sincronizar book</button></div>`
+    : `<div class="ui-state"><p>Sin portafolio de empresa</p><button type="button" id="btn-create-default-pf" class="btn primary" style="margin-top:6px;width:100%">Crear portafolio</button></div>`);
   renderPortfolioPies(p);
   lastPortfolioId = p?.portfolio_id || null;
   if (lastPortfolioId) {
     try { localStorage.setItem("nexbuy_portfolio_id", lastPortfolioId); } catch {}
   }
   const bootNote = d.provider_health?.portfolio_bootstrap;
-  if (bootNote) toast(bootNote, 9000);
+  if (bootNote && isDeskPrincipal()) toast(bootNote, 9000);
   $("#btn-sync-alpaca-pf") && ($("#btn-sync-alpaca-pf").onclick = syncPortfolioFromAlpaca);
+  $("#btn-create-default-pf") && ($("#btn-create-default-pf").onclick = async () => {
+    try {
+      showLoading("Creando portafolio…");
+      if (isDeskPrincipal()) {
+        try {
+          await api(`${API}/portfolios/sync-alpaca`, { method: "POST" });
+        } catch {
+          await api(`${API}/portfolios/default`, { method: "POST", body: "{}" });
+        }
+      } else {
+        await api(`${API}/portfolios/default`, {
+          method: "POST",
+          body: JSON.stringify({
+            name: "Portafolio empresa",
+            strategy: "growth_investing",
+            initial_capital: 1000,
+            mode: "demo",
+          }),
+        });
+      }
+      toast("Portafolio listo");
+      await loadDashboard();
+    } catch (e) {
+      toast("Portafolio: " + e.message);
+    } finally {
+      hideLoading();
+    }
+  });
   if (p?.portfolio_id) {
     loadPortfolioHistory(p.portfolio_id);
     if (p.mode === "demo") {
@@ -1393,6 +1484,15 @@ function renderDashboard(d) {
 }
 
 async function loadPushStatus() {
+  if (!isDeskPrincipal()) {
+    const badge = $("#push-status-badge");
+    if (badge) {
+      badge.textContent = "";
+      badge.className = "push-badge muted";
+      badge.title = "";
+    }
+    return;
+  }
   try {
     const s = await api(`${API}/alerts/push-status`);
     const badge = $("#push-status-badge");
@@ -1410,15 +1510,15 @@ async function loadPushStatus() {
     } else {
       badge.textContent = "push off";
       badge.className = "push-badge off";
-      badge.title = "Guarda tu WhatsApp abajo, o configura Telegram/WhatsApp en el servidor";
+      badge.title = "Configura Telegram/WhatsApp en el servidor o guarda tu número abajo";
     }
   } catch {
     /* ignore */
   }
-  await loadNotifyPhonePrefs();
 }
 
 async function loadNotifyPhonePrefs() {
+  if (!isDeskPrincipal()) return;
   const input = $("#notify-phone-input");
   const keyInput = $("#notify-wa-key-input");
   if (!input) return;
@@ -1434,11 +1534,12 @@ async function loadNotifyPhonePrefs() {
       }
     }
   } catch {
-    /* unauthenticated / ignore */
+    /* ignore */
   }
 }
 
 async function saveNotifyPhone() {
+  if (!isDeskPrincipal()) return;
   const input = $("#notify-phone-input");
   const keyInput = $("#notify-wa-key-input");
   if (!input) return;
@@ -1460,7 +1561,7 @@ async function saveNotifyPhone() {
     if (keyInput) keyInput.value = "";
     toast(
       r.notify_phone
-        ? `Alertas → ${r.notify_phone}`
+        ? `Alertas mesa → ${r.notify_phone}`
         : "Número eliminado (solo canales del servidor)"
     );
   } catch (e) {
@@ -1469,6 +1570,7 @@ async function saveNotifyPhone() {
 }
 
 async function testPushNotification() {
+  if (!isDeskPrincipal()) return;
   toast("Enviando alerta de prueba…");
   try {
     const r = await api(`${API}/alerts/test-push`, { method: "POST" });
@@ -1479,12 +1581,11 @@ async function testPushNotification() {
       toast("Push no entregado — guarda tu número o revisa la config del servidor");
     }
   } catch (e) { toast("Push: " + e.message); }
-  // Also try a portfolio status briefing (WhatsApp/Telegram)
   try {
     const b = await api(`${API}/alerts/briefing/send?session_kind=manual`, { method: "POST" });
     if (b.ok) toast("Status de portafolio enviado (WA/TG)", 5000);
   } catch {
-    /* briefing optional if channels missing */
+    /* briefing optional */
   }
 }
 
@@ -2654,9 +2755,10 @@ $("#tech-chart-tf").onchange = () => {
 $("#btn-disc-research").onclick = runDiscoveryResearch;
 $("#btn-disc-analyze").onclick = runDiscoveryAnalyze;
 $("#btn-disc-proposal").onclick = runDiscoveryProposal;
-$("#btn-test-push").onclick = testPushNotification;
+$("#btn-test-push") && ($("#btn-test-push").onclick = testPushNotification);
 const btnSaveNotify = $("#btn-save-notify-phone");
 if (btnSaveNotify) btnSaveNotify.onclick = saveNotifyPhone;
+$("#btn-logout") && ($("#btn-logout").onclick = logoutSession);
 $("#btn-shock").onclick = simulateShock;
 
 $("#news-modal-close").onclick = closeNewsModal;
@@ -2677,7 +2779,8 @@ document.addEventListener("keydown", (e) => {
     });
   }
   $("#btn-dashboard-retry")?.addEventListener("click", () => loadDashboard());
-  await ensureAuth();
+  const ok = await ensureAuth();
+  if (ok === false) return; // redirected to /login
   setupMobileNav();
   setupTechMobileControls();
   setupBudgetSync();
@@ -2700,6 +2803,10 @@ document.addEventListener("keydown", (e) => {
       speakAnalyzeResult,
     });
   }
+  // Ensure this session's book exists before first paint of portfolio panel
+  try {
+    await api(`${API}/portfolios/default`, { method: "POST" });
+  } catch { /* already exists or auth off */ }
   loadDashboard();
   setInterval(loadDashboard, REFRESH_MS);
 })();

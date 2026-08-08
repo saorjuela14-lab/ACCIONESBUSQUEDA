@@ -6,7 +6,7 @@ import hmac
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, RedirectResponse
 
 from config.settings import get_settings
 from utils.metrics import metrics
@@ -16,7 +16,6 @@ PUBLIC_PREFIXES = (
     "/health",
     "/metrics",
     "/api/v1/auth/",
-    "/login",
     "/dashboard/static/",
 )
 
@@ -54,7 +53,23 @@ class AccessTokenMiddleware(BaseHTTPMiddleware):
         if any(path.startswith(p) for p in PUBLIC_PREFIXES):
             return await call_next(request)
 
-        if path in ("/dashboard", "/", "/login") and method == "GET":
+        # Login page: public, but bounce already-authenticated users to the terminal
+        if path == "/login" and method == "GET":
+            if await self._auth_required():
+                token = _extract_token(request)
+                principal = await self._resolve(token)
+                if principal:
+                    return RedirectResponse(url="/dashboard", status_code=302)
+            return await call_next(request)
+
+        # Terminal HTML: require a valid session when auth is on (no flash of empty UI)
+        if path in ("/", "/dashboard") and method == "GET":
+            if await self._auth_required():
+                token = _extract_token(request)
+                principal = await self._resolve(token)
+                if not principal:
+                    return RedirectResponse(url="/login", status_code=302)
+                request.state.principal = principal
             return await call_next(request)
 
         token = _extract_token(request)

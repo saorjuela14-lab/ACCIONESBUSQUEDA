@@ -814,6 +814,12 @@ body.tech-chart-fs { overflow: hidden; }
   font-size: 10px; color: var(--muted); padding: 2px 8px; border: 1px solid var(--border);
   border-radius: 999px; margin-left: 0.35rem;
 }
+.auth-logout {
+  font-size: 10px;
+  padding: 2px 8px;
+  margin-left: 0.25rem;
+  min-height: auto;
+}
 
 /* Mobile bottom nav */
 .mobile-nav {

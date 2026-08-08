@@ -1,6 +1,6 @@
 """Portfolio API routes."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apis.deps import OrgScope, get_org_scope
@@ -49,14 +49,17 @@ async def create_portfolio(
 
 @router.post("/portfolios/default", response_model=Portfolio)
 async def create_default_portfolio(
-    request: PortfolioCreateRequest | None = None,
+    request: PortfolioCreateRequest | None = Body(default=None),
     session: AsyncSession = Depends(get_session),
     scope: OrgScope = Depends(get_org_scope),
 ) -> Portfolio:
-    """Create a portfolio with optional mode and capital (defaults: real, $1000)."""
+    """Return existing book portfolio, or create a default one for this org."""
     service = _build_service(session)
     org = scope.write_org_id()
-    if request:
+    existing = await service.list_all(org_id=org)
+    if existing:
+        return sorted(existing, key=lambda x: x.updated_at, reverse=True)[0]
+    if request is not None:
         return await service.create(
             name=request.name,
             strategy=request.strategy,
@@ -65,11 +68,8 @@ async def create_default_portfolio(
             mode=request.mode,
             org_id=org,
         )
-    existing = await service.list_all(org_id=scope.read_org_id())
-    if existing:
-        return existing[0]
     return await service.create(
-        name="Portafolio CEO",
+        name="Portafolio empresa" if not scope.is_desk else "Portafolio CEO",
         strategy=StrategyType.GROWTH,
         initial_capital=1000.0,
         cash=1000.0,
