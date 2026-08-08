@@ -830,10 +830,17 @@ html.session-ok #boot-splash {
   margin-left: auto;
   flex-shrink: 0;
 }
-.session-bar:not(.session-bar-on) #btn-logout { display: none; }
+/* Logout link always visible on terminal — server already gated the page */
 .auth-chip {
   font-size: 11px; color: var(--gold, #c4a574); padding: 4px 10px; border: 1px solid var(--border);
   border-radius: 999px; white-space: nowrap;
+}
+a.auth-logout {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
 }
 .auth-logout {
   font-size: 11px;
