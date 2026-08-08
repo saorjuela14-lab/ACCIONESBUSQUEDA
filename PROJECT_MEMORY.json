@@ -348,8 +348,13 @@
     },
     "voice": {
       "module": "services/voice_command_service.py",
+      "tts": "services/elevenlabs_tts_service.py",
       "ui": "dashboard/voice.js",
       "language": "es",
+      "stt": "Web Speech API (browser)",
+      "tts_provider": "ElevenLabs (Sarah EXAVITQu4vr4xnSDxMaL / eleven_flash_v2_5) with browser SpeechSynthesis fallback",
+      "env": ["ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID", "ELEVENLABS_MODEL_ID"],
+      "endpoints": ["POST /api/v1/voice/command", "POST /api/v1/voice/tts", "GET /api/v1/voice/tts/status"],
       "examples": ["precio NVDA", "analiza AAPL", "compra 1 SOUN", "posiciones", "descubre"]
     },
     "messaging": {
@@ -393,7 +398,9 @@
       "GET /api/v1/risk/status",
       "GET /api/v1/broker/status",
       "POST /api/v1/discover/research",
-      "POST /api/v1/voice/command"
+      "POST /api/v1/voice/command",
+      "POST /api/v1/voice/tts",
+      "GET /api/v1/voice/tts/status"
     ]
   },
 
