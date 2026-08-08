@@ -118,6 +118,10 @@ class VoiceCommandRequest(BaseModel):
     portfolio_id: str | None = None
 
 
+class VoiceTTSRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=2500, description="Texto a sintetizar con ElevenLabs")
+
+
 class MicroManageRequest(BaseModel):
     capital: float | None = Field(
         default=None,

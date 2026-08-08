@@ -2404,6 +2404,10 @@ function speakAnalyzeResult(ticker) {
     } else if (["buy", "strong_buy"].includes(String(lastThesis.recommendation || "").toLowerCase())) {
       text += " Si quieres operar di compra 1 seguido del ticker, y luego confirma.";
     }
+    if (typeof window.speakAssistant === "function") {
+      window.speakAssistant(text, resolve);
+      return;
+    }
     if (!window.speechSynthesis) { resolve(); return; }
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);

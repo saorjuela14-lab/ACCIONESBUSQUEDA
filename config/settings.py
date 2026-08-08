@@ -41,6 +41,16 @@ class Settings(BaseSettings):
     dashboard_access_token: str = ""
     public_base_url: str = ""
 
+    # ElevenLabs TTS — friendly desk assistant voice (secretary / Friday style)
+    # Default voice: Sarah (warm, reassuring, professional) — speaks Spanish via multilingual models
+    elevenlabs_api_key: str = ""
+    elevenlabs_voice_id: str = "EXAVITQu4vr4xnSDxMaL"
+    elevenlabs_model_id: str = "eleven_flash_v2_5"
+    elevenlabs_output_format: str = "mp3_44100_128"
+    elevenlabs_stability: float = 0.42
+    elevenlabs_similarity: float = 0.78
+    elevenlabs_style: float = 0.25
+
     # Provider rate limits (free tiers)
     polygon_daily_limit: int = 1000
     polygon_per_minute_limit: int = 5

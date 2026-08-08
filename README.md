@@ -39,7 +39,7 @@ Cuando Reddit apruebe tu app OAuth, se conecta sin rehacer el agente.
 - **Watchlist Engine**: monitoreo automático cada 30 min (horario de mercado)
 - **Alert Engine**: deduplicación 24h, sin spam
 - **Push Alerts** (opcional): Telegram + webhook genérico al emitir alertas
-- **Asistente de voz** (opcional): habla, escucha y ejecuta comandos en español vía Web Speech API
+- **Asistente de voz** (opcional): comandos en español (Web Speech STT) + respuesta con voz ElevenLabs (tipo secretaria / Friday; fallback al navegador)
 - **Market Monitor**: reportes 08:30 / 11:30 / 15:00 / 17:30 ET
 - **Daily Investment Report**: generado a las 17:30 ET
 - **Investment Memory**: evaluación automática a los 90 días + recalibración de pesos
@@ -164,6 +164,15 @@ Botón **🎙 Voz** en el header del panel. Ejemplos:
 - «Mi portafolio» · «Mis alertas» · «Ayuda»
 
 API: `POST /api/v1/voice/command` con `{ "text": "..." }`.
+TTS: `POST /api/v1/voice/tts` (ElevenLabs) · `GET /api/v1/voice/tts/status`.
+
+```bash
+ELEVENLABS_API_KEY=tu_key
+ELEVENLABS_VOICE_ID=EXAVITQu4vr4xnSDxMaL   # Sarah — cálida / profesional
+ELEVENLABS_MODEL_ID=eleven_flash_v2_5      # baja latencia en español
+```
+
+En FastAPI Cloud, marca `ELEVENLABS_API_KEY` como **Secret** y haz Redeploy.
 
 ### Fase 2.2 — Market Data (implementado)
 Cadena de fallback automática: **Alpaca → Polygon → Alpha Vantage → YFinance**
@@ -281,8 +290,11 @@ En el dashboard de tu app → **Environment Variables** → añade:
 | `ALPACA_PAPER` | `false` (LIVE / dinero real) |
 | `ALPACA_LIVE_TRADE` | `true` (alias CLI; gana sobre PAPER) |
 | `ALPACA_DATA_FEED` | `iex` (default) |
+| `ELEVENLABS_API_KEY` | *(recomendado)* Key TTS para voz amigable del asistente |
+| `ELEVENLABS_VOICE_ID` | `EXAVITQu4vr4xnSDxMaL` (Sarah; opcional) |
+| `ELEVENLABS_MODEL_ID` | `eleven_flash_v2_5` (opcional) |
 
-Marca `DASHBOARD_ACCESS_TOKEN`, keys Alpaca y `DATABASE_URL` como **Secret** si la opción existe. Pulsa **Redeploy** tras guardar.
+Marca `DASHBOARD_ACCESS_TOKEN`, keys Alpaca, `ELEVENLABS_API_KEY` y `DATABASE_URL` como **Secret** si la opción existe. Pulsa **Redeploy** tras guardar.
 
 #### Persistencia con Neon Postgres (recomendado)
 

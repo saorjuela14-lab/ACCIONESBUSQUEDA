@@ -1,5 +1,7 @@
 /**
- * Monarch Capital voice assistant — Web Speech API + fallback texto (iOS).
+ * Monarch Capital voice assistant —
+ * STT: Web Speech API (+ text fallback on iOS)
+ * TTS: ElevenLabs (friendly secretary / Friday voice) with browser SpeechSynthesis fallback
  */
 (function () {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -12,6 +14,8 @@
   let listening = false;
   let gotResult = false;
   let synth = window.speechSynthesis;
+  let elevenConfigured = null; // null = unknown, true/false after probe
+  let currentAudio = null;
 
   function $(s) { return document.querySelector(s); }
 
@@ -41,13 +45,22 @@
       || null;
   }
 
-  function speak(text, onEnd) {
-    if (!text) {
-      if (onEnd) onEnd();
-      return;
+  function stopAudio() {
+    if (currentAudio) {
+      try {
+        currentAudio.pause();
+        currentAudio.src = "";
+      } catch { /* ignore */ }
+      currentAudio = null;
     }
+    if (synth) {
+      try { synth.cancel(); } catch { /* ignore */ }
+    }
+  }
+
+  function speakBrowser(text, onEnd) {
     if (!synth) {
-      deps?.toast(text.slice(0, 120));
+      deps?.toast?.(text.slice(0, 120));
       if (onEnd) onEnd();
       return;
     }
@@ -62,6 +75,96 @@
     u.onerror = () => { if (onEnd) onEnd(); };
     synth.speak(u);
   }
+
+  async function probeElevenStatus() {
+    if (!deps?.API) return false;
+    try {
+      const token = localStorage.getItem("nexbuy_token");
+      const headers = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const r = await fetch(`${deps.API}/voice/tts/status`, { headers });
+      if (!r.ok) return false;
+      const data = await r.json();
+      return !!data.configured;
+    } catch {
+      return false;
+    }
+  }
+
+  async function speakEleven(text, onEnd) {
+    const token = localStorage.getItem("nexbuy_token");
+    const headers = { "Content-Type": "application/json" };
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const r = await fetch(`${deps.API}/voice/tts`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ text }),
+    });
+    if (r.status === 401) {
+      localStorage.removeItem("nexbuy_token");
+      location.href = "/login";
+      throw new Error("Sesión expirada");
+    }
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || r.statusText || "TTS falló");
+    }
+
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    stopAudio();
+
+    await new Promise((resolve) => {
+      const audio = new Audio(url);
+      currentAudio = audio;
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        URL.revokeObjectURL(url);
+        if (currentAudio === audio) currentAudio = null;
+        resolve();
+      };
+      audio.onended = finish;
+      audio.onerror = finish;
+      audio.play().catch(finish);
+    });
+    if (onEnd) onEnd();
+  }
+
+  async function speak(text, onEnd) {
+    if (!text) {
+      if (onEnd) onEnd();
+      return;
+    }
+    stopAudio();
+
+    if (elevenConfigured === null) {
+      elevenConfigured = await probeElevenStatus();
+    }
+
+    if (elevenConfigured && deps?.API) {
+      try {
+        await speakEleven(text, onEnd);
+        return;
+      } catch (e) {
+        // One soft retry after re-probe; then browser fallback
+        elevenConfigured = await probeElevenStatus();
+        if (elevenConfigured) {
+          try {
+            await speakEleven(text, onEnd);
+            return;
+          } catch { /* fall through */ }
+        }
+      }
+    }
+
+    speakBrowser(text, onEnd);
+  }
+
+  // Shared entry for app.js analysis narration
+  window.speakAssistant = speak;
 
   const ERROR_ES = {
     "not-allowed": "Permiso de micrófono denegado. Actívalo en ajustes del navegador.",
@@ -270,6 +373,9 @@
       synth.getVoices();
       synth.addEventListener("voiceschanged", () => {}, { once: true });
     }
+
+    // Probe ElevenLabs in background; speak() will use it when ready
+    probeElevenStatus().then((ok) => { elevenConfigured = ok; });
 
     if (!SpeechRecognition || isIOS) {
       const hint = isIOS
