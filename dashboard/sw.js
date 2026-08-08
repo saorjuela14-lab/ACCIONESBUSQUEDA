@@ -1,4 +1,4 @@
-const CACHE = "monarch-v7-boot-splash";
+const CACHE = "monarch-v8-logout";
 const ASSETS = [
   "/dashboard/static/styles.css",
   "/dashboard/static/reliability.js",

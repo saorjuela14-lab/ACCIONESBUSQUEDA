@@ -153,14 +153,23 @@ function applySessionUi(principal) {
   window.__monarchPrincipal = principal || null;
   const chip = document.getElementById("auth-chip");
   const logoutBtn = document.getElementById("btn-logout");
+  const sessionBar = document.getElementById("session-bar");
   if (chip && principal) {
     const label = principal.role === "desk"
       ? "Mesa"
       : (principal.email || "Empresa");
     chip.textContent = label;
     chip.classList.remove("hidden");
+  } else if (chip) {
+    chip.classList.add("hidden");
   }
-  if (logoutBtn) logoutBtn.classList.toggle("hidden", !principal);
+  // Always show logout when we have a local session token (any device)
+  const hasSession = !!(principal || localStorage.getItem("nexbuy_token"));
+  if (logoutBtn) {
+    logoutBtn.classList.toggle("hidden", !hasSession);
+    logoutBtn.textContent = "Cerrar sesión";
+  }
+  if (sessionBar) sessionBar.classList.toggle("session-bar-on", hasSession);
   hideBootSplash();
 }
 
@@ -182,7 +191,7 @@ async function clearSessionAndGoLogin() {
 }
 
 async function logoutSession() {
-  toast("Cerrando sesión…");
+  toast("Cerrando sesión en este dispositivo…");
   await clearSessionAndGoLogin();
 }
 
