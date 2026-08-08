@@ -22,13 +22,14 @@ from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+# Cash index levels via Yahoo Finance (not ETF proxies like SPY/QQQ/UUP).
 INDICES = [
-    ("SPY", "S&P 500"),
-    ("QQQ", "Nasdaq 100"),
-    ("DIA", "Dow Jones"),
-    ("IWM", "Russell 2000"),
+    ("^GSPC", "S&P 500"),
+    ("^NDX", "Nasdaq 100"),
+    ("^DJI", "Dow Jones"),
+    ("^RUT", "Russell 2000"),
     ("^VIX", "VIX"),
-    ("UUP", "Índice del Dólar"),
+    ("DX-Y.NYB", "US Dollar Index"),
 ]
 
 SECTOR_ETFS = [

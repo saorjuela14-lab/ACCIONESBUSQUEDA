@@ -140,6 +140,7 @@ body {
   border-radius: var(--radius); padding: 0.55rem 0.85rem; min-width: 118px;
 }
 .idx .name { font-size: 0.68rem; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+.idx .sym { font-size: 0.62rem; color: var(--muted); opacity: 0.75; margin-top: 1px; letter-spacing: 0.02em; }
 .idx .price { font-weight: 600; font-size: 0.95rem; margin-top: 2px; }
 .idx .chg.up, .up { color: var(--green); }
 .idx .chg.down, .down { color: var(--red); }

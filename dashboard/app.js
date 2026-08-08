@@ -442,7 +442,8 @@ function makeChart(id, config) {
 function renderIndices(indices) {
   $("#indices-row").innerHTML = indices.map((i) => {
     const cls = (i.change_pct || 0) >= 0 ? "up" : "down";
-    return `<div class="idx"><div class="name">${trIndex(i.name)}</div><div class="price">${i.price ?? "—"}</div><div class="chg ${cls}">${fmtPct(i.change_pct)}</div></div>`;
+    const sym = i.symbol ? `<div class="sym">${escapeHtml(i.symbol)}</div>` : "";
+    return `<div class="idx"><div class="name">${trIndex(i.name)}</div>${sym}<div class="price">${i.price ?? "—"}</div><div class="chg ${cls}">${fmtPct(i.change_pct)}</div></div>`;
   }).join("");
 }
 
