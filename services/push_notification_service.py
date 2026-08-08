@@ -112,50 +112,78 @@ class PushNotificationService:
             )
         return results
 
-    async def notify_whatsapp_plain(self, text: str) -> bool:
-        """Send plain text to WhatsApp via the configured provider."""
-        provider = self._resolved_whatsapp_provider()
+    async def notify_whatsapp_plain(
+        self,
+        text: str,
+        *,
+        to_phone: str | None = None,
+        callmebot_key: str | None = None,
+    ) -> bool:
+        """Send plain text to WhatsApp via the configured provider.
+
+        Optional to_phone / callmebot_key override the global env recipient
+        (used for per-user numbers saved in the terminal panel).
+        """
+        provider = self._resolved_whatsapp_provider(allow_recipient_override=bool(to_phone))
+        if not provider and to_phone and callmebot_key:
+            provider = "callmebot"
         if not provider:
             return False
         text = (text or "")[:3900]
         try:
             if provider == "callmebot":
-                return await self._send_whatsapp_callmebot(text)
+                return await self._send_whatsapp_callmebot(
+                    text, to_phone=to_phone, api_key=callmebot_key
+                )
             if provider == "meta":
-                return await self._send_whatsapp_meta(text)
+                return await self._send_whatsapp_meta(text, to_phone=to_phone)
             if provider == "twilio":
-                return await self._send_whatsapp_twilio(text)
+                return await self._send_whatsapp_twilio(text, to_phone=to_phone)
         except Exception as exc:
             logger.warning("push.whatsapp.error", provider=provider, error=str(exc))
             return False
         return False
 
-    def _resolved_whatsapp_provider(self) -> str | None:
+    async def notify_whatsapp_targets(
+        self,
+        text: str,
+        targets: list[dict[str, str | None]],
+    ) -> dict[str, bool]:
+        """Fan-out WhatsApp to a list of {phone, whatsapp_api_key} targets."""
+        results: dict[str, bool] = {}
+        for t in targets or []:
+            phone = (t.get("phone") or "").strip()
+            if not phone:
+                continue
+            key = (t.get("whatsapp_api_key") or None) or None
+            ok = await self.notify_whatsapp_plain(
+                text, to_phone=phone, callmebot_key=key
+            )
+            results[re.sub(r"\D", "", phone)[-8:] or phone] = ok
+        return results
+
+    def _resolved_whatsapp_provider(self, *, allow_recipient_override: bool = False) -> str | None:
         s = self._settings
         requested = (getattr(s, "whatsapp_provider", "auto") or "auto").lower().strip()
         if requested == "callmebot" and s.whatsapp_phone and s.whatsapp_api_key:
             return "callmebot"
-        if requested == "meta" and s.whatsapp_token and s.whatsapp_phone_number_id and s.whatsapp_to:
+        meta_ok = bool(s.whatsapp_token and s.whatsapp_phone_number_id and (s.whatsapp_to or allow_recipient_override))
+        if requested == "meta" and meta_ok:
             return "meta"
-        if (
-            requested == "twilio"
-            and s.twilio_account_sid
+        twilio_ok = bool(
+            s.twilio_account_sid
             and s.twilio_auth_token
             and s.twilio_whatsapp_from
-            and s.whatsapp_to
-        ):
+            and (s.whatsapp_to or allow_recipient_override)
+        )
+        if requested == "twilio" and twilio_ok:
             return "twilio"
         if requested == "auto":
             if s.whatsapp_phone and s.whatsapp_api_key:
                 return "callmebot"
-            if s.whatsapp_token and s.whatsapp_phone_number_id and s.whatsapp_to:
+            if meta_ok:
                 return "meta"
-            if (
-                s.twilio_account_sid
-                and s.twilio_auth_token
-                and s.twilio_whatsapp_from
-                and s.whatsapp_to
-            ):
+            if twilio_ok:
                 return "twilio"
         return None
 
@@ -196,9 +224,18 @@ class PushNotificationService:
             logger.warning("push.telegram.error", error=str(exc))
             return False
 
-    async def _send_whatsapp_callmebot(self, text: str) -> bool:
-        phone = re.sub(r"[^\d]", "", self._settings.whatsapp_phone or "")
-        key = self._settings.whatsapp_api_key
+    async def _send_whatsapp_callmebot(
+        self,
+        text: str,
+        *,
+        to_phone: str | None = None,
+        api_key: str | None = None,
+    ) -> bool:
+        phone = re.sub(r"[^\d]", "", to_phone or self._settings.whatsapp_phone or "")
+        key = (api_key or self._settings.whatsapp_api_key or "").strip()
+        if not phone or not key:
+            logger.warning("push.whatsapp.callmebot_missing", phone=bool(phone), key=bool(key))
+            return False
         url = (
             "https://api.callmebot.com/whatsapp.php"
             f"?phone={phone}&text={quote(text)}&apikey={quote(key)}"
@@ -230,7 +267,7 @@ class PushNotificationService:
             )
             return True
 
-    async def _send_whatsapp_meta(self, text: str) -> bool:
+    async def _send_whatsapp_meta(self, text: str, *, to_phone: str | None = None) -> bool:
         s = self._settings
         version = getattr(s, "whatsapp_api_version", "v21.0") or "v21.0"
         url = (
@@ -241,7 +278,9 @@ class PushNotificationService:
             "Authorization": f"Bearer {s.whatsapp_token}",
             "Content-Type": "application/json",
         }
-        to = re.sub(r"[^\d]", "", s.whatsapp_to or "")
+        to = re.sub(r"[^\d]", "", to_phone or s.whatsapp_to or "")
+        if not to:
+            return False
         template = (getattr(s, "whatsapp_template_name", "") or "").strip()
         if template:
             # Utility template: body params = chunks of the briefing
@@ -282,11 +321,13 @@ class PushNotificationService:
                 return False
             return True
 
-    async def _send_whatsapp_twilio(self, text: str) -> bool:
+    async def _send_whatsapp_twilio(self, text: str, *, to_phone: str | None = None) -> bool:
         s = self._settings
         sid = s.twilio_account_sid
         url = f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
-        to = s.whatsapp_to
+        to = (to_phone or s.whatsapp_to or "").strip()
+        if not to:
+            return False
         if not to.startswith("whatsapp:"):
             digits = re.sub(r"[^\d+]", "", to)
             if not digits.startswith("+"):

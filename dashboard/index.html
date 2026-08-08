@@ -382,7 +382,16 @@
         <div class="panel">
           <h3>Alertas <span id="push-status-badge" class="push-badge muted" title="Estado push"></span></h3>
           <div class="alert-actions">
-            <button id="btn-test-push" class="btn" style="font-size:10px;margin-bottom:6px;width:100%">Probar push</button>
+            <div class="notify-phone-box" id="notify-phone-box">
+              <label class="notify-phone-label" for="notify-phone-input">Tu WhatsApp (alertas)</label>
+              <input id="notify-phone-input" class="notify-phone-input" type="tel" inputmode="tel" autocomplete="tel" placeholder="+57 300 123 4567" />
+              <input id="notify-wa-key-input" class="notify-phone-input" type="password" autocomplete="off" placeholder="Clave CallMeBot (opcional)" />
+              <p class="muted notify-phone-hint">Las alertas de tu empresa también llegan a este número. Con CallMeBot activa el bot y pega aquí tu apikey.</p>
+              <div class="notify-phone-row">
+                <button id="btn-save-notify-phone" class="btn" type="button">Guardar número</button>
+                <button id="btn-test-push" class="btn" type="button">Probar push</button>
+              </div>
+            </div>
           </div>
           <div id="alerts-panel" class="scroll-list"></div>
         </div>

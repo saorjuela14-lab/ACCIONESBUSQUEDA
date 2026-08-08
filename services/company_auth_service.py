@@ -179,12 +179,21 @@ class CompanyAuthService:
             return None
         settings = get_settings()
         if settings.dashboard_access_token and hmac.compare_digest(token, settings.dashboard_access_token):
+            phone, has_key = "", False
+            try:
+                prefs = await self.get_notify_prefs(user_id="desk", role="desk")
+                phone = prefs.get("notify_phone") or ""
+                has_key = bool(prefs.get("has_whatsapp_key"))
+            except Exception:
+                pass
             return {
                 "auth_type": "desk",
                 "role": "desk",
                 "user_id": "desk",
                 "org_id": "monarch",
                 "email": "desk@monarch",
+                "notify_phone": phone,
+                "has_whatsapp_key": has_key,
             }
 
         th = _hash_token(token)
@@ -212,6 +221,8 @@ class CompanyAuthService:
             "user_id": user.id,
             "org_id": user.org_id,
             "email": user.email,
+            "notify_phone": getattr(user, "notify_phone", None) or "",
+            "has_whatsapp_key": bool(getattr(user, "notify_whatsapp_key", None)),
         }
 
     async def revoke_token(self, token: str) -> None:
@@ -234,6 +245,151 @@ class CompanyAuthService:
         self._session.add(sess)
         await self._session.commit()
         return raw
+
+    @staticmethod
+    def normalize_phone(phone: str | None) -> str | None:
+        """Return E.164-ish digits (optional leading +) or None if clearing/invalid."""
+        raw = (phone or "").strip()
+        if not raw:
+            return None
+        # Keep leading + then digits only
+        has_plus = raw.startswith("+")
+        digits = re.sub(r"\D", "", raw)
+        if len(digits) < 8 or len(digits) > 15:
+            raise ValueError("Número inválido. Usa código de país, ej. +573001234567")
+        return ("+" if has_plus else "") + digits
+
+    async def update_notify_prefs(
+        self,
+        *,
+        user_id: str | None,
+        org_id: str | None,
+        role: str,
+        phone: str | None,
+        whatsapp_api_key: str | None = None,
+        clear_whatsapp_key: bool = False,
+    ) -> dict[str, Any]:
+        """Save WhatsApp number for the logged-in user (or desk org inbox)."""
+        normalized = self.normalize_phone(phone)
+
+        if role == "desk" or user_id in (None, "desk"):
+            org = await self._ensure_desk_org()
+            org.notify_phone = normalized
+            if clear_whatsapp_key:
+                org.notify_whatsapp_key = None
+            elif whatsapp_api_key is not None and whatsapp_api_key.strip():
+                org.notify_whatsapp_key = whatsapp_api_key.strip()[:128]
+            await self._session.commit()
+            return {
+                "ok": True,
+                "notify_phone": org.notify_phone or "",
+                "has_whatsapp_key": bool(org.notify_whatsapp_key),
+                "scope": "desk",
+            }
+
+        if not user_id:
+            raise ValueError("Sesión sin usuario")
+        result = await self._session.execute(select(UserORM).where(UserORM.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user or not user.active:
+            raise ValueError("Usuario no encontrado")
+        if org_id and user.org_id != org_id:
+            raise ValueError("Sesión inválida")
+
+        user.notify_phone = normalized
+        if clear_whatsapp_key:
+            user.notify_whatsapp_key = None
+        elif whatsapp_api_key is not None and whatsapp_api_key.strip():
+            user.notify_whatsapp_key = whatsapp_api_key.strip()[:128]
+
+        # Also stamp company inbox so all org alerts reach this number
+        org_r = await self._session.execute(
+            select(OrganizationORM).where(OrganizationORM.id == user.org_id)
+        )
+        org = org_r.scalar_one_or_none()
+        if org and user.role in ("company_admin", "desk"):
+            org.notify_phone = normalized
+            if clear_whatsapp_key:
+                org.notify_whatsapp_key = None
+            elif whatsapp_api_key is not None and whatsapp_api_key.strip():
+                org.notify_whatsapp_key = whatsapp_api_key.strip()[:128]
+
+        await self._session.commit()
+        return {
+            "ok": True,
+            "notify_phone": user.notify_phone or "",
+            "has_whatsapp_key": bool(user.notify_whatsapp_key),
+            "scope": "user",
+        }
+
+    async def _ensure_desk_org(self) -> OrganizationORM:
+        result = await self._session.execute(
+            select(OrganizationORM).where(OrganizationORM.id == "monarch")
+        )
+        org = result.scalar_one_or_none()
+        if org:
+            return org
+        org = OrganizationORM(
+            id="monarch",
+            name="Monarch Capital",
+            slug="monarch",
+            active=True,
+        )
+        self._session.add(org)
+        await self._session.commit()
+        await self._session.refresh(org)
+        return org
+
+    async def list_notify_targets(self, org_id: str | None) -> list[dict[str, str | None]]:
+        """Phones that should receive alerts for this org (users + org inbox)."""
+        if not org_id:
+            return []
+        targets: list[dict[str, str | None]] = []
+        seen: set[str] = set()
+
+        def _add(phone: str | None, key: str | None) -> None:
+            if not phone:
+                return
+            digits = re.sub(r"\D", "", phone)
+            if not digits or digits in seen:
+                return
+            seen.add(digits)
+            targets.append({"phone": phone, "whatsapp_api_key": key})
+
+        users_r = await self._session.execute(
+            select(UserORM).where(UserORM.org_id == org_id, UserORM.active.is_(True))
+        )
+        for u in users_r.scalars().all():
+            _add(getattr(u, "notify_phone", None), getattr(u, "notify_whatsapp_key", None))
+
+        org_r = await self._session.execute(
+            select(OrganizationORM).where(OrganizationORM.id == org_id)
+        )
+        org = org_r.scalar_one_or_none()
+        if org:
+            _add(getattr(org, "notify_phone", None), getattr(org, "notify_whatsapp_key", None))
+
+        return targets
+
+    async def get_notify_prefs(self, *, user_id: str | None, role: str) -> dict[str, Any]:
+        if role == "desk" or user_id in (None, "desk"):
+            org = await self._ensure_desk_org()
+            return {
+                "notify_phone": org.notify_phone or "",
+                "has_whatsapp_key": bool(org.notify_whatsapp_key),
+                "scope": "desk",
+            }
+        if not user_id:
+            return {"notify_phone": "", "has_whatsapp_key": False, "scope": "none"}
+        result = await self._session.execute(select(UserORM).where(UserORM.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user:
+            return {"notify_phone": "", "has_whatsapp_key": False, "scope": "none"}
+        return {
+            "notify_phone": user.notify_phone or "",
+            "has_whatsapp_key": bool(user.notify_whatsapp_key),
+            "scope": "user",
+        }
 
     async def list_companies(self, limit: int = 50, offset: int = 0) -> tuple[list[dict], int]:
         total_r = await self._session.execute(select(func.count()).select_from(OrganizationORM))

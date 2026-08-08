@@ -1410,10 +1410,61 @@ async function loadPushStatus() {
     } else {
       badge.textContent = "push off";
       badge.className = "push-badge off";
-      badge.title = "Configura Telegram y/o WhatsApp (CallMeBot/Meta/Twilio) en el servidor";
+      badge.title = "Guarda tu WhatsApp abajo, o configura Telegram/WhatsApp en el servidor";
     }
   } catch {
     /* ignore */
+  }
+  await loadNotifyPhonePrefs();
+}
+
+async function loadNotifyPhonePrefs() {
+  const input = $("#notify-phone-input");
+  const keyInput = $("#notify-wa-key-input");
+  if (!input) return;
+  try {
+    const p = window.__monarchPrincipal;
+    if (p && typeof p.notify_phone === "string" && p.notify_phone) {
+      input.value = p.notify_phone;
+    } else {
+      const me = await api(`${API}/auth/me/notify`);
+      if (me.notify_phone) input.value = me.notify_phone;
+      if (keyInput && me.has_whatsapp_key) {
+        keyInput.placeholder = "Clave CallMeBot guardada · deja vacío para no cambiar";
+      }
+    }
+  } catch {
+    /* unauthenticated / ignore */
+  }
+}
+
+async function saveNotifyPhone() {
+  const input = $("#notify-phone-input");
+  const keyInput = $("#notify-wa-key-input");
+  if (!input) return;
+  const phone = (input.value || "").trim();
+  const payload = { phone };
+  const key = (keyInput?.value || "").trim();
+  if (key) payload.whatsapp_api_key = key;
+  toast("Guardando WhatsApp…");
+  try {
+    const r = await api(`${API}/auth/me/notify`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (window.__monarchPrincipal) {
+      window.__monarchPrincipal.notify_phone = r.notify_phone || "";
+      window.__monarchPrincipal.has_whatsapp_key = !!r.has_whatsapp_key;
+    }
+    if (keyInput) keyInput.value = "";
+    toast(
+      r.notify_phone
+        ? `Alertas → ${r.notify_phone}`
+        : "Número eliminado (solo canales del servidor)"
+    );
+  } catch (e) {
+    toast("WhatsApp: " + e.message);
   }
 }
 
@@ -1421,7 +1472,12 @@ async function testPushNotification() {
   toast("Enviando alerta de prueba…");
   try {
     const r = await api(`${API}/alerts/test-push`, { method: "POST" });
-    toast(r.ok ? "Push de prueba enviado" : "Push no entregado — revisa configuración");
+    const userOk = r.user_whatsapp && Object.values(r.user_whatsapp).some(Boolean);
+    if (r.ok) {
+      toast(userOk ? "Push enviado (incluye tu WhatsApp)" : "Push de prueba enviado");
+    } else {
+      toast("Push no entregado — guarda tu número o revisa la config del servidor");
+    }
   } catch (e) { toast("Push: " + e.message); }
   // Also try a portfolio status briefing (WhatsApp/Telegram)
   try {
@@ -2599,6 +2655,8 @@ $("#btn-disc-research").onclick = runDiscoveryResearch;
 $("#btn-disc-analyze").onclick = runDiscoveryAnalyze;
 $("#btn-disc-proposal").onclick = runDiscoveryProposal;
 $("#btn-test-push").onclick = testPushNotification;
+const btnSaveNotify = $("#btn-save-notify-phone");
+if (btnSaveNotify) btnSaveNotify.onclick = saveNotifyPhone;
 $("#btn-shock").onclick = simulateShock;
 
 $("#news-modal-close").onclick = closeNewsModal;
