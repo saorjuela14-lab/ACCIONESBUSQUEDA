@@ -32,5 +32,19 @@ def test_decimal():
 
 def test_money():
     out = rewrite_for_speech("Capital $21.68")
-    assert "dólares" in out
+    assert "veintiún dólares con sesenta y ocho centavos" in out
     assert "$" not in out
+
+
+def test_money_thousands_us():
+    out = rewrite_for_speech("Capital $1,234.56")
+    assert "mil doscientos treinta y cuatro dólares" in out
+    assert "cincuenta y seis centavos" in out
+    assert "$" not in out
+    assert ".56" not in out
+
+
+def test_money_thousands_eu():
+    out = rewrite_for_speech("Saldo $1.234,56")
+    assert "mil doscientos treinta y cuatro dólares" in out
+    assert "cincuenta y seis centavos" in out

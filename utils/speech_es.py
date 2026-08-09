@@ -161,10 +161,14 @@ def money_usd_to_es(value: float) -> str:
     if cents == 100:
         dollars += 1
         cents = 0
-    d_word = integer_to_es(dollars)
     if dollars == 1:
         d_phrase = "un dólar"
     else:
+        d_word = (
+            integer_to_es(dollars)
+            .replace("veintiuno", "veintiún")
+            .replace("uno", "un")
+        )
         d_phrase = f"{d_word} dólares"
     if cents == 0:
         return f"{sign}{d_phrase}"
@@ -182,7 +186,7 @@ _RE_PCT_WORDS = re.compile(
     re.IGNORECASE | re.UNICODE,
 )
 _RE_MONEY = re.compile(
-    r"(?<![A-Za-z0-9_])\$\s*(\d+(?:[.,]\d+)?)",
+    r"(?<![A-Za-z0-9_])\$\s*([\d.,]+)",
     re.UNICODE,
 )
 _RE_SIGNED_PLAIN = re.compile(
@@ -192,7 +196,44 @@ _RE_SIGNED_PLAIN = re.compile(
 
 
 def _parse_num(raw: str) -> float:
-    return float(raw.replace(",", "."))
+    """Parse a simple decimal (percents): 14 / 0.5 / 0,5."""
+    return float(raw.strip().replace(",", "."))
+
+
+def _parse_money(raw: str) -> float:
+    """Parse USD amounts with US or EU thousand/decimal separators.
+
+    Examples: 21.68 | 1,234.56 | 1.234,56 | 1234
+    """
+    s = raw.strip().replace(" ", "")
+    if not s:
+        raise ValueError("empty money")
+    if "," in s and "." in s:
+        if s.rfind(",") > s.rfind("."):
+            # 1.234,56
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            # 1,234.56
+            s = s.replace(",", "")
+    elif "," in s:
+        parts = s.split(",")
+        if len(parts) == 2 and len(parts[1]) <= 2:
+            s = s.replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    elif "." in s:
+        parts = s.split(".")
+        if len(parts) > 2 and all(len(p) == 3 for p in parts[1:]):
+            s = "".join(parts)
+        elif len(parts) == 2 and len(parts[0]) > 0 and len(parts[1]) == 3 and len(parts[0]) <= 3:
+            # Ambiguous 1.234 — treat as US decimal if 3 frac digits? Prefer thousands for 3-digit group
+            # when integer side is small: $1.234 often means one thousand in EU.
+            # For trading desk USD copy we prefer US: keep as decimal only when frac len != 3
+            # or when frac looks like cents (1-2 digits). For 3-digit frac alone, leave as decimal
+            # only if it looks like cents padded — rare. Use: 3 digits after single dot → thousands.
+            if len(parts[1]) == 3 and parts[0].isdigit() and parts[1].isdigit():
+                s = parts[0] + parts[1]
+    return float(s)
 
 
 def rewrite_for_speech(text: str) -> str:
@@ -216,7 +257,10 @@ def rewrite_for_speech(text: str) -> str:
     s = _RE_PCT_WORDS.sub(_pct, s)
 
     def _money(m: re.Match[str]) -> str:
-        return money_usd_to_es(_parse_num(m.group(1)))
+        try:
+            return money_usd_to_es(_parse_money(m.group(1)))
+        except ValueError:
+            return m.group(0)
 
     s = _RE_MONEY.sub(_money, s)
 
