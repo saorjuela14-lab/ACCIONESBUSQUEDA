@@ -61,6 +61,18 @@ class Settings(BaseSettings):
     )
     github_repo: str = "saorjuela14-lab/ACCIONESBUSQUEDA"
 
+    # Cursor Cloud Agents — Viernes can launch real coding agents (not OpenAI)
+    # API key from https://cursor.com/dashboard/api → FastAPI Cloud env CURSOR_API_KEY
+    cursor_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("CURSOR_API_KEY", "CURSOR_CLOUD_API_KEY"),
+    )
+    cursor_agent_enabled: bool = True
+    cursor_agent_repo_url: str = "https://github.com/saorjuela14-lab/ACCIONESBUSQUEDA"
+    cursor_agent_starting_ref: str = "main"
+    cursor_agent_auto_create_pr: bool = True
+    cursor_agent_model: str = ""  # empty = Cursor default; e.g. composer-2
+
     # ElevenLabs TTS — natural secretary / Friday voice (Spanish via multilingual)
     # Accepts ELEVENLABS_API_KEY or Cursor secret alias ELEVEN_LABS
     elevenlabs_api_key: str = Field(
