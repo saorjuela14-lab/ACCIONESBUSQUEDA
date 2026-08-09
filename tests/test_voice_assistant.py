@@ -29,7 +29,30 @@ async def test_chat_trade_command_fast_path():
 
 
 @pytest.mark.asyncio
-async def test_chat_fallback_without_openai():
+async def test_chat_greeting_without_openai_is_vp():
+    svc = VoiceAssistantService()
+    db = MagicMock()
+    with patch("services.voice_assistant_service.get_settings") as gs, patch(
+        "services.cursor_agent_service.get_settings"
+    ) as gsc:
+        s = MagicMock()
+        s.openai_api_key = ""
+        s.voice_chat_enabled = True
+        s.voice_assistant_name = "Viernes"
+        s.voice_boss_title = "jefe"
+        s.cursor_api_key = "k"
+        s.cursor_agent_enabled = True
+        gs.return_value = s
+        gsc.return_value = s
+        result = await svc.chat("Hola viernes cómo vas", db, session_id="t2")
+    assert result.mode == "vp_local"
+    assert result.success is True
+    assert "vicepresidenta" in result.speech.lower() or "viernes" in result.speech.lower()
+    assert "OPENAI_API_KEY" not in result.speech
+
+
+@pytest.mark.asyncio
+async def test_chat_fallback_without_cursor_or_openai():
     svc = VoiceAssistantService()
     db = MagicMock()
     fake = MagicMock()
@@ -41,17 +64,21 @@ async def test_chat_fallback_without_openai():
     fake.intent = "unknown"
     fake.data = None
 
-    with patch("services.voice_assistant_service.get_settings") as gs, \
-         patch.object(svc._commands, "handle", new=AsyncMock(return_value=fake)):
+    with patch("services.voice_assistant_service.get_settings") as gs, patch(
+        "services.cursor_agent_service.get_settings"
+    ) as gsc, patch.object(svc._commands, "handle", new=AsyncMock(return_value=fake)):
         s = MagicMock()
         s.openai_api_key = ""
         s.voice_chat_enabled = True
         s.voice_assistant_name = "Viernes"
         s.voice_boss_title = "jefe"
+        s.cursor_api_key = ""
+        s.cursor_agent_enabled = True
         gs.return_value = s
-        result = await svc.chat("rediseña la estrategia del homepage", db, session_id="t2")
+        gsc.return_value = s
+        result = await svc.chat("explícame el régimen de mercado con detalle raro", db, session_id="t2b")
     assert result.mode == "fallback"
-    assert "OPENAI" in result.speech.upper() or "openai" in result.speech.lower()
+    assert "CURSOR_API_KEY" in result.speech or "OPENAI" in result.speech.upper()
 
 
 @pytest.mark.asyncio

@@ -21,6 +21,8 @@ logger = get_logger(__name__)
 
 _API = "https://api.cursor.com/v1"
 _STORE = Path("data/cursor_agent_launches.json")
+_BRAIN_STORE = Path("data/viernes_cursor_brain.json")
+_TERMINAL = {"FINISHED", "ERROR", "CANCELLED", "EXPIRED"}
 
 
 class CursorAgentError(Exception):
@@ -233,6 +235,160 @@ class CursorAgentService:
             raise CursorAgentError(self._err_message(r))
         data = r.json()
         return {"ok": True, "items": data.get("items") or [], "local_launches": self.list_launches(limit)}
+
+    def _load_brain(self) -> dict[str, Any]:
+        if not _BRAIN_STORE.exists():
+            return {}
+        try:
+            return json.loads(_BRAIN_STORE.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    def _save_brain(self, data: dict[str, Any]) -> None:
+        _BRAIN_STORE.parent.mkdir(parents=True, exist_ok=True)
+        _BRAIN_STORE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _viernes_brain_prompt(self, user_text: str) -> str:
+        return (
+            "Eres Viernes, vicepresidenta operativa de Monarch Capital. "
+            "Reportas solo al CEO (jefe / Sergio Orjuela). Estás por encima del director "
+            "y del comité de inversión: das mandato, apruebas o vetas, y ejecutas. "
+            "Responde en español latino, cálida y ejecutiva, 2 a 5 frases para voz. "
+            "Sin markdown ni viñetas. Si no tienes datos en vivo del broker, dilo y sugiere "
+            "un comando (precio de X, posiciones, autopilot, kill switch). "
+            "No inventes P&L. Si el jefe pide un cambio de código/UI, di que lo implementarás "
+            "lanzando un agente de ingeniería en el repo.\n\n"
+            f"Mensaje del jefe:\n{(user_text or '').strip()}"
+        )
+
+    async def chat_as_viernes(
+        self,
+        text: str,
+        *,
+        wait_seconds: float = 48.0,
+    ) -> dict[str, Any]:
+        """Conversational turn via a durable no-repo Cursor Cloud Agent (Viernes brain)."""
+        if not self.configured():
+            raise CursorAgentError("CURSOR_API_KEY no configurada")
+        prompt = self._viernes_brain_prompt(text)
+        brain = self._load_brain()
+        agent_id = (brain.get("agent_id") or "").strip()
+        run_id = ""
+        auth, headers = self._auth_headers()
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            if agent_id:
+                run_id = await self._start_follow_up(client, auth, headers, agent_id, prompt)
+                if not run_id:
+                    agent_id = ""
+
+            if not agent_id:
+                body: dict[str, Any] = {
+                    "prompt": {"text": prompt},
+                    "name": "Viernes VP — Monarch",
+                    "autoCreatePR": False,
+                    "mode": "agent",
+                }
+                model_id = (get_settings().cursor_agent_model or "").strip()
+                if model_id:
+                    body["model"] = {"id": model_id}
+                r = await client.post(f"{_API}/agents", auth=auth, headers=headers, json=body)
+                if r.status_code >= 400:
+                    raise CursorAgentError(self._err_message(r))
+                data = r.json()
+                agent = data.get("agent") or {}
+                run = data.get("run") or {}
+                agent_id = str(agent.get("id") or "")
+                run_id = str(run.get("id") or agent.get("latestRunId") or "")
+                self._save_brain(
+                    {
+                        "agent_id": agent_id,
+                        "url": agent.get("url"),
+                        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    }
+                )
+
+            if not agent_id or not run_id:
+                raise CursorAgentError("Cursor no devolvió agent/run id")
+
+            finished = await self._wait_run(
+                client, auth, headers, agent_id, run_id, wait_seconds=wait_seconds
+            )
+            result_text = (finished.get("result") or "").strip()
+            status = finished.get("status") or ""
+            return {
+                "ok": status == "FINISHED" and bool(result_text),
+                "speech": result_text
+                or (
+                    f"Sigo trabajando en Cursor (estado {status or 'pendiente'}). "
+                    f"Revisa https://cursor.com/agents/{agent_id}"
+                ),
+                "agent_id": agent_id,
+                "run_id": run_id,
+                "status": status,
+                "url": f"https://cursor.com/agents/{agent_id}",
+            }
+
+    async def _start_follow_up(
+        self,
+        client: httpx.AsyncClient,
+        auth: tuple[str, str] | None,
+        headers: dict[str, str],
+        agent_id: str,
+        prompt: str,
+    ) -> str:
+        r = await client.post(
+            f"{_API}/agents/{agent_id}/runs",
+            auth=auth,
+            headers=headers,
+            json={"prompt": {"text": prompt}, "mode": "agent"},
+        )
+        if r.status_code == 404:
+            return ""
+        if r.status_code == 409:
+            meta = await client.get(f"{_API}/agents/{agent_id}", auth=auth, headers=headers)
+            if meta.status_code < 400:
+                latest = (meta.json() or {}).get("latestRunId")
+                if latest:
+                    await self._wait_run(client, auth, headers, agent_id, latest, wait_seconds=20)
+            r = await client.post(
+                f"{_API}/agents/{agent_id}/runs",
+                auth=auth,
+                headers=headers,
+                json={"prompt": {"text": prompt}, "mode": "agent"},
+            )
+        if r.status_code >= 400:
+            raise CursorAgentError(self._err_message(r))
+        run = (r.json() or {}).get("run") or r.json()
+        return str(run.get("id") or "")
+
+    async def _wait_run(
+        self,
+        client: httpx.AsyncClient,
+        auth: tuple[str, str] | None,
+        headers: dict[str, str],
+        agent_id: str,
+        run_id: str,
+        *,
+        wait_seconds: float,
+    ) -> dict[str, Any]:
+        import asyncio
+
+        deadline = time.time() + max(5.0, wait_seconds)
+        last: dict[str, Any] = {}
+        while time.time() < deadline:
+            r = await client.get(
+                f"{_API}/agents/{agent_id}/runs/{run_id}",
+                auth=auth,
+                headers=headers,
+            )
+            if r.status_code >= 400:
+                raise CursorAgentError(self._err_message(r))
+            last = r.json()
+            if (last.get("status") or "") in _TERMINAL:
+                return last
+            await asyncio.sleep(2.0)
+        return last or {"status": "RUNNING", "id": run_id, "agentId": agent_id}
 
     def _wrap_prompt(self, text: str, *, area: str) -> str:
         return (
