@@ -53,7 +53,32 @@ class VoiceChangeService:
             "status": "queued",
         }
 
-        if open_github_issue and settings.github_token and settings.github_repo:
+        # Prefer Cursor Cloud Agent when configured (literal coding agent)
+        try:
+            from services.cursor_agent_service import CursorAgentService
+
+            cursor = CursorAgentService()
+            if cursor.configured():
+                launched = await cursor.launch(
+                    prompt=f"{item['title']}\n\n{item['description']}",
+                    title=item["title"],
+                    area=item["area"],
+                )
+                item["cursor_agent_id"] = launched.get("agent_id")
+                item["cursor_run_id"] = launched.get("run_id")
+                item["cursor_agent_url"] = launched.get("url")
+                item["status"] = "cursor_agent"
+        except Exception as exc:
+            # Network / API errors — fall through to GitHub/local queue
+            logger.warning("voice.change.cursor_failed", error=str(exc)[:200])
+            item["cursor_error"] = str(exc)[:200]
+
+        if (
+            item.get("status") != "cursor_agent"
+            and open_github_issue
+            and settings.github_token
+            and settings.github_repo
+        ):
             try:
                 url = await self._create_github_issue(item)
                 item["github_issue_url"] = url

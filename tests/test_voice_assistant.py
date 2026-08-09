@@ -51,7 +51,7 @@ async def test_chat_fallback_without_openai():
         gs.return_value = s
         result = await svc.chat("rediseña la estrategia del homepage", db, session_id="t2")
     assert result.mode == "fallback"
-    assert "OPENAI" in result.speech or "cerebro" in result.speech.lower()
+    assert "OPENAI" in result.speech.upper() or "openai" in result.speech.lower()
 
 
 @pytest.mark.asyncio
@@ -75,7 +75,9 @@ async def test_queue_product_change_local(tmp_path, monkeypatch):
 
 
 def test_assistant_status_shape():
-    with patch("services.voice_assistant_service.get_settings") as gs:
+    with patch("services.voice_assistant_service.get_settings") as gs, patch(
+        "services.cursor_agent_service.get_settings"
+    ) as gsc:
         s = MagicMock()
         s.voice_chat_enabled = True
         s.openai_api_key = "sk-test"
@@ -84,7 +86,15 @@ def test_assistant_status_shape():
         s.openai_model = "gpt-4o-mini"
         s.github_token = ""
         s.github_repo = "x/y"
+        s.cursor_api_key = "crsr_test"
+        s.cursor_agent_enabled = True
+        s.cursor_agent_repo_url = "https://github.com/saorjuela14-lab/ACCIONESBUSQUEDA"
+        s.cursor_agent_starting_ref = "main"
+        s.cursor_agent_auto_create_pr = True
+        s.cursor_agent_model = ""
         gs.return_value = s
+        gsc.return_value = s
         st = VoiceAssistantService().status()
     assert st["assistant_name"] == "Viernes"
     assert st["openai_configured"] is True
+    assert st["cursor_configured"] is True

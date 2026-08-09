@@ -53,6 +53,15 @@ async def voice_assistant_status() -> dict:
     return VoiceAssistantService().status()
 
 
+@router.get("/voice/cursor/status")
+async def voice_cursor_status(scope: OrgScope = Depends(get_org_scope)) -> dict:
+    """Estado del puente Viernes → Cursor Cloud Agents (solo mesa)."""
+    scope.require_desk()
+    from services.cursor_agent_service import CursorAgentService
+
+    return CursorAgentService().status()
+
+
 @router.get("/voice/help", response_model=list[VoiceHelpItem])
 async def voice_help() -> list[VoiceHelpItem]:
     return _HELP_ITEMS

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config.settings import get_settings
 from domain.voice import VoiceChatMessage, VoiceChatResult, VoiceCommandResult
+from services.cursor_agent_service import CursorAgentError, CursorAgentService
 from services.voice_change_service import VoiceChangeService
 from services.voice_command_service import VoiceCommandService
 from utils.logging import get_logger
@@ -41,9 +42,11 @@ class VoiceAssistantService:
     def __init__(self) -> None:
         self._commands = VoiceCommandService()
         self._changes = VoiceChangeService()
+        self._cursor = CursorAgentService()
 
     def status(self) -> dict:
         settings = get_settings()
+        cursor = self._cursor.status()
         return {
             "chat_enabled": settings.voice_chat_enabled,
             "openai_configured": bool(settings.openai_api_key),
@@ -51,6 +54,8 @@ class VoiceAssistantService:
             "boss_title": settings.voice_boss_title,
             "model": settings.openai_model,
             "github_issues": bool(settings.github_token and settings.github_repo),
+            "cursor_agent": cursor,
+            "cursor_configured": bool(cursor.get("configured")),
         }
 
     async def chat(
@@ -102,6 +107,46 @@ class VoiceAssistantService:
                 ],
             )
 
+        # Without OpenAI: still allow Cursor Agent launches for product/code asks
+        if (not settings.openai_api_key or not settings.voice_chat_enabled) and self._looks_like_change_request(raw):
+            if self._cursor.configured():
+                try:
+                    launched = await self._cursor.launch(
+                        prompt=raw,
+                        title=raw[:80],
+                        area="product",
+                    )
+                    speech = (
+                        f"{boss}, ya lancé un agente de Cursor para eso. "
+                        f"Lo sigues en {launched.get('url') or 'cursor.com/agents'}."
+                    )
+                    return VoiceChatResult(
+                        speech=speech,
+                        success=True,
+                        mode="cursor_agent",
+                        assistant_name=name,
+                        tools_used=["launch_cursor_agent"],
+                        data=launched,
+                        session_id=sid,
+                        messages=[
+                            VoiceChatMessage(role="user", content=raw),
+                            VoiceChatMessage(role="assistant", content=speech),
+                        ],
+                    )
+                except CursorAgentError as exc:
+                    speech = f"{boss}, no pude lanzar Cursor: {exc}"
+                    return VoiceChatResult(
+                        speech=speech,
+                        success=False,
+                        mode="cursor_agent",
+                        assistant_name=name,
+                        session_id=sid,
+                        messages=[
+                            VoiceChatMessage(role="user", content=raw),
+                            VoiceChatMessage(role="assistant", content=speech),
+                        ],
+                    )
+
         if not settings.openai_api_key or not settings.voice_chat_enabled:
             # Fallback: command router + honest note about chat needing OpenAI
             cmd = await self._commands.handle(
@@ -122,11 +167,16 @@ class VoiceAssistantService:
                     data=cmd.data,
                     session_id=sid,
                 )
+            cursor_note = (
+                " Para cambios de página o código di algo como: "
+                "cambia el texto del depósito, y lanzo un agente de Cursor."
+                if self._cursor.configured()
+                else ""
+            )
             speech = (
-                f"{boss}, todavía no tengo el cerebro conversacional activo "
-                f"(falta OPENAI_API_KEY). Mientras tanto puedo precios, análisis, "
-                f"compras con confirmación, portafolio y watchlist. "
-                f"Di ayuda, o dime qué ticker miramos."
+                f"{boss}, el chat largo necesita OPENAI_API_KEY. "
+                f"Mientras tanto puedo precios, análisis, compras con confirmación, "
+                f"portafolio y watchlist.{cursor_note}"
             )
             return VoiceChatResult(
                 speech=speech,
@@ -146,6 +196,18 @@ class VoiceAssistantService:
         )
         return any(k in t for k in keys)
 
+    def _looks_like_change_request(self, text: str) -> bool:
+        t = text.lower()
+        keys = (
+            "cambia ", "cambiar ", "arregla ", "arreglar ", "implementa ",
+            "implementar ", "modifica ", "modificar ", "rediseña", "rediseñar",
+            "haz este cambio", "haz un cambio", "actualiza la página",
+            "actualiza el", "corrige ", "añade ", "agrega ", "quita el texto",
+            "elimina el texto", "en el código", "en la página", "en el dashboard",
+            "lanza un agente", "agente de cursor", "cursor agent",
+        )
+        return any(k in t for k in keys)
+
     def _with_persona(self, speech: str, *, boss: str) -> str:
         s = (speech or "").strip()
         if not s:
@@ -162,16 +224,26 @@ class VoiceAssistantService:
         settings = get_settings()
         name = settings.voice_assistant_name
         boss = settings.voice_boss_title
+        cursor_on = self._cursor.configured()
+        cursor_line = (
+            "Para cambios de UI/código/producto usa launch_cursor_agent (o queue_product_change, "
+            "que también lanza Cursor si está configurado). Eso dispara un Cloud Agent real en el repo "
+            "que edita código y puede abrir PR. Di al jefe la URL del agente. "
+            "No digas que ya editaste el repo tú misma: lo hace el agente de Cursor."
+            if cursor_on
+            else "Si piden cambios de código y Cursor no está configurado, usa queue_product_change "
+            "(cola local / GitHub issue)."
+        )
         return f"""Eres {name}, la asistente personal de voz de Monarch Capital (mesa de inversión autónoma).
 Hablas en español latino natural, cálida y profesional — tipo secretaria ejecutiva / Friday de Iron Man.
 SIEMPRE te diriges al usuario como "{boss}" (de vez en cuando "jefe", nunca "usuario").
 Respuestas CORTAS para ser leídas en voz alta (2–5 frases). Sin markdown, sin viñetas, sin tablas.
 Números redondeados y claros. Si vas a operar (comprar/vender), pide confirmación explícita.
 Puedes: mercado, precios, análisis, portafolio/broker, watchlist, autopilot, kill switch,
-simular escenarios de inversión, aconsejar asignación, y anotar cambios de producto/estrategia/código
-(con la herramienta queue_product_change) para que el equipo/Cursor los implemente.
-Si piden un cambio en la página o en el código, usa queue_product_change con título y descripción claros;
-no inventes que ya lo editaste en el repo si solo lo anotaste.
+simular escenarios, aconsejar asignación, y lanzar agentes de Cursor para cambios reales.
+{cursor_line}
+Usa cursor_agent_status / list_cursor_agents si pregunta cómo va un agente.
+Trading y consultas rápidas: herramientas locales. Cambios de producto: Cursor Agent.
 Si no estás segura, pregunta una sola cosa. Sé proactiva y útil."""
 
     def _tool_specs(self) -> list[dict]:
@@ -257,8 +329,8 @@ Si no estás segura, pregunta una sola cosa. Sé proactiva y útil."""
                 "function": {
                     "name": "queue_product_change",
                     "description": (
-                        "Anota un cambio de estrategia, UI, página o código pedido por el jefe. "
-                        "Abre issue en GitHub si hay token."
+                        "Registra un cambio pedido por el jefe. Si CURSOR_API_KEY está activa, "
+                        "lanza un Cloud Agent de Cursor en el repo (preferido)."
                     ),
                     "parameters": {
                         "type": "object",
@@ -272,6 +344,53 @@ Si no estás segura, pregunta una sola cosa. Sé proactiva y útil."""
                         },
                         "required": ["title", "description"],
                     },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "launch_cursor_agent",
+                    "description": (
+                        "Lanza un Cloud Agent de Cursor para implementar un cambio en el repo "
+                        "(código, UI, producto). Úsalo cuando el jefe pida cambios reales."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "prompt": {
+                                "type": "string",
+                                "description": "Instrucción completa para el agente",
+                            },
+                            "title": {"type": "string"},
+                            "area": {"type": "string"},
+                        },
+                        "required": ["prompt"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "cursor_agent_status",
+                    "description": "Consulta estado de un agente de Cursor (y su último run)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "agent_id": {
+                                "type": "string",
+                                "description": "Id bc-... del agente",
+                            },
+                        },
+                        "required": ["agent_id"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "list_cursor_agents",
+                    "description": "Lista agentes de Cursor recientes (remotos + lanzados por Viernes)",
+                    "parameters": {"type": "object", "properties": {}},
                 },
             },
             {
@@ -591,6 +710,22 @@ Si no estás segura, pregunta una sola cosa. Sé proactiva y útil."""
                     area=str(args.get("area") or "product"),
                 )
                 return {"ok": True, "request": item}, {"data": item}
+
+            if name == "launch_cursor_agent":
+                launched = await self._cursor.launch(
+                    prompt=str(args.get("prompt") or ""),
+                    title=str(args.get("title") or ""),
+                    area=str(args.get("area") or "product"),
+                )
+                return launched, {"data": launched}
+
+            if name == "cursor_agent_status":
+                info = await self._cursor.get_agent(str(args.get("agent_id") or ""))
+                return info, {"data": info}
+
+            if name == "list_cursor_agents":
+                listed = await self._cursor.list_remote(limit=8)
+                return listed, {"data": listed}
 
             if name == "list_change_requests":
                 items = self._changes.list_recent()
