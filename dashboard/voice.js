@@ -89,6 +89,106 @@
     }
   }
 
+  /** Spanish spoken forms for TTS — mirrors utils/speech_es.py */
+  function rewriteForSpeech(text) {
+    if (!text) return "";
+    let s = String(text);
+
+    const units = [
+      "cero", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve",
+      "diez", "once", "doce", "trece", "catorce", "quince", "dieciséis", "diecisiete",
+      "dieciocho", "diecinueve",
+    ];
+    const tens = ["", "", "veinte", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta", "ochenta", "noventa"];
+    const special20 = {
+      20: "veinte", 21: "veintiuno", 22: "veintidós", 23: "veintitrés", 24: "veinticuatro",
+      25: "veinticinco", 26: "veintiséis", 27: "veintisiete", 28: "veintiocho", 29: "veintinueve",
+    };
+    const hundreds = [
+      "", "ciento", "doscientos", "trescientos", "cuatrocientos", "quinientos",
+      "seiscientos", "setecientos", "ochocientos", "novecientos",
+    ];
+
+    function under100(n) {
+      n = Math.floor(Math.abs(n));
+      if (n < 20) return units[n];
+      if (n <= 29) return special20[n];
+      const t = Math.floor(n / 10);
+      const u = n % 10;
+      if (!u) return tens[t];
+      return `${tens[t]} y ${units[u]}`;
+    }
+    function under1000(n) {
+      n = Math.floor(Math.abs(n));
+      if (n < 100) return under100(n);
+      if (n === 100) return "cien";
+      const h = Math.floor(n / 100);
+      const r = n % 100;
+      return r ? `${hundreds[h]} ${under100(r)}` : hundreds[h];
+    }
+    function intEs(n) {
+      n = Math.floor(n);
+      if (n < 0) return `menos ${intEs(-n)}`;
+      if (n < 1000) return under1000(n);
+      if (n < 1000000) {
+        const th = Math.floor(n / 1000);
+        const r = n % 1000;
+        const head = th === 1 ? "mil" : `${intEs(th).replace(/veintiuno$/, "veintiún").replace(/uno$/, "un")} mil`;
+        return r ? `${head} ${under1000(r)}` : head;
+      }
+      return String(n).split("").map((d) => (/\d/.test(d) ? units[+d] : d)).join(" ");
+    }
+    function decimalEs(v) {
+      const sign = v < 0 ? "menos " : "";
+      v = Math.abs(v);
+      let t = v.toFixed(2).replace(/\.?0+$/, "");
+      if (!t.includes(".")) return sign + intEs(+t);
+      const [w, f] = t.split(".");
+      const frac = f.split("").map((d) => units[+d]).join(" ");
+      return `${sign}${intEs(+w)} punto ${frac}`;
+    }
+    function pctEs(v, signed) {
+      const mag = decimalEs(Math.abs(v));
+      if (!signed || Math.abs(v) < 1e-12) return `${mag} por ciento`;
+      if (v > 0) return `crecimiento del ${mag} por ciento`;
+      return `decrecimiento del ${mag} por ciento`;
+    }
+
+    // Avoid lookbehind for older Safari — use capture groups instead
+    s = s.replace(/(^|[^A-Za-z0-9_])([+-])?\s*(\d+(?:[.,]\d+)?)\s*%/g, (full, pre, sign, num) => {
+      let v = parseFloat(String(num).replace(",", "."));
+      let spoken;
+      if (sign === "+") spoken = pctEs(Math.abs(v), true);
+      else if (sign === "-") spoken = pctEs(-Math.abs(v), true);
+      else spoken = pctEs(v, false);
+      return `${pre}${spoken}`;
+    });
+    s = s.replace(/(^|[^A-Za-z0-9_])([+-])?\s*(\d+(?:[.,]\d+)?)\s*por\s+ciento\b/gi, (full, pre, sign, num) => {
+      let v = parseFloat(String(num).replace(",", "."));
+      let spoken;
+      if (sign === "+") spoken = pctEs(Math.abs(v), true);
+      else if (sign === "-") spoken = pctEs(-Math.abs(v), true);
+      else spoken = pctEs(v, false);
+      return `${pre}${spoken}`;
+    });
+    s = s.replace(/(^|[^A-Za-z0-9_])\$\s*(\d+(?:[.,]\d+)?)/g, (full, pre, num) => {
+      const v = Math.abs(parseFloat(String(num).replace(",", ".")));
+      const dollars = Math.floor(v);
+      let cents = Math.round((v - dollars) * 100);
+      let d = dollars;
+      if (cents === 100) { d += 1; cents = 0; }
+      const dPhrase = d === 1 ? "un dólar" : `${intEs(d)} dólares`;
+      if (!cents) return `${pre}${dPhrase}`;
+      const cPhrase = cents === 1 ? "un centavo" : `${intEs(cents)} centavos`;
+      return `${pre}${dPhrase} con ${cPhrase}`;
+    });
+
+    s = s.replace(/\s+/g, " ").trim();
+    s = s.replace(/ por ciento/g, " por ciento.");
+    s = s.replace(/\.\.+/g, ".");
+    return s;
+  }
+
   function speakBrowser(text, onEnd) {
     if (!synth) {
       deps?.toast?.(text.slice(0, 120));
@@ -99,7 +199,8 @@
     synth.resume();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = "es-MX";
-    u.rate = 0.95;
+    u.rate = 0.85;
+    u.pitch = 1.0;
     const voice = pickSpanishVoice();
     if (voice) u.voice = voice;
     u.onend = () => { if (onEnd) onEnd(); };
@@ -170,6 +271,7 @@
       return;
     }
     stopAudio();
+    const spoken = rewriteForSpeech(text);
 
     if (elevenConfigured === null) {
       elevenConfigured = await probeElevenStatus();
@@ -177,21 +279,21 @@
 
     if (elevenConfigured && deps?.API) {
       try {
-        await speakEleven(text, onEnd);
+        await speakEleven(spoken, onEnd);
         return;
       } catch (e) {
         // One soft retry after re-probe; then browser fallback
         elevenConfigured = await probeElevenStatus();
         if (elevenConfigured) {
           try {
-            await speakEleven(text, onEnd);
+            await speakEleven(spoken, onEnd);
             return;
           } catch { /* fall through */ }
         }
       }
     }
 
-    speakBrowser(text, onEnd);
+    speakBrowser(spoken, onEnd);
   }
 
   // Shared entry for app.js analysis narration
