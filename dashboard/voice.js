@@ -171,13 +171,34 @@
       else spoken = pctEs(v, false);
       return `${pre}${spoken}`;
     });
-    s = s.replace(/(^|[^A-Za-z0-9_])\$\s*(\d+(?:[.,]\d+)?)/g, (full, pre, num) => {
-      const v = Math.abs(parseFloat(String(num).replace(",", ".")));
+    s = s.replace(/(^|[^A-Za-z0-9_])\$\s*([\d.,]+)/g, (full, pre, num) => {
+      let raw = String(num).replace(/\s+/g, "");
+      if (raw.includes(",") && raw.includes(".")) {
+        raw = raw.lastIndexOf(",") > raw.lastIndexOf(".")
+          ? raw.replace(/\./g, "").replace(",", ".")
+          : raw.replace(/,/g, "");
+      } else if (raw.includes(",")) {
+        const parts = raw.split(",");
+        raw = (parts.length === 2 && parts[1].length <= 2)
+          ? raw.replace(",", ".")
+          : raw.replace(/,/g, "");
+      } else if (raw.includes(".")) {
+        const parts = raw.split(".");
+        if (parts.length === 2 && parts[1].length === 3 && /^\d+$/.test(parts[0]) && /^\d+$/.test(parts[1])) {
+          raw = parts[0] + parts[1];
+        } else if (parts.length > 2 && parts.slice(1).every((p) => p.length === 3)) {
+          raw = parts.join("");
+        }
+      }
+      const v = Math.abs(parseFloat(raw));
+      if (!Number.isFinite(v)) return full;
       const dollars = Math.floor(v);
       let cents = Math.round((v - dollars) * 100);
       let d = dollars;
       if (cents === 100) { d += 1; cents = 0; }
-      const dPhrase = d === 1 ? "un dólar" : `${intEs(d)} dólares`;
+      const dPhrase = d === 1
+        ? "un dólar"
+        : `${intEs(d).replace(/veintiuno$/, "veintiún").replace(/uno$/, "un")} dólares`;
       if (!cents) return `${pre}${dPhrase}`;
       const cPhrase = cents === 1 ? "un centavo" : `${intEs(cents)} centavos`;
       return `${pre}${dPhrase} con ${cPhrase}`;
