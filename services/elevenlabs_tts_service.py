@@ -68,7 +68,9 @@ class ElevenLabsTTSService:
                 "Usa la key secreta que empieza por sk_ (Create/Rotate en elevenlabs.io)."
             )
 
-        clean = (text or "").strip()
+        from utils.speech_es import rewrite_for_speech
+
+        clean = rewrite_for_speech((text or "").strip())
         if not clean:
             raise ElevenLabsTTSError("Texto vacío para TTS.")
         # Keep latency bounded for voice-bar replies
@@ -89,6 +91,7 @@ class ElevenLabsTTSService:
                 "similarity_boost": settings.elevenlabs_similarity,
                 "style": settings.elevenlabs_style,
                 "use_speaker_boost": True,
+                "speed": 0.88,  # calmer delivery for Spanish number phrases
             },
         }
         params = {"output_format": settings.elevenlabs_output_format}
