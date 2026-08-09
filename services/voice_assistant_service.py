@@ -107,86 +107,123 @@ class VoiceAssistantService:
                 ],
             )
 
-        # Without OpenAI: still allow Cursor Agent launches for product/code asks
-        if (not settings.openai_api_key or not settings.voice_chat_enabled) and self._looks_like_change_request(raw):
-            if self._cursor.configured():
-                try:
-                    launched = await self._cursor.launch(
-                        prompt=raw,
-                        title=raw[:80],
-                        area="product",
-                    )
-                    speech = (
-                        f"{boss}, ya lancé un agente de Cursor para eso. "
-                        f"Lo sigues en {launched.get('url') or 'cursor.com/agents'}."
-                    )
-                    return VoiceChatResult(
-                        speech=speech,
-                        success=True,
-                        mode="cursor_agent",
-                        assistant_name=name,
-                        tools_used=["launch_cursor_agent"],
-                        data=launched,
-                        session_id=sid,
-                        messages=[
-                            VoiceChatMessage(role="user", content=raw),
-                            VoiceChatMessage(role="assistant", content=speech),
-                        ],
-                    )
-                except CursorAgentError as exc:
-                    speech = f"{boss}, no pude lanzar Cursor: {exc}"
-                    return VoiceChatResult(
-                        speech=speech,
-                        success=False,
-                        mode="cursor_agent",
-                        assistant_name=name,
-                        session_id=sid,
-                        messages=[
-                            VoiceChatMessage(role="user", content=raw),
-                            VoiceChatMessage(role="assistant", content=speech),
-                        ],
-                    )
+        # Prefer OpenAI for fast tool-calling chat when available
+        if settings.openai_api_key and settings.voice_chat_enabled:
+            return await self._llm_chat(raw, db, portfolio_id=portfolio_id, session_id=sid)
 
-        if not settings.openai_api_key or not settings.voice_chat_enabled:
-            # Fallback: command router + honest note about chat needing OpenAI
-            cmd = await self._commands.handle(
-                raw, db, portfolio_id=portfolio_id, org_id=self._org_id
+        # --- No OpenAI: Viernes still answers (local VP + commands + Cursor brain) ---
+        local = self._local_vp_reply(raw, boss=boss)
+        if local:
+            return VoiceChatResult(
+                speech=local,
+                success=True,
+                mode="vp_local",
+                assistant_name=name,
+                session_id=sid,
+                messages=[
+                    VoiceChatMessage(role="user", content=raw),
+                    VoiceChatMessage(role="assistant", content=local),
+                ],
             )
-            if cmd.intent != "unknown":
-                speech = self._with_persona(cmd.speech, boss=boss)
+
+        # Code/UI change → engineering agent (repo + PR)
+        if self._looks_like_change_request(raw) and self._cursor.configured():
+            try:
+                launched = await self._cursor.launch(
+                    prompt=raw,
+                    title=raw[:80],
+                    area="product",
+                )
+                speech = (
+                    f"{boss}, ya lancé el agente de ingeniería en Cursor. "
+                    f"Lo sigues en {launched.get('url') or 'cursor.com/agents'}."
+                )
                 return VoiceChatResult(
                     speech=speech,
-                    success=cmd.success,
-                    mode="command",
+                    success=True,
+                    mode="cursor_agent",
                     assistant_name=name,
-                    ui_action=cmd.ui_action,
-                    ui_actions=[cmd.ui_action] if cmd.ui_action else [],
-                    requires_confirmation=cmd.requires_confirmation,
-                    pending_action=cmd.pending_action,
-                    tools_used=[cmd.intent],
-                    data=cmd.data,
+                    tools_used=["launch_cursor_agent"],
+                    data=launched,
+                    session_id=sid,
+                    messages=[
+                        VoiceChatMessage(role="user", content=raw),
+                        VoiceChatMessage(role="assistant", content=speech),
+                    ],
+                )
+            except CursorAgentError as exc:
+                speech = f"{boss}, no pude lanzar el agente de Cursor: {exc}"
+                return VoiceChatResult(
+                    speech=speech,
+                    success=False,
+                    mode="cursor_agent",
+                    assistant_name=name,
                     session_id=sid,
                 )
-            cursor_note = (
-                " Para cambios de página o código di algo como: "
-                "cambia el texto del depósito, y lanzo un agente de Cursor."
-                if self._cursor.configured()
-                else ""
-            )
-            speech = (
-                f"{boss}, el chat largo necesita OPENAI_API_KEY. "
-                f"Mientras tanto puedo precios, análisis, compras con confirmación, "
-                f"portafolio y watchlist.{cursor_note}"
-            )
+
+        # Deterministic mesa commands (precio, posiciones, etc.)
+        cmd = await self._commands.handle(
+            raw, db, portfolio_id=portfolio_id, org_id=self._org_id
+        )
+        if cmd.intent != "unknown":
+            speech = self._with_persona(cmd.speech, boss=boss)
             return VoiceChatResult(
                 speech=speech,
-                success=False,
-                mode="fallback",
+                success=cmd.success,
+                mode="command",
                 assistant_name=name,
+                ui_action=cmd.ui_action,
+                ui_actions=[cmd.ui_action] if cmd.ui_action else [],
+                requires_confirmation=cmd.requires_confirmation,
+                pending_action=cmd.pending_action,
+                tools_used=[cmd.intent],
+                data=cmd.data,
                 session_id=sid,
             )
 
-        return await self._llm_chat(raw, db, portfolio_id=portfolio_id, session_id=sid)
+        # Conversational brain = durable Cursor Cloud Agent (you / Cursor)
+        if self._cursor.configured():
+            try:
+                brain = await self._cursor.chat_as_viernes(raw, wait_seconds=48.0)
+                speech = self._with_persona(brain.get("speech") or "", boss=boss)
+                return VoiceChatResult(
+                    speech=speech,
+                    success=bool(brain.get("ok")),
+                    mode="cursor_brain",
+                    assistant_name=name,
+                    tools_used=["cursor_brain"],
+                    data=brain,
+                    session_id=sid,
+                    messages=[
+                        VoiceChatMessage(role="user", content=raw),
+                        VoiceChatMessage(role="assistant", content=speech),
+                    ],
+                )
+            except CursorAgentError as exc:
+                speech = (
+                    f"{boss}, soy Viernes, tu VP. Cursor no me respondió ahora ({exc}). "
+                    f"Prueba un comando directo: precio de AAPL, posiciones, o autopilot."
+                )
+                return VoiceChatResult(
+                    speech=speech,
+                    success=False,
+                    mode="cursor_brain",
+                    assistant_name=name,
+                    session_id=sid,
+                )
+
+        speech = (
+            f"{boss}, soy Viernes. Para hablar conmigo con lenguaje libre configura "
+            f"CURSOR_API_KEY o OPENAI_API_KEY. Mientras tanto: precios, análisis, "
+            f"compras con confirmación, portafolio y watchlist."
+        )
+        return VoiceChatResult(
+            speech=speech,
+            success=False,
+            mode="fallback",
+            assistant_name=name,
+            session_id=sid,
+        )
 
     def _looks_like_trade_command(self, text: str) -> bool:
         t = text.lower()
@@ -207,6 +244,41 @@ class VoiceAssistantService:
             "lanza un agente", "agente de cursor", "cursor agent",
         )
         return any(k in t for k in keys)
+
+    def _local_vp_reply(self, text: str, *, boss: str) -> str | None:
+        """Instant VP persona replies — no OpenAI, no waiting on Cursor."""
+        t = (text or "").strip().lower()
+        if not t:
+            return None
+        greetings = (
+            "hola", "buenas", "buen día", "buen dia", "buenos días", "buenos dias",
+            "hey", "qué tal", "que tal", "cómo vas", "como vas", "cómo estás",
+            "como estas", "cómo esta", "como esta", "qué hubo", "que hubo",
+        )
+        if any(g in t for g in greetings) and len(t) < 80:
+            return (
+                f"Aquí estoy, {boss}. Soy Viernes, tu vicepresidenta operativa: "
+                f"por encima del comité y del director, debajo solo de ti. "
+                f"Dime qué necesitas: mercado, posiciones, autopilot, o un cambio en la plataforma."
+            )
+        if any(k in t for k in ("quién eres", "quien eres", "qué eres", "que eres", "tu rol", "tu cargo")):
+            return (
+                f"{boss}, soy Viernes, VP de Monarch Capital. Mandato: ejecutar tu visión, "
+                f"mandar sobre el comité cuando haga falta, frenar con kill switch si hay riesgo, "
+                f"y lanzar agentes de Cursor cuando haya que cambiar código."
+            )
+        if any(k in t for k in ("qué puedes", "que puedes", "qué sabes", "que sabes", "ayuda", "help")):
+            return (
+                f"{boss}, puedo: precios y análisis, portafolio y broker, compras con confirmación, "
+                f"autopilot y kill switch, simulaciones, y cambios reales en el repo con Cursor. "
+                f"Di por ejemplo: precio de NVDA, posiciones, o cambia el texto del depósito."
+            )
+        if "openai" in t:
+            return (
+                f"{boss}, no dependo de OpenAI para hablarte: con CURSOR_API_KEY uso el cerebro "
+                f"de Cursor. OpenAI solo acelera el chat con herramientas automatizadas."
+            )
+        return None
 
     def _with_persona(self, speech: str, *, boss: str) -> str:
         s = (speech or "").strip()

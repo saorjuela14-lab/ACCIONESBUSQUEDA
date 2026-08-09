@@ -174,3 +174,40 @@ async def test_viernes_change_fast_path_without_openai(monkeypatch, tmp_path):
     assert result.mode == "cursor_agent"
     assert result.success is True
     assert "cursor.com/agents" in result.speech.lower() or "agente" in result.speech.lower()
+
+
+@pytest.mark.asyncio
+async def test_chat_as_viernes_creates_no_repo_brain(settings_cursor, monkeypatch, tmp_path):
+    monkeypatch.setattr("services.cursor_agent_service._BRAIN_STORE", tmp_path / "brain.json")
+    svc = CursorAgentService()
+
+    create_resp = httpx.Response(
+        200,
+        json={
+            "agent": {"id": "bc-brain", "url": "https://cursor.com/agents/bc-brain", "status": "ACTIVE"},
+            "run": {"id": "run-1", "status": "CREATING"},
+        },
+    )
+    run_resp = httpx.Response(
+        200,
+        json={
+            "id": "run-1",
+            "agentId": "bc-brain",
+            "status": "FINISHED",
+            "result": "Aquí estoy, jefe. Lista para ejecutar.",
+        },
+    )
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+    mock_client.post = AsyncMock(return_value=create_resp)
+    mock_client.get = AsyncMock(return_value=run_resp)
+
+    with patch("services.cursor_agent_service.httpx.AsyncClient", return_value=mock_client):
+        out = await svc.chat_as_viernes("Hola, cómo vas", wait_seconds=5)
+
+    assert out["ok"] is True
+    assert "Lista" in out["speech"] or "jefe" in out["speech"].lower()
+    body = mock_client.post.await_args.kwargs["json"]
+    assert "repos" not in body
+    assert body["autoCreatePR"] is False
