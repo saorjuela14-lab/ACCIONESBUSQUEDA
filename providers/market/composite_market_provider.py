@@ -11,6 +11,7 @@ from providers.market.alpaca_provider import AlpacaMarketDataProvider
 from providers.market.intervals import is_history_stale, last_bar_timestamp
 from providers.market.polygon_provider import PolygonProvider
 from providers.market.rate_limit_tracker import get_rate_limit_tracker
+from providers.market.finviz_provider import FinvizMarketProvider
 from providers.market.yfinance_provider import YFinanceProvider
 from utils.logging import get_logger
 
@@ -22,6 +23,7 @@ ProviderCall = Callable[[], Coroutine[Any, Any, Any]]
 class CompositeMarketDataProvider(MarketDataProvider):
     """
     Tries Alpaca → Polygon → Alpha Vantage → YFinance for each request.
+    Finviz enriches fundamentals/metadata (delayed); not used for OHLCV history.
     Skips providers that exhausted their rate limit or fail.
     """
 
@@ -29,9 +31,9 @@ class CompositeMarketDataProvider(MarketDataProvider):
 
     # Priority order for price/history data
     HISTORY_CHAIN = ("alpaca", "polygon", "alpha_vantage", "yfinance")
-    QUOTE_CHAIN = ("alpaca", "polygon", "alpha_vantage", "yfinance")
-    # Fundamentals: YFinance first (richest free data), then Alpha Vantage overview
-    FINANCIALS_CHAIN = ("yfinance", "alpha_vantage")
+    QUOTE_CHAIN = ("alpaca", "polygon", "alpha_vantage", "yfinance", "finviz")
+    # Fundamentals: YFinance first, Finviz snapshot, then Alpha Vantage overview
+    FINANCIALS_CHAIN = ("yfinance", "finviz", "alpha_vantage")
 
     def __init__(
         self,
@@ -39,6 +41,7 @@ class CompositeMarketDataProvider(MarketDataProvider):
         polygon: PolygonProvider | None = None,
         alpha_vantage: AlphaVantageProvider | None = None,
         yfinance: YFinanceProvider | None = None,
+        finviz: FinvizMarketProvider | None = None,
     ) -> None:
         settings = get_settings()
         self._tracker = get_rate_limit_tracker()
@@ -76,6 +79,11 @@ class CompositeMarketDataProvider(MarketDataProvider):
 
         if not settings.yfinance_enabled:
             self._providers.pop("yfinance", None)
+
+        if finviz is not None:
+            self._providers["finviz"] = finviz
+        elif settings.finviz_enabled:
+            self._providers["finviz"] = FinvizMarketProvider()
 
         logger.info(
             "market.provider.chain",
@@ -159,7 +167,7 @@ class CompositeMarketDataProvider(MarketDataProvider):
         fetchers = {name: (lambda p=name: self._providers[p].get_quote(ticker)) for name in self._providers}
         quote = await self._try_chain(self.QUOTE_CHAIN, "get_quote", ticker, fetchers)
 
-        # Enrich quote with YFinance metadata if missing sector/company
+        # Enrich quote with YFinance / Finviz metadata if missing sector/company
         if quote.get("sector") is None and "yfinance" in self._providers:
             try:
                 yf_quote = await self._providers["yfinance"].get_quote(ticker)
@@ -169,6 +177,36 @@ class CompositeMarketDataProvider(MarketDataProvider):
                 quote.setdefault("country", yf_quote.get("country"))
                 if quote.get("market_cap") is None:
                     quote["market_cap"] = yf_quote.get("market_cap")
+            except Exception:
+                pass
+
+        if "finviz" in self._providers:
+            try:
+                fv = await self._providers["finviz"].get_quote(ticker)
+                quote.setdefault("company_name", fv.get("company_name"))
+                quote.setdefault("sector", fv.get("sector"))
+                quote.setdefault("industry", fv.get("industry"))
+                quote.setdefault("country", fv.get("country"))
+                if quote.get("market_cap") is None:
+                    quote["market_cap"] = fv.get("market_cap")
+                # Research fields (delayed) — never override live last price from brokers
+                for key in (
+                    "pe",
+                    "forward_pe",
+                    "target_price",
+                    "short_float_pct",
+                    "rel_volume",
+                    "perf_week_pct",
+                    "perf_month_pct",
+                    "analyst_recom",
+                    "insider_own_pct",
+                    "inst_own_pct",
+                    "beta",
+                    "atr",
+                ):
+                    if quote.get(key) is None and fv.get(key) is not None:
+                        quote[key] = fv.get(key)
+                quote.setdefault("finviz", {k: fv.get(k) for k in ("delayed", "source", "snapshot")})
             except Exception:
                 pass
 

@@ -24,6 +24,7 @@ dependencies = [
     "pandas>=2.2",
     "numpy>=1.26",
     "duckduckgo-search>=6.0",
+    "beautifulsoup4>=4.12",
     "python-dotenv>=1.0",
     "structlog>=24.1",
     "orjson>=3.9",

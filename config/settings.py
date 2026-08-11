@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = 300
 
     yfinance_enabled: bool = True
+    finviz_enabled: bool = True  # finviz.com quotes (delayed) + news + discovery
     tradingview_enabled: bool = False
     tradingview_api_key: str = ""
     fred_api_key: str = ""

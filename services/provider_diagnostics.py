@@ -72,6 +72,7 @@ async def get_providers_status() -> dict[str, Any]:
             },
             "fred": {"configured": bool(settings.fred_api_key)},
             "yfinance": {"enabled": settings.yfinance_enabled},
+            "finviz": {"enabled": settings.finviz_enabled, "delayed_quotes": True},
             "alpaca": {
                 "configured": bool(settings.alpaca_api_key and settings.alpaca_secret_key),
                 "paper": settings.effective_alpaca_paper,
@@ -86,7 +87,7 @@ async def get_providers_status() -> dict[str, Any]:
                 "data_feed": settings.alpaca_data_feed,
             },
         },
-        "fallback_chain": ["alpaca", "polygon", "alpha_vantage", "yfinance"],
+        "fallback_chain": ["alpaca", "polygon", "alpha_vantage", "yfinance", "finviz"],
         "usage": _safe_usage_stats(),
     }
 

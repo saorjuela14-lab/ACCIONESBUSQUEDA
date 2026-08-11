@@ -10,6 +10,7 @@ from domain.discovery import (
     DiscoveryReport,
 )
 from domain.reports import InvestmentThesis
+from providers.discovery.finviz_scanner import FinvizDiscoveryScanner
 from providers.discovery.news_scanner import NewsDiscoveryScanner
 from providers.discovery.reddit_discovery import RedditDiscoveryScanner
 from providers.discovery.stocktwits_trending import StockTwitsTrendingScanner
@@ -25,6 +26,7 @@ _SOURCE_WEIGHTS = {
     "x": 1.0,
     "reddit": 0.9,
     "news": 1.1,
+    "finviz": 1.15,
 }
 
 _SENTIMENT_SCORE = {
@@ -48,6 +50,9 @@ class CompanyDiscoveryService:
         self._x = XSearchScanner()
         self._reddit = RedditDiscoveryScanner()
         self._news = NewsDiscoveryScanner()
+        from config.settings import get_settings
+
+        self._finviz = FinvizDiscoveryScanner() if get_settings().finviz_enabled else None
 
     async def research(
         self,
@@ -65,23 +70,23 @@ class CompanyDiscoveryService:
 
         logger.info("discovery.research.start", themes=themes, max_price=max_price)
 
-        st, x_hits, reddit_hits, news_hits = await asyncio.gather(
+        jobs = [
             self._stocktwits.scan(),
             self._x.scan(extra_queries=themes),
             self._reddit.scan(extra_queries=themes),
             self._news.scan(themes=themes),
-            return_exceptions=True,
-        )
+        ]
+        labels = ["stocktwits", "x", "reddit", "news"]
+        if self._finviz is not None:
+            jobs.append(self._finviz.scan())
+            labels.append("finviz")
+
+        batches = await asyncio.gather(*jobs, return_exceptions=True)
 
         raw_pairs: list[tuple[str, DiscoveryMention]] = []
         sources_scanned: list[str] = []
 
-        for label, batch in (
-            ("stocktwits", st),
-            ("x", x_hits),
-            ("reddit", reddit_hits),
-            ("news", news_hits),
-        ):
+        for label, batch in zip(labels, batches):
             if isinstance(batch, Exception):
                 logger.warning("discovery.source_failed", source=label, error=str(batch))
                 continue
