@@ -253,6 +253,37 @@ async def autopilot_run(
     )
 
 
+@router.get("/ops/journal")
+async def list_trade_journal(
+    limit: int = Query(default=40, ge=1, le=200),
+    status: str | None = Query(default=None, description="open|closed|all"),
+    days: int = Query(default=90, ge=1, le=730),
+    session: AsyncSession = Depends(get_session),
+):
+    """Durable trade journal (open→close) for desk transparency."""
+    from services.trade_journal_service import TradeJournalService
+
+    svc = TradeJournalService(session)
+    if status == "open":
+        items = await svc.list_open()
+    elif status == "closed":
+        items = await svc.list_closed(limit=limit, days=days)
+    else:
+        items = await svc.list_recent(limit=limit)
+    return {"items": items, "count": len(items), "days": days}
+
+
+@router.get("/ops/track-record")
+async def get_track_record(
+    window_days: int = Query(default=90, ge=7, le=730),
+    session: AsyncSession = Depends(get_session),
+):
+    """Win rate of closed journal trades + evaluated investment memory."""
+    from services.track_record_service import TrackRecordService
+
+    return await TrackRecordService(session).summary(window_days=window_days)
+
+
 @router.post("/ops/autopilot/promote-live")
 async def promote_live(
     body: PromoteLiveRequest,

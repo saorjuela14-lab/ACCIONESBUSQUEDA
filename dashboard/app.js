@@ -866,6 +866,99 @@ async function loadRiskDesk() {
   }
 }
 
+async function loadTrackRecord() {
+  const el = $("#track-record-summary");
+  if (!el || !isDeskPrincipal()) return;
+  try {
+    const r = await api(`${API}/ops/track-record?window_days=90`);
+    const wr = r.trades_win_rate_pct != null ? `${r.trades_win_rate_pct}%` : "—";
+    const n = r.trades_closed || 0;
+    const avg = r.trades_avg_pnl_pct != null ? `${r.trades_avg_pnl_pct}%` : "—";
+    const mem = r.memory_hit_rate_pct != null
+      ? `${r.memory_hit_rate_pct}% (${r.memory_correct}/${r.memory_evaluated})`
+      : "—";
+    const db = r.durable_db ? "DB persistente" : "SQLite efímero — configura Neon";
+    el.classList.remove("muted");
+    el.innerHTML =
+      `<div class="track-kpis">` +
+      `<div><label>Win rate trades</label><strong>${escapeHtml(wr)}</strong> <span class="muted">n=${n}</span></div>` +
+      `<div><label>PnL medio</label><strong>${escapeHtml(String(avg))}</strong></div>` +
+      `<div><label>Memoria tesis</label><strong>${escapeHtml(mem)}</strong></div>` +
+      `<div><label>Abiertas</label><strong>${r.open_positions || 0}</strong></div>` +
+      `</div>` +
+      `<p class="muted" style="margin:0.5rem 0 0;font-size:11px">${escapeHtml(db)} · ${escapeHtml(r.disclaimer || "")}</p>`;
+  } catch (e) {
+    el.textContent = "Track record: " + (e.message || "no disponible");
+  }
+}
+
+async function loadTradeJournal() {
+  const el = $("#trade-journal-log");
+  if (!el || !isDeskPrincipal()) return;
+  el.classList.remove("hidden");
+  el.textContent = "Cargando journal…";
+  try {
+    const r = await api(`${API}/ops/journal?limit=30&status=all&days=90`);
+    const rows = r.items || [];
+    if (!rows.length) {
+      el.innerHTML = "<div class='muted'>Journal vacío — se llena al abrir/cerrar trades de la mesa.</div>";
+      return;
+    }
+    el.innerHTML = rows.map((j) => {
+      const pnl = j.pnl_pct != null ? `${j.pnl_pct >= 0 ? "+" : ""}${Number(j.pnl_pct).toFixed(2)}%` : "abierto";
+      const when = j.closed_at || j.opened_at;
+      return `<div><b>${escapeHtml(j.symbol)}</b> · ${escapeHtml(j.status)} · entrada $${Number(j.entry_price || 0).toFixed(2)}` +
+        (j.exit_price != null ? ` → $${Number(j.exit_price).toFixed(2)}` : "") +
+        ` · ${escapeHtml(pnl)}` +
+        (j.r_multiple != null ? ` · ${j.r_multiple}R` : "") +
+        ` · ${when ? new Date(when).toLocaleString(LOCALE) : ""}` +
+        (j.exit_reason ? ` · ${escapeHtml(String(j.exit_reason).slice(0, 60))}` : "") +
+        `</div>`;
+    }).join("");
+  } catch (e) {
+    el.textContent = "Journal: " + (e.message || "error");
+  }
+}
+
+async function loadResearchPack() {
+  const el = $("#research-pack-out");
+  if (!el) return;
+  const t = ticker();
+  if (!t) {
+    el.textContent = "Indica un ticker arriba.";
+    return;
+  }
+  el.textContent = `Cargando research pack de ${t}…`;
+  try {
+    const p = await api(`${API}/research/pack/${encodeURIComponent(t)}`);
+    const htf = p.htf_trend || {};
+    const flow = p.capital_flow_proxies || {};
+    const why = (p.why_moving || []).map((w) => `<li>${escapeHtml(w)}</li>`).join("");
+    const news = (p.upcoming_news || []).slice(0, 5).map((n) =>
+      `<li>${escapeHtml(n.title || "")}${n.source ? ` <span class="muted">· ${escapeHtml(n.source)}</span>` : ""}</li>`
+    ).join("");
+    const rvol = flow.relative_volume != null ? `${flow.relative_volume}×` : "—";
+    el.classList.remove("muted");
+    el.innerHTML =
+      `<div class="research-pack">` +
+      `<p><b>${escapeHtml(p.ticker)}</b>` +
+      (p.quote?.price != null ? ` · $${Number(p.quote.price).toFixed(2)}` : "") +
+      (p.narrative ? ` — ${escapeHtml(p.narrative)}` : "") +
+      `</p>` +
+      `<p><b>HTF:</b> 1W=${escapeHtml(htf.weekly || "?")} · 1M=${escapeHtml(htf.monthly || "?")} · ` +
+      `${htf.passed ? "<span class='rec-buy'>pasa filtro</span>" : "<span class='rec-sell'>no pasa</span>"}</p>` +
+      `<p><b>Flujo (proxy):</b> RVOL ${escapeHtml(String(rvol))}` +
+      (flow.sentiment?.label ? ` · sent. ${escapeHtml(String(flow.sentiment.label))}` : "") +
+      `</p>` +
+      `<div><b>Por qué se mueve</b><ul>${why || "<li>—</li>"}</ul></div>` +
+      `<div><b>News</b><ul>${news || "<li>Sin titulares</li>"}</ul></div>` +
+      `<p class="muted" style="font-size:11px">${escapeHtml(p.disclaimer || "")}</p>` +
+      `</div>`;
+  } catch (e) {
+    el.textContent = "Research pack: " + (e.message || "error");
+  }
+}
+
 async function loadOpsDesk() {
   const el = $("#ops-desk-status");
   if (!el) return;
@@ -1766,6 +1859,7 @@ async function loadDashboard() {
         loadAlpacaStatus(),
         loadRiskDesk(),
         loadOpsDesk(),
+        loadTrackRecord(),
         loadAccessRequests(),
         loadPasswordResets(),
         loadDeskCapitalRequests(),
@@ -3317,6 +3411,9 @@ $("#btn-ops-reconcile") && ($("#btn-ops-reconcile").onclick = runReconcile);
 $("#btn-ops-lifecycle") && ($("#btn-ops-lifecycle").onclick = runLifecycleScan);
 $("#btn-ops-autopilot") && ($("#btn-ops-autopilot").onclick = runAutopilot);
 $("#btn-ops-audit") && ($("#btn-ops-audit").onclick = loadAuditLog);
+$("#btn-track-record") && ($("#btn-track-record").onclick = loadTrackRecord);
+$("#btn-trade-journal") && ($("#btn-trade-journal").onclick = loadTradeJournal);
+$("#btn-research-pack") && ($("#btn-research-pack").onclick = loadResearchPack);
 $("#tech-period").onchange = () => { const t = ticker(); if (t) loadTechnicalChart(t); };
 $("#tech-chart-tf").onchange = () => {
   syncChartTimeframe($("#tech-chart-tf").value);

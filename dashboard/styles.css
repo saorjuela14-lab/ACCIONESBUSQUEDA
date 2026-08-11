@@ -606,6 +606,19 @@ body.tech-chart-fs { overflow: hidden; }
 .tab-pane { display: none; }
 .tab-pane.active { display: block; }
 
+.track-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.track-kpis label { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; }
+.track-kpis strong { font-size: 1.15rem; }
+.research-pack ul { margin: 0.25rem 0 0.75rem 1.1rem; padding: 0; }
+.research-pack li { margin: 0.15rem 0; font-size: 12px; }
+@media (max-width: 720px) {
+  .track-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 .metrics-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; margin-bottom: 0.5rem; }
 .metric-card { background: var(--surface); padding: 0.5rem; border-radius: 4px; }
 .metric-card label { font-size: 10px; color: var(--muted); }
