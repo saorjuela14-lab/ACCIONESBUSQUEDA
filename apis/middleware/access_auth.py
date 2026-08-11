@@ -36,6 +36,7 @@ CLIENT_MUTATION_ALLOW_PREFIXES = (
 # Allowed: /dashboard (redacted), /auth/capital/*, news/reports reads, health.
 CLIENT_FORBIDDEN_PREFIXES = (
     "/api/v1/analyze",
+    "/api/v1/research",
     "/api/v1/discover",
     "/api/v1/correlations",
     "/api/v1/graph",

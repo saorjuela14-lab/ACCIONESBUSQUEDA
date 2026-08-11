@@ -212,12 +212,14 @@ class DailyTradeRecommendationService:
                 scored.append(pick)
 
         scored.sort(key=lambda p: p.score, reverse=True)
+        # PASO 01: higher-timeframe uptrend gate (weekly + monthly)
+        scored, htf_notes = await self._apply_htf_gate(scored, soft=macro.mode != "risk_on")
         # Committee gate (micro = soft majority; larger books = unanimous)
         picks = await self._apply_committee_gate(
             scored[:_COMMITTEE_DAILY_SCREEN], max_picks, mode=committee_mode
         )
         used_manager = False
-        committee_notes = []
+        committee_notes = list(htf_notes or [])
 
         # Capital desk fallback for micro/small books — already committee-gated inside manager
         if capital and capital <= 500 and len(picks) < max(1, max_picks // 2) and macro.mode != "crisis":
@@ -318,6 +320,70 @@ class DailyTradeRecommendationService:
         if not self._repo:
             return None
         return await self._repo.get_latest()
+
+    async def _apply_htf_gate(
+        self,
+        scored: list[TradePick],
+        *,
+        soft: bool = False,
+    ) -> tuple[list[TradePick], list[str]]:
+        """Keep / annotate picks with weekly+monthly uptrend (PASO 01)."""
+        from config.settings import get_settings
+        from services.htf_trend_filter import HtfTrendFilter
+
+        settings = get_settings()
+        notes: list[str] = []
+        if not settings.htf_trend_gate_enabled or not scored:
+            return scored, notes
+
+        filt = HtfTrendFilter(
+            self._market,
+            min_confidence=float(settings.htf_trend_min_confidence or 0.5),
+        )
+        screen_n = max(1, int(settings.htf_trend_max_screen or 12))
+        head = scored[:screen_n]
+        tail = scored[screen_n:]
+
+        kept: list[TradePick] = []
+        rejected = 0
+        for pick in head:
+            try:
+                result = await filt.evaluate(pick.ticker)
+            except Exception as exc:
+                logger.warning("daily_trade.htf_failed", ticker=pick.ticker, error=str(exc))
+                kept.append(pick)
+                continue
+            tag = f"htf:{result.weekly}/{result.monthly}"
+            sources = list(pick.sources or [])
+            if tag not in sources:
+                sources.append(tag)
+            pick.sources = sources
+            if result.passed or result.inconclusive:
+                kept.append(pick)
+            elif soft:
+                pick.risks = list(pick.risks or []) + [result.reason]
+                if pick.action != _ACTION_WATCH:
+                    pick.action = _ACTION_WATCH
+                kept.append(pick)
+                rejected += 1
+            else:
+                rejected += 1
+        # Soft/hard: do not promote unevaluated tail ahead of HTF survivors
+        out = kept + (tail if soft else [])
+        if rejected:
+            notes.append(
+                f"Filtro HTF (1W+1M): {rejected} candidatos sin uptrend fuerte"
+                + (" → vigilados" if soft else " descartados")
+                + "."
+            )
+        logger.info(
+            "daily_trade.htf_gate",
+            screened=len(head),
+            kept=len(kept),
+            rejected=rejected,
+            soft=soft,
+        )
+        return out, notes
 
     async def _apply_committee_gate(
         self,

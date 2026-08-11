@@ -270,6 +270,18 @@
       <p id="trade-recs-disclaimer" class="muted digest-disclaimer"></p>
     </section>
 
+    <section class="panel desk-only" id="track-record-panel" aria-label="Track record de la mesa">
+      <div class="panel-head">
+        <h3>Track record</h3>
+        <div class="panel-actions">
+          <button type="button" id="btn-track-record" class="btn">Actualizar</button>
+          <button type="button" id="btn-trade-journal" class="btn">Journal</button>
+        </div>
+      </div>
+      <div id="track-record-summary" class="track-record-summary muted">Cargando métricas de la mesa…</div>
+      <div id="trade-journal-log" class="alpaca-book muted hidden"></div>
+    </section>
+
     <section class="panel" id="watchlist-matrix-panel">
       <div class="panel-head">
         <h3>Matriz Watchlist</h3>
@@ -312,12 +324,22 @@
         <div class="panel tabs">
           <div class="tab-bar">
             <button class="tab active" data-tab="overview">Resumen</button>
+            <button class="tab" data-tab="research">Research pack</button>
             <button class="tab" data-tab="analysis">Análisis</button>
             <button class="tab" data-tab="correlations">Correlaciones</button>
             <button class="tab" data-tab="graph">Grafo de Dependencias</button>
             <button class="tab" data-tab="sentiment">Sentimiento</button>
             <button class="tab" data-tab="discovery">Descubrimiento</button>
             <button class="tab" data-tab="proposal">Propuesta</button>
+          </div>
+
+          <div id="tab-research" class="tab-pane">
+            <div class="panel-head" style="padding:0 0 0.75rem">
+              <h4 class="subhead" style="margin:0">Research pack</h4>
+              <button type="button" id="btn-research-pack" class="btn primary">Cargar pack</button>
+            </div>
+            <p class="muted" style="margin:0 0 0.75rem">Por qué se mueve · proxies de flujo · news · tendencia 1W/1M</p>
+            <div id="research-pack-out" class="research-pack-out muted">Elige un ticker (watchlist o análisis) y pulsa «Cargar pack».</div>
           </div>
 
           <div id="tab-overview" class="tab-pane active">
@@ -587,7 +609,7 @@
 
   <script src="/dashboard/static/reliability.js?v=22-return-ranges"></script>
   <script src="/dashboard/static/voice.js?v=24-speech-money"></script>
-  <script src="/dashboard/static/app.js?v=23-speech-es"></script>
+  <script src="/dashboard/static/app.js?v=25-funnel-gaps"></script>
   <script>
     // Permanently kill service workers — they were serving stale JS/CSS after deploy
     if ("serviceWorker" in navigator) {

@@ -193,6 +193,11 @@ class Settings(BaseSettings):
     lifecycle_trail_arm_profit_pct: float = 0.05  # no trail until +5% (don't choke winners)
     lifecycle_sync_broker_stops: bool = True
 
+    # PASO 01 — require weekly + monthly uptrend structure before daily buys
+    htf_trend_gate_enabled: bool = True
+    htf_trend_min_confidence: float = 0.5
+    htf_trend_max_screen: int = 12  # evaluate HTF only on top-N scored names
+
     # Continuous holdings strategy review (reformulate thesis → prefer take-profit)
     holdings_strategy_review_enabled: bool = True
     holdings_review_max_positions: int = 4

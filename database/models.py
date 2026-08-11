@@ -285,3 +285,28 @@ class PositionMandateORM(Base):
     exit_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     mandate_json: Mapped[str] = mapped_column(Text, default="{}")
+
+
+class TradeJournalORM(Base):
+    """Durable open→close trade log for desk transparency and win-rate."""
+
+    __tablename__ = "trade_journal"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(16), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)
+    qty: Mapped[float] = mapped_column(Float, default=0.0)
+    entry_price: Mapped[float] = mapped_column(Float, default=0.0)
+    exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    take_profit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pnl_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pnl_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    r_multiple: Mapped[float | None] = mapped_column(Float, nullable=True)
+    thesis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_tag: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    exit_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mandate_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    meta_json: Mapped[str] = mapped_column(Text, default="{}")

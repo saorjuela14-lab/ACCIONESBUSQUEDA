@@ -80,8 +80,12 @@ async def test_generate_ranks_picks_by_score():
         size_multiplier=1.0,
         cash_target_pct=8.0,
     )
+    async def _htf_pass(scored, *, soft=False):
+        return scored, []
+
     with patch.object(service, "_fetch_market_regime", new_callable=AsyncMock, return_value="bullish"), \
          patch.object(service._macro, "assess", new_callable=AsyncMock, return_value=macro), \
+         patch.object(service, "_apply_htf_gate", new_callable=AsyncMock, side_effect=_htf_pass), \
          patch.object(service, "_apply_committee_gate", new_callable=AsyncMock, side_effect=_gate):
         report = await service.generate(session="pre_market", max_picks=5, persist=True)
 

@@ -121,6 +121,21 @@ class PositionLifecycleService:
             status="open",
         )
         saved = await self._mandates.upsert_open(mandate)
+        try:
+            from services.trade_journal_service import TradeJournalService
+
+            await TradeJournalService(self._session).record_open(
+                symbol=saved.symbol,
+                qty=saved.qty,
+                entry_price=saved.entry_price,
+                stop_loss=saved.stop_loss,
+                take_profit=saved.take_profit,
+                thesis=saved.thesis,
+                mandate_id=saved.id,
+                meta={"sector": saved.sector, "beta": saved.beta},
+            )
+        except Exception as exc:
+            logger.warning("trade_journal.open_failed", symbol=saved.symbol, error=str(exc))
         # Ensure Alpaca has a live GTC stop even if entry bracket was day/expired
         detail = await self._sync_broker_stop(saved, saved.stop_loss)
         if detail:
@@ -164,6 +179,19 @@ class PositionLifecycleService:
                 m.closed_at = utc_now()
                 m.exit_reason = m.exit_reason or "posición ausente en Alpaca"
                 await self._mandates.save(m)
+                try:
+                    from services.trade_journal_service import TradeJournalService
+
+                    px = float(m.peak_price or m.entry_price or 0)
+                    if px > 0:
+                        await TradeJournalService(self._session).record_close(
+                            symbol=sym,
+                            exit_price=px,
+                            exit_reason=m.exit_reason,
+                            closed_at=m.closed_at,
+                        )
+                except Exception as exc:
+                    logger.warning("trade_journal.close_failed", symbol=sym, error=str(exc))
 
         out: list[PositionMandate] = []
         params = await self._exit_params()
@@ -354,6 +382,20 @@ class PositionLifecycleService:
                 m.exit_reason = decision.reason
                 m.closed_at = now if executed else None
                 await self._mandates.save(m)
+                if executed:
+                    try:
+                        from services.trade_journal_service import TradeJournalService
+
+                        await TradeJournalService(self._session).record_close(
+                            symbol=m.symbol,
+                            exit_price=price,
+                            exit_reason=decision.reason,
+                            closed_at=now,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "trade_journal.close_failed", symbol=m.symbol, error=str(exc)
+                        )
                 await self._audit.record(
                     "lifecycle_exit",
                     symbol=m.symbol,

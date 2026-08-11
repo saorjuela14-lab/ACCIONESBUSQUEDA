@@ -71,3 +71,29 @@ async def analyze_ticker_get(
     scope: OrgScope = Depends(get_org_scope),
 ) -> InvestmentThesis:
     return await analyze_ticker(AnalyzeRequest(ticker=ticker), session, scope)
+
+
+@router.get("/research/pack/{ticker}")
+async def research_pack(
+    ticker: str,
+    session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
+):
+    """PASO 02 — one-screen research: why moving, flow proxies, news, HTF."""
+    _ = session  # reserved for future caching
+    from services.research_pack_service import ResearchPackService
+
+    try:
+        sentiment = get_sentiment_provider()
+    except Exception:
+        sentiment = None
+    try:
+        news = get_news_provider()
+    except Exception:
+        news = None
+    pack = await ResearchPackService(
+        market=get_market_provider(),
+        news=news,
+        sentiment_provider=sentiment,
+    ).build(ticker)
+    return pack

@@ -207,6 +207,19 @@ class IntradayFlatService:
                     m.closed_at = utc_now()
                     m.exit_reason = f"EOD smart flat: {detail} ({why})"
                     await self._mandates.save(m)
+                    try:
+                        from services.trade_journal_service import TradeJournalService
+
+                        exit_px = float(pos.current_price or pos.avg_entry_price or m.entry_price or 0)
+                        if exit_px > 0:
+                            await TradeJournalService(self._session).record_close(
+                                symbol=sym,
+                                exit_price=exit_px,
+                                exit_reason=m.exit_reason,
+                                closed_at=m.closed_at,
+                            )
+                    except Exception as jexc:
+                        logger.warning("trade_journal.close_failed", symbol=sym, error=str(jexc))
             except Exception as exc:
                 errors.append(f"{sym}: {exc}")
 
