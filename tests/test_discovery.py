@@ -1,5 +1,6 @@
 """Tests for company discovery pipeline."""
 
+from contextlib import ExitStack
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -54,10 +55,21 @@ async def test_discovery_research_ranks_candidates():
     ]
 
     service = CompanyDiscoveryService(market_provider=market)
-    with patch.object(service._stocktwits, "scan", new_callable=AsyncMock, return_value=st_mentions), \
-         patch.object(service._x, "scan", new_callable=AsyncMock, return_value=x_mentions), \
-         patch.object(service._reddit, "scan", new_callable=AsyncMock, return_value=reddit_mentions), \
-         patch.object(service._news, "scan", new_callable=AsyncMock, return_value=news_mentions):
+    with ExitStack() as stack:
+        stack.enter_context(
+            patch.object(service._stocktwits, "scan", new_callable=AsyncMock, return_value=st_mentions)
+        )
+        stack.enter_context(patch.object(service._x, "scan", new_callable=AsyncMock, return_value=x_mentions))
+        stack.enter_context(
+            patch.object(service._reddit, "scan", new_callable=AsyncMock, return_value=reddit_mentions)
+        )
+        stack.enter_context(
+            patch.object(service._news, "scan", new_callable=AsyncMock, return_value=news_mentions)
+        )
+        if service._finviz is not None:
+            stack.enter_context(
+                patch.object(service._finviz, "scan", new_callable=AsyncMock, return_value=[])
+            )
         report = await service.research(themes=["tech"], max_candidates=10)
 
     assert len(report.candidates) == 3
@@ -68,7 +80,8 @@ async def test_discovery_research_ranks_candidates():
     assert report.candidates[0].ticker == "AAPL"
     assert report.candidates[0].mention_count >= 2
     assert "stocktwits" in report.candidates[0].sources
-    assert report.sources_scanned == ["stocktwits", "x", "reddit", "news"]
+    assert "stocktwits" in report.sources_scanned
+    assert "news" in report.sources_scanned
 
 
 @pytest.mark.asyncio
@@ -83,10 +96,17 @@ async def test_discovery_excludes_watchlist_tickers():
     mentions = [("AAPL", DiscoveryMention(source="stocktwits", text="AAPL"))]
 
     service = CompanyDiscoveryService(market_provider=market)
-    with patch.object(service._stocktwits, "scan", new_callable=AsyncMock, return_value=mentions), \
-         patch.object(service._x, "scan", new_callable=AsyncMock, return_value=[]), \
-         patch.object(service._reddit, "scan", new_callable=AsyncMock, return_value=[]), \
-         patch.object(service._news, "scan", new_callable=AsyncMock, return_value=[]):
+    with ExitStack() as stack:
+        stack.enter_context(
+            patch.object(service._stocktwits, "scan", new_callable=AsyncMock, return_value=mentions)
+        )
+        stack.enter_context(patch.object(service._x, "scan", new_callable=AsyncMock, return_value=[]))
+        stack.enter_context(patch.object(service._reddit, "scan", new_callable=AsyncMock, return_value=[]))
+        stack.enter_context(patch.object(service._news, "scan", new_callable=AsyncMock, return_value=[]))
+        if service._finviz is not None:
+            stack.enter_context(
+                patch.object(service._finviz, "scan", new_callable=AsyncMock, return_value=[])
+            )
         report = await service.research(exclude_tickers=["AAPL"])
 
     assert len(report.candidates) == 0

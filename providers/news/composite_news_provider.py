@@ -1,10 +1,11 @@
-"""Composite news provider: Alpha Vantage timeline + yfinance + DuckDuckGo."""
+"""Composite news provider: Alpha Vantage + yfinance + Finviz + DuckDuckGo."""
 
 from domain.enums import NewsTopicCategory
 from domain.reports import NewsItem
 from providers.interfaces import NewsProvider
 from providers.news.alpha_vantage_news_provider import AlphaVantageNewsProvider
 from providers.news.duckduckgo_provider import DuckDuckGoNewsProvider
+from providers.news.finviz_news_provider import FinvizNewsProvider
 from providers.news.intelligence import dedupe_news
 from providers.news.temporal_analysis import NewsTimeline
 from providers.news.yfinance_news_provider import YFinanceNewsProvider
@@ -14,17 +15,25 @@ logger = get_logger(__name__)
 
 
 class CompositeNewsProvider(NewsProvider):
-    """Merges AV historical timeline, Yahoo Finance, and targeted web search."""
+    """Merges AV historical timeline, Yahoo Finance, Finviz, and web search."""
 
     def __init__(
         self,
         historical: NewsProvider | None = None,
         primary: NewsProvider | None = None,
         supplemental: NewsProvider | None = None,
+        finviz: NewsProvider | None = None,
     ) -> None:
+        from config.settings import get_settings
+
         self._historical = historical or self._build_av_provider()
         self._primary = primary or YFinanceNewsProvider()
         self._supplemental = supplemental or DuckDuckGoNewsProvider()
+        self._finviz: NewsProvider | None = None
+        if finviz is not None:
+            self._finviz = finviz
+        elif get_settings().finviz_enabled:
+            self._finviz = FinvizNewsProvider()
 
     @staticmethod
     def _build_av_provider() -> AlphaVantageNewsProvider | None:
@@ -38,6 +47,12 @@ class CompositeNewsProvider(NewsProvider):
         items: list[NewsItem] = []
         if hasattr(self._primary, "get_company_news"):
             items.extend(await self._primary.get_company_news(ticker, max_results=max_results))
+        if self._finviz and hasattr(self._finviz, "get_company_news"):
+            try:
+                fv = await self._finviz.get_company_news(ticker, max_results=max_results)
+                items = dedupe_news(items + fv)
+            except Exception as exc:
+                logger.warning("news.finviz.failed", ticker=ticker, error=str(exc))
         return items[:max_results]
 
     async def fetch_timeline(self, ticker: str) -> NewsTimeline:
@@ -52,10 +67,10 @@ class CompositeNewsProvider(NewsProvider):
                 logger.warning("news.timeline.failed", ticker=ticker, error=str(exc))
 
         try:
-            yf_news = await self.get_company_news(ticker, max_results=15)
-            timeline.supplemental.extend(yf_news)
+            company_news = await self.get_company_news(ticker, max_results=20)
+            timeline.supplemental.extend(company_news)
         except Exception as exc:
-            logger.warning("news.yfinance.failed", ticker=ticker, error=str(exc))
+            logger.warning("news.company.failed", ticker=ticker, error=str(exc))
 
         # Backfill windows when AV unavailable or filtered empty
         if not timeline.recent_3m and not timeline.historical_2y and timeline.supplemental:
@@ -82,9 +97,25 @@ class CompositeNewsProvider(NewsProvider):
         max_results: int = 10,
         hint_category: NewsTopicCategory | None = None,
     ) -> list[NewsItem]:
-        return await self._supplemental.search_news(
-            query, max_results=max_results, hint_category=hint_category
-        )
+        items: list[NewsItem] = []
+        try:
+            items.extend(
+                await self._supplemental.search_news(
+                    query, max_results=max_results, hint_category=hint_category
+                )
+            )
+        except Exception as exc:
+            logger.warning("news.ddg.failed", error=str(exc))
+        if self._finviz:
+            try:
+                items.extend(
+                    await self._finviz.search_news(
+                        query, max_results=max_results, hint_category=hint_category
+                    )
+                )
+            except Exception as exc:
+                logger.warning("news.finviz.search_failed", error=str(exc))
+        return dedupe_news(items)[:max_results]
 
     async def collect_company_intelligence(
         self,

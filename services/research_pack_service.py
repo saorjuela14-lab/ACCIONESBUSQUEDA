@@ -59,7 +59,7 @@ class ResearchPackService:
         except Exception as exc:
             logger.warning("research_pack.quote_failed", ticker=sym, error=str(exc))
 
-        # Volume / RVOL proxy from daily history
+        # Volume / RVOL proxy from daily history + Finviz delayed snapshot fields
         try:
             df = await self._market.get_history(sym, period="3mo", interval="1d")
             if df is not None and not getattr(df, "empty", True) and "Volume" in df.columns:
@@ -78,6 +78,33 @@ class ResearchPackService:
                             why.append(f"Volumen bajo ({rvol:.1f}× media 20d)")
         except Exception as exc:
             logger.warning("research_pack.volume_failed", ticker=sym, error=str(exc))
+
+        try:
+            q = quote or await self._market.get_quote(sym)
+            fv_bits = {
+                "rel_volume": q.get("rel_volume"),
+                "short_float_pct": q.get("short_float_pct"),
+                "insider_own_pct": q.get("insider_own_pct"),
+                "inst_own_pct": q.get("inst_own_pct"),
+                "perf_week_pct": q.get("perf_week_pct"),
+                "perf_month_pct": q.get("perf_month_pct"),
+                "target_price": q.get("target_price"),
+                "analyst_recom": q.get("analyst_recom"),
+                "pe": q.get("pe"),
+            }
+            fv_bits = {k: v for k, v in fv_bits.items() if v is not None}
+            if fv_bits:
+                flow["finviz"] = fv_bits
+                if fv_bits.get("rel_volume") is not None and "relative_volume" not in flow:
+                    flow["relative_volume"] = fv_bits["rel_volume"]
+                sf = fv_bits.get("short_float_pct")
+                if sf is not None and float(sf) >= 10:
+                    why.append(f"Short float Finviz ≈ {float(sf):.1f}%")
+                pw = fv_bits.get("perf_week_pct")
+                if pw is not None:
+                    why.append(f"Perf. semanal Finviz {float(pw):+.1f}% (dato diferido)")
+        except Exception as exc:
+            logger.warning("research_pack.finviz_failed", ticker=sym, error=str(exc))
 
         # Sentiment proxy (institutional channel is keyword-based — label honestly)
         if self._sentiment is not None:
