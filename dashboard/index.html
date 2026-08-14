@@ -226,6 +226,15 @@
         <div id="risk-desk-status" class="status-chip muted">Riesgo: cargando…</div>
         <div id="ops-desk-status" class="status-chip muted">Firma: cargando…</div>
       </div>
+      <div class="kill-switch-bar desk-only" id="kill-switch-bar">
+        <button type="button" id="btn-kill-switch" class="btn danger kill-switch-btn">
+          Kill switch · Cerrar todas las posiciones ahora
+        </button>
+        <button type="button" id="btn-kill-switch-off" class="btn kill-switch-off hidden">
+          Reactivar trading
+        </button>
+        <p class="muted kill-switch-hint">Cancela órdenes abiertas y vende todo el libro Alpaca de la firma. Solo mesa.</p>
+      </div>
       <details class="controls-drawer">
         <summary>Controles avanzados <span class="muted">(solo si lo necesitas)</span></summary>
         <div class="alpaca-actions">
@@ -237,7 +246,6 @@
           <button type="button" id="btn-ops-lifecycle" class="btn">Revisar posiciones</button>
           <button type="button" id="btn-ops-autopilot" class="btn primary">Autopilot</button>
           <button type="button" id="btn-ops-audit" class="btn">Historial</button>
-          <button type="button" id="btn-kill-switch" class="btn danger">Parada de emergencia</button>
         </div>
         <div id="ops-audit-log" class="alpaca-book muted hidden"></div>
         <div id="alpaca-book" class="alpaca-book muted">Órdenes y posiciones: pulsa «Ver órdenes»</div>
@@ -609,7 +617,7 @@
 
   <script src="/dashboard/static/reliability.js?v=22-return-ranges"></script>
   <script src="/dashboard/static/voice.js?v=24-speech-money"></script>
-  <script src="/dashboard/static/app.js?v=25-funnel-gaps"></script>
+  <script src="/dashboard/static/app.js?v=26-kill-switch"></script>
   <script>
     // Permanently kill service workers — they were serving stale JS/CSS after deploy
     if ("serviceWorker" in navigator) {

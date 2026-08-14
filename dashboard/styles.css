@@ -204,6 +204,38 @@ body {
   color: #ffb4ab; border-color: rgba(212,93,93,0.45);
 }
 .btn.danger:hover { background: rgba(212,93,93,0.12); }
+
+.kill-switch-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem 0.75rem;
+  margin: 0.75rem 0 0.35rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid rgba(212, 93, 93, 0.45);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(212, 93, 93, 0.12), rgba(212, 93, 93, 0.04));
+}
+.kill-switch-bar.is-armed {
+  border-color: rgba(239, 68, 68, 0.75);
+  background: linear-gradient(180deg, rgba(239, 68, 68, 0.22), rgba(239, 68, 68, 0.06));
+}
+.kill-switch-btn {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: 0.55rem 0.9rem;
+}
+.kill-switch-hint {
+  flex: 1 1 220px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.kill-switch-off {
+  border-color: rgba(34, 197, 94, 0.45);
+  color: #86efac;
+}
+
 .digest-summary {
   font-size: 0.95rem !important; line-height: 1.55; margin: 0 0 0.85rem !important;
   padding: 0.75rem 0.9rem; border-left: 2px solid var(--accent);
