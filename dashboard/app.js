@@ -979,25 +979,85 @@ async function loadOpsDesk() {
       : "autopilot apagado";
     el.textContent = `Firma: ${autonomy} · ${kill} · ${auto} · ${ap}`;
     el.title = st.auto_execute?.policy?.promotion_note || st.auto_execute?.reason || "";
+    syncKillSwitchUi(!!ks, st.kill_switch);
   } catch {
     el.classList.add("warn");
     el.textContent = "Firma: estado no disponible";
   }
 }
 
+function syncKillSwitchUi(active, ks = null) {
+  const bar = $("#kill-switch-bar");
+  const onBtn = $("#btn-kill-switch");
+  const offBtn = $("#btn-kill-switch-off");
+  if (bar) bar.classList.toggle("is-armed", !!active);
+  if (onBtn) {
+    onBtn.disabled = !!active;
+    onBtn.textContent = active
+      ? "Kill switch activo · libro en flat"
+      : "Kill switch · Cerrar todas las posiciones ahora";
+  }
+  if (offBtn) {
+    offBtn.classList.toggle("hidden", !active);
+    if (active && ks?.reason) offBtn.title = `Motivo: ${ks.reason}`;
+  }
+}
+
 async function runKillSwitch() {
-  if (!confirm("Parada de emergencia: cancela órdenes y cierra TODAS las posiciones. ¿Continuar?")) return;
-  if (!confirm("Confirmación final: esto vende todo en la cuenta real.")) return;
-  await withLoading("Activando parada de emergencia…", async () => {
+  if (!isDeskPrincipal()) {
+    toast("Solo la mesa puede usar el kill switch", 6000);
+    return;
+  }
+  if (!confirm("KILL SWITCH: cancela todas las órdenes y CIERRA TODAS las posiciones ahora en Alpaca. ¿Continuar?")) {
+    return;
+  }
+  if (!confirm("Confirmación final: se vende TODO el libro de la firma. Esta acción no se puede deshacer.")) {
+    return;
+  }
+  await withLoading("Cerrando todas las posiciones…", async () => {
     try {
       const r = await api(`${API}/ops/kill-switch/on`, {
         method: "POST",
-        body: JSON.stringify({ confirm: true, flatten: true, reason: "panic flat UI" }),
+        body: JSON.stringify({
+          confirm: true,
+          flatten: true,
+          reason: "desk UI — cerrar todas las posiciones ahora",
+          actor: "desk",
+        }),
       });
-      toast(r.active ? `KILL ON · ${r.flat_result || ""}` : "Kill switch", 10000);
+      toast(
+        r.active
+          ? `Kill switch ON · ${r.flat_result || "posiciones cerradas"}`
+          : "Kill switch",
+        12000
+      );
+      syncKillSwitchUi(!!r.active, r);
       await loadOpsDesk();
       await loadAlpacaBook();
-    } catch (e) { toast("Kill switch: " + e.message, 8000); }
+      if (typeof loadTrackRecord === "function") await loadTrackRecord();
+    } catch (e) {
+      toast("Kill switch: " + e.message, 8000);
+    }
+  });
+}
+
+async function runKillSwitchOff() {
+  if (!isDeskPrincipal()) return;
+  if (!confirm("¿Reactivar trading? Se apaga el kill switch y la firma podrá comprar de nuevo (según risk desk).")) {
+    return;
+  }
+  await withLoading("Reactivando trading…", async () => {
+    try {
+      const r = await api(`${API}/ops/kill-switch/off`, {
+        method: "POST",
+        body: JSON.stringify({ confirm: true, actor: "desk" }),
+      });
+      toast(r.active ? "Kill switch sigue activo" : "Kill switch OFF · trading permitido", 8000);
+      syncKillSwitchUi(!!r.active, r);
+      await loadOpsDesk();
+    } catch (e) {
+      toast("Kill switch off: " + e.message, 8000);
+    }
   });
 }
 
@@ -3407,6 +3467,7 @@ $("#btn-alpaca-refresh-book") && ($("#btn-alpaca-refresh-book").onclick = loadAl
 $("#btn-alpaca-cancel-all") && ($("#btn-alpaca-cancel-all").onclick = cancelAllAlpacaOrders);
 $("#btn-risk-refresh") && ($("#btn-risk-refresh").onclick = () => { loadRiskDesk(); loadOpsDesk(); });
 $("#btn-kill-switch") && ($("#btn-kill-switch").onclick = runKillSwitch);
+$("#btn-kill-switch-off") && ($("#btn-kill-switch-off").onclick = runKillSwitchOff);
 $("#btn-ops-reconcile") && ($("#btn-ops-reconcile").onclick = runReconcile);
 $("#btn-ops-lifecycle") && ($("#btn-ops-lifecycle").onclick = runLifecycleScan);
 $("#btn-ops-autopilot") && ($("#btn-ops-autopilot").onclick = runAutopilot);
