@@ -645,6 +645,12 @@ body.tech-chart-fs { overflow: hidden; }
 }
 .track-kpis label { display: block; font-size: 10px; color: var(--muted); text-transform: uppercase; }
 .track-kpis strong { font-size: 1.15rem; }
+.agent-eff-summary .track-kpis { margin-bottom: 0.65rem; }
+.agent-eff-hit-good { color: var(--green); font-weight: 600; }
+.agent-eff-hit-mid { color: var(--amber); font-weight: 600; }
+.agent-eff-hit-bad { color: var(--red); font-weight: 600; }
+.agent-eff-best td:first-child { box-shadow: inset 3px 0 0 var(--green); }
+.agent-eff-weak td:first-child { box-shadow: inset 3px 0 0 var(--red); }
 .research-pack ul { margin: 0.25rem 0 0.75rem 1.1rem; padding: 0; }
 .research-pack li { margin: 0.15rem 0; font-size: 12px; }
 @media (max-width: 720px) {
