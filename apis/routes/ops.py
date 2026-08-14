@@ -284,6 +284,20 @@ async def get_track_record(
     return await TrackRecordService(session).summary(window_days=window_days)
 
 
+@router.get("/ops/agent-effectiveness", response_model=None)
+async def get_agent_effectiveness(
+    window_days: int = Query(default=90, ge=7, le=730),
+    score_threshold: float = Query(default=5.0, ge=0.0, le=50.0),
+    session: AsyncSession = Depends(get_session),
+):
+    """Per-agent directional hit rate + desk thesis hit rate (decision quality)."""
+    from services.agent_effectiveness_service import AgentEffectivenessService
+
+    return await AgentEffectivenessService(
+        session, score_threshold=score_threshold
+    ).summary(window_days=window_days)
+
+
 @router.post("/ops/autopilot/promote-live")
 async def promote_live(
     body: PromoteLiveRequest,

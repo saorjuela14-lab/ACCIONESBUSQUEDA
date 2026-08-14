@@ -27,7 +27,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/styles.css?v=26-kill-switch" />
+  <link rel="stylesheet" href="/dashboard/static/styles.css?v=27-agent-eff" />
   <!-- Heavy chart libs: defer so login/session UI is not blocked on cold start -->
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script defer src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -288,6 +288,33 @@
       </div>
       <div id="track-record-summary" class="track-record-summary muted">Cargando métricas de la mesa…</div>
       <div id="trade-journal-log" class="alpaca-book muted hidden"></div>
+    </section>
+
+    <section class="panel desk-only" id="agent-effectiveness-panel" aria-label="Efectividad del comité">
+      <div class="panel-head">
+        <h3>Efectividad del comité</h3>
+        <div class="panel-actions">
+          <button type="button" id="btn-agent-effectiveness" class="btn primary">Actualizar</button>
+        </div>
+      </div>
+      <div id="agent-effectiveness-summary" class="agent-eff-summary muted">Cargando acierto por agente…</div>
+      <div class="table-wrap">
+        <table class="matrix-table compact" id="agent-effectiveness-table">
+          <thead>
+            <tr>
+              <th>Agente</th>
+              <th>Acierto dir.</th>
+              <th>n</th>
+              <th>Alineación tesis</th>
+              <th>Peso</th>
+            </tr>
+          </thead>
+          <tbody id="agent-effectiveness-body">
+            <tr><td colspan="5">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p id="agent-effectiveness-note" class="muted digest-disclaimer"></p>
     </section>
 
     <section class="panel" id="watchlist-matrix-panel">
@@ -617,7 +644,7 @@
 
   <script src="/dashboard/static/reliability.js?v=22-return-ranges"></script>
   <script src="/dashboard/static/voice.js?v=24-speech-money"></script>
-  <script src="/dashboard/static/app.js?v=26-kill-switch"></script>
+  <script src="/dashboard/static/app.js?v=27-agent-eff"></script>
   <script>
     // Permanently kill service workers — they were serving stale JS/CSS after deploy
     if ("serviceWorker" in navigator) {

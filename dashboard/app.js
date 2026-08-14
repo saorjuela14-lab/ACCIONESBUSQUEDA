@@ -892,6 +892,68 @@ async function loadTrackRecord() {
   }
 }
 
+function _effHitClass(pct) {
+  if (pct == null) return "";
+  if (pct >= 55) return "agent-eff-hit-good";
+  if (pct >= 45) return "agent-eff-hit-mid";
+  return "agent-eff-hit-bad";
+}
+
+async function loadAgentEffectiveness() {
+  const sumEl = $("#agent-effectiveness-summary");
+  const body = $("#agent-effectiveness-body");
+  const note = $("#agent-effectiveness-note");
+  if (!sumEl || !isDeskPrincipal()) return;
+  sumEl.textContent = "Cargando acierto por agente…";
+  if (body) body.innerHTML = `<tr><td colspan="5">Cargando…</td></tr>`;
+  try {
+    const r = await api(`${API}/ops/agent-effectiveness?window_days=90&score_threshold=5`);
+    const desk = r.desk_hit_rate_pct != null
+      ? `${r.desk_hit_rate_pct}% (${r.theses_correct}/${r.theses_evaluated})`
+      : "—";
+    const best = r.best_agent
+      ? (r.agents || []).find((a) => a.agent_name === r.best_agent)?.label_es || r.best_agent
+      : "—";
+    const weak = r.weakest_agent
+      ? (r.agents || []).find((a) => a.agent_name === r.weakest_agent)?.label_es || r.weakest_agent
+      : "—";
+    sumEl.classList.remove("muted");
+    sumEl.innerHTML =
+      `<div class="track-kpis">` +
+      `<div><label>Mesa (tesis)</label><strong>${escapeHtml(desk)}</strong></div>` +
+      `<div><label>Pendientes eval.</label><strong>${r.theses_pending || 0}</strong></div>` +
+      `<div><label>Mejor (≥3n)</label><strong>${escapeHtml(String(best))}</strong></div>` +
+      `<div><label>Más débil</label><strong>${escapeHtml(String(weak))}</strong></div>` +
+      `</div>`;
+    const agents = r.agents || [];
+    if (!agents.length) {
+      if (body) body.innerHTML = `<tr><td colspan="5">Sin datos evaluados aún</td></tr>`;
+    } else if (body) {
+      body.innerHTML = agents.map((a) => {
+        const hit = a.hit_rate_pct != null ? `${a.hit_rate_pct}%` : "—";
+        const align = a.committee_align_pct != null ? `${a.committee_align_pct}%` : "—";
+        const rowClass = a.agent_name === r.best_agent && a.samples >= 3
+          ? "agent-eff-best"
+          : (a.agent_name === r.weakest_agent && a.samples >= 3 ? "agent-eff-weak" : "");
+        return `<tr class="${rowClass}">` +
+          `<td>${escapeHtml(a.label_es || a.agent_name)}</td>` +
+          `<td class="${_effHitClass(a.hit_rate_pct)}">${escapeHtml(hit)}</td>` +
+          `<td>${a.samples || 0}</td>` +
+          `<td>${escapeHtml(align)}</td>` +
+          `<td>${a.current_weight != null ? a.current_weight : "—"}</td>` +
+          `</tr>`;
+      }).join("");
+    }
+    if (note) {
+      const db = r.durable_db ? "DB persistente" : "SQLite efímero";
+      note.textContent = `${db}. Umbral score ±${r.score_threshold}. ${r.method || ""} ${r.disclaimer || ""}`;
+    }
+  } catch (e) {
+    sumEl.textContent = "Efectividad: " + (e.message || "no disponible");
+    if (body) body.innerHTML = `<tr><td colspan="5">Error</td></tr>`;
+  }
+}
+
 async function loadTradeJournal() {
   const el = $("#trade-journal-log");
   if (!el || !isDeskPrincipal()) return;
@@ -1920,6 +1982,7 @@ async function loadDashboard() {
         loadRiskDesk(),
         loadOpsDesk(),
         loadTrackRecord(),
+        loadAgentEffectiveness(),
         loadAccessRequests(),
         loadPasswordResets(),
         loadDeskCapitalRequests(),
@@ -3474,6 +3537,7 @@ $("#btn-ops-autopilot") && ($("#btn-ops-autopilot").onclick = runAutopilot);
 $("#btn-ops-audit") && ($("#btn-ops-audit").onclick = loadAuditLog);
 $("#btn-track-record") && ($("#btn-track-record").onclick = loadTrackRecord);
 $("#btn-trade-journal") && ($("#btn-trade-journal").onclick = loadTradeJournal);
+$("#btn-agent-effectiveness") && ($("#btn-agent-effectiveness").onclick = loadAgentEffectiveness);
 $("#btn-research-pack") && ($("#btn-research-pack").onclick = loadResearchPack);
 $("#tech-period").onchange = () => { const t = ticker(); if (t) loadTechnicalChart(t); };
 $("#tech-chart-tf").onchange = () => {
