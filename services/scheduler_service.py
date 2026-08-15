@@ -276,6 +276,17 @@ class SchedulerService:
             await memory_svc.evaluate_pending()
             break
 
+        if get_settings().multiasset_beta_enabled:
+            async for session in get_session():
+                from services.multiasset.trade_tracker import MultiAssetTradeTracker
+
+                hours = float(get_settings().multiasset_eval_hours or 24)
+                result = await MultiAssetTradeTracker(session).evaluate_open_mtm(
+                    min_age_hours=hours
+                )
+                logger.info("scheduler.multiasset_mtm", **result)
+                break
+
     async def _run_status_briefing(self, session_kind: str) -> None:
         """WhatsApp/Telegram portfolio status at market open or close."""
         if not self._settings.whatsapp_briefing_enabled:

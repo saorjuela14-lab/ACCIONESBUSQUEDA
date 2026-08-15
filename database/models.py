@@ -328,3 +328,36 @@ class MultiAssetJournalORM(Base):
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
     raw_json: Mapped[str] = mapped_column(Text, default="{}")
+
+
+class MultiAssetTradeORM(Base):
+    """Open→close paper trades + brief scores for per-desk effectiveness."""
+
+    __tablename__ = "multiasset_trades"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    desk: Mapped[str] = mapped_column(String(16), index=True)
+    symbol: Mapped[str] = mapped_column(String(24), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)
+    qty: Mapped[float] = mapped_column(Float, default=0.0)
+    entry_price: Mapped[float] = mapped_column(Float, default=0.0)
+    exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stop_hint: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_hint: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pnl_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pnl_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    r_multiple: Mapped[float | None] = mapped_column(Float, nullable=True)
+    recommendation: Mapped[str] = mapped_column(String(16), default="hold")
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    brief_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scores_json: Mapped[str] = mapped_column(Text, default="{}")
+    was_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True, index=True)
+    error_tag: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    eval_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_sim: Mapped[bool] = mapped_column(Boolean, default=False)
+    order_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    meta_json: Mapped[str] = mapped_column(Text, default="{}")

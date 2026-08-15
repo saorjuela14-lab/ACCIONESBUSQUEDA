@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/multiasset.css?v=1" />
+  <link rel="stylesheet" href="/dashboard/static/multiasset.css?v=2" />
 </head>
 <body>
   <header class="ma-top">
@@ -87,7 +87,38 @@
 
     <section class="ma-panel">
       <div class="ma-row between">
-        <h2>Historial de la mesa</h2>
+        <h2>Track record · efectividad</h2>
+        <div class="ma-row">
+          <button type="button" id="btn-evaluate" class="ma-btn">Evaluar abiertos (MTM)</button>
+          <button type="button" id="btn-stats" class="ma-btn primary">Actualizar stats</button>
+        </div>
+      </div>
+      <div id="stats-kpis" class="ma-kpis">
+        <div><label>Win rate</label><strong id="st-win">—</strong></div>
+        <div><label>Acierto brief</label><strong id="st-brief">—</strong></div>
+        <div><label>PnL cerrado</label><strong id="st-pnl">—</strong></div>
+      </div>
+      <ul id="stats-feedback" class="ma-feedback"></ul>
+      <div class="ma-grid">
+        <div>
+          <h3 class="ma-h3">Errores a corregir</h3>
+          <div id="stats-errors" class="ma-history">Sin errores evaluados aún.</div>
+        </div>
+        <div>
+          <h3 class="ma-h3">Agentes de la mesa</h3>
+          <div id="stats-agents" class="ma-history">Sin muestras aún.</div>
+        </div>
+      </div>
+      <div>
+        <h3 class="ma-h3">Trades recientes</h3>
+        <div id="stats-trades" class="ma-history">—</div>
+      </div>
+      <p class="ma-disclaimer" id="stats-disclaimer"></p>
+    </section>
+
+    <section class="ma-panel">
+      <div class="ma-row between">
+        <h2>Historial de órdenes</h2>
         <button type="button" id="btn-history" class="ma-btn">Recargar historial</button>
       </div>
       <div id="history-out" class="ma-history">Sin operaciones aún.</div>
@@ -95,6 +126,6 @@
     </section>
   </main>
 
-  <script src="/dashboard/static/multiasset.js?v=1"></script>
+  <script src="/dashboard/static/multiasset.js?v=2"></script>
 </body>
 </html>

@@ -107,6 +107,61 @@
     }
   }
 
+  function pct(v) {
+    if (v == null || Number.isNaN(Number(v))) return "—";
+    return `${Number(v).toFixed(1)}%`;
+  }
+
+  async function loadStats() {
+    try {
+      const s = await api(`${API}/beta/multiasset/track-record?desk=${desk}&window_days=90`);
+      $("#st-win").textContent = pct(s.trades_win_rate_pct);
+      $("#st-brief").textContent = pct(s.brief_hit_rate_pct);
+      $("#st-pnl").textContent = money(s.trades_total_pnl_usd);
+      $("#stats-disclaimer").textContent = s.disclaimer || "";
+      const fb = $("#stats-feedback");
+      fb.innerHTML = (s.feedback || []).map((t) => `<li>${t}</li>`).join("") || "<li class='ma-muted'>Sin feedback aún.</li>";
+      const errs = s.error_patterns || [];
+      $("#stats-errors").innerHTML = errs.length
+        ? errs.map((e) =>
+            `<div class="row"><b class="ma-tag-err">${e.label_es}</b> · ${e.count}` +
+            (e.share_pct != null ? ` (${e.share_pct}%)` : "") +
+            `<div class="ma-muted">${e.hint_es || ""}</div></div>`
+          ).join("")
+        : "Sin errores evaluados aún — cierra trades o espera MTM.";
+      const agents = s.agents || [];
+      $("#stats-agents").innerHTML = agents.length
+        ? agents.map((a) =>
+            `<div class="row"><b>${a.label_es}</b> · acierto ${pct(a.hit_rate_pct)} · n=${a.samples}` +
+            ` <span class="ma-muted">✓${a.hits} ✗${a.misses}</span></div>`
+          ).join("")
+        : "Sin muestras de agentes.";
+      const recent = s.recent_closed || [];
+      $("#stats-trades").innerHTML = recent.length
+        ? recent.map((t) => {
+            const ok = t.was_correct === true ? "acierto" : t.was_correct === false ? "error" : "—";
+            const cls = t.was_correct === true ? "ma-tag-ok" : t.was_correct === false ? "ma-tag-err" : "";
+            return `<div class="row"><b>${t.symbol}</b> ${t.recommendation} · PnL ${t.pnl_pct != null ? t.pnl_pct.toFixed(2) + "%" : "—"} · <span class="${cls}">${ok}</span>` +
+              (t.error_tag ? ` · ${t.error_tag}` : "") +
+              (t.is_sim ? " · sim" : "") +
+              `<div class="ma-muted">${t.eval_notes || ""}</div></div>`;
+          }).join("")
+        : "Sin trades cerrados.";
+    } catch (e) {
+      $("#stats-feedback").innerHTML = `<li>${e.message || e}</li>`;
+    }
+  }
+
+  async function runEvaluate() {
+    try {
+      const r = await api(`${API}/beta/multiasset/evaluate`, { method: "POST", body: "{}" });
+      alert(`MTM: evaluados ${r.evaluated || 0} (correctos ${r.correct || 0}, errores ${r.incorrect || 0})`);
+      await loadStats();
+    } catch (e) {
+      alert(e.message || String(e));
+    }
+  }
+
   async function submitOrder(ev) {
     ev.preventDefault();
     const msg = $("#order-msg");
@@ -133,6 +188,7 @@
       msg.textContent = r.message || (r.ok ? "OK" : "Falló");
       await loadStatus();
       await loadHistory();
+      await loadStats();
     } catch (e) {
       msg.textContent = e.message || String(e);
     }
@@ -145,12 +201,15 @@
       desk = btn.dataset.desk;
       await loadStatus();
       await loadHistory();
+      await loadStats();
     };
   });
 
-  $("#btn-refresh").onclick = async () => { await loadStatus(); await loadHistory(); };
+  $("#btn-refresh").onclick = async () => { await loadStatus(); await loadHistory(); await loadStats(); };
   $("#btn-brief").onclick = runBrief;
   $("#btn-history").onclick = loadHistory;
+  $("#btn-stats").onclick = loadStats;
+  $("#btn-evaluate").onclick = runEvaluate;
   $("#order-form").onsubmit = submitOrder;
 
   (async () => {
@@ -161,6 +220,7 @@
     try {
       await loadStatus();
       await loadHistory();
+      await loadStats();
     } catch (e) {
       $("#desk-broker").textContent = e.message || String(e);
     }

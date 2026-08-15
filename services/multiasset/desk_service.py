@@ -22,6 +22,7 @@ from domain.multiasset import (
 )
 from services.multiasset.desks import DESKS, desk_symbols, get_desk, normalize_symbol
 from services.multiasset.paper_broker import get_beta_broker_provider
+from services.multiasset.trade_tracker import MultiAssetTradeTracker
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -239,9 +240,9 @@ class MultiAssetDeskService:
                 message="Dry-run — orden no enviada" if req.dry_run else "Broker beta no configurado",
                 payload={"order": order},
             )
-            # Persist dry-runs so the mesa can review history before wiring paper keys
             if self._session is not None and req.dry_run:
                 await self._journal_write(req, result)
+                await self._track_fill(req, result, sym, is_sim=True)
             return result
 
         raw = await self._broker.submit_order(order)
@@ -259,7 +260,85 @@ class MultiAssetDeskService:
         )
         if self._session is not None:
             await self._journal_write(req, result)
+            await self._track_fill(req, result, sym, is_sim=False)
         return result
+
+    async def _track_fill(
+        self,
+        req: MultiAssetOrderRequest,
+        result: MultiAssetOrderResult,
+        sym: str,
+        *,
+        is_sim: bool,
+    ) -> None:
+        """Open/close tracked trades + attach specialized brief scores for feedback."""
+        assert self._session is not None
+        tracker = MultiAssetTradeTracker(self._session)
+        try:
+            q = await quote_symbol(sym)
+            px = float(q.get("current_price") or 0) or None
+        except Exception:
+            px = None
+        if not px or px <= 0:
+            logger.warning("multiasset.track_no_price", symbol=sym)
+            return
+
+        qty = req.qty
+        if qty is None and req.notional is not None:
+            qty = float(req.notional) / px
+        if qty is None or float(qty) <= 0:
+            return
+
+        brief: DeskBrief | None = None
+        try:
+            brief = await self.brief(req.desk, sym)
+        except Exception as exc:
+            logger.warning("multiasset.track_brief_failed", error=str(exc))
+
+        if req.side == "buy":
+            trade = await tracker.open_trade(
+                desk=req.desk,
+                symbol=sym,
+                qty=float(qty),
+                entry_price=px,
+                brief=brief,
+                is_sim=is_sim,
+                order_id=result.order_id,
+                meta={"note": req.note, "dry_run": is_sim},
+            )
+            result.payload = {
+                **(result.payload or {}),
+                "tracked_trade_id": trade.id,
+                "entry_price": px,
+                "recommendation": trade.recommendation,
+            }
+            result.message = f"{result.message} · trade abierto @ {px}"
+        else:
+            closed = await tracker.close_trade(
+                desk=req.desk,
+                symbol=sym,
+                exit_price=px,
+                exit_reason=req.note or ("dry-run sell" if is_sim else "paper sell"),
+            )
+            if closed:
+                result.payload = {
+                    **(result.payload or {}),
+                    "tracked_trade_id": closed.id,
+                    "exit_price": px,
+                    "pnl_pct": closed.pnl_pct,
+                    "was_correct": closed.was_correct,
+                    "error_tag": closed.error_tag,
+                }
+                tag = closed.error_tag or ""
+                result.message = (
+                    f"{result.message} · cerrado PnL {closed.pnl_pct:+.2f}%"
+                    if closed.pnl_pct is not None
+                    else result.message
+                )
+                if tag:
+                    result.message += f" · {tag}"
+            else:
+                result.message = f"{result.message} · sin trade abierto que cerrar"
 
     async def _journal_write(self, req: MultiAssetOrderRequest, result: MultiAssetOrderResult) -> None:
         assert self._session is not None

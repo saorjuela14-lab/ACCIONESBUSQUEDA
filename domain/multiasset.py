@@ -112,3 +112,84 @@ class DeskStatus(BaseModel):
     positions: list[dict[str, Any]] = Field(default_factory=list)
     open_orders: list[dict[str, Any]] = Field(default_factory=list)
     quotes: dict[str, Any] = Field(default_factory=dict)
+
+
+TradeStatus = Literal["open", "closed"]
+
+
+class MultiAssetTrade(BaseModel):
+    """Open→close paper trade with brief scores for effectiveness feedback."""
+
+    id: str = ""
+    desk: AssetDeskId
+    symbol: str
+    status: TradeStatus = "open"
+    qty: float = 0.0
+    entry_price: float = 0.0
+    exit_price: float | None = None
+    stop_hint: float | None = None
+    target_hint: float | None = None
+    pnl_usd: float | None = None
+    pnl_pct: float | None = None
+    r_multiple: float | None = None
+    recommendation: str = "hold"  # buy | hold | sell at open
+    confidence: float | None = None
+    score: float | None = None
+    brief_summary: str = ""
+    scores: dict[str, float] = Field(default_factory=dict)  # agent → score
+    was_correct: bool | None = None
+    error_tag: str | None = None  # false_long | false_short | missed_up | …
+    eval_notes: str = ""
+    is_sim: bool = False  # dry-run / sim paper
+    order_id: str | None = None
+    opened_at: datetime = Field(default_factory=utc_now)
+    closed_at: datetime | None = None
+    evaluated_at: datetime | None = None
+    meta: dict[str, Any] = Field(default_factory=dict)
+
+
+class ErrorPattern(BaseModel):
+    tag: str
+    label_es: str
+    count: int = 0
+    share_pct: float | None = None
+    hint_es: str = ""
+
+
+class AgentDeskStat(BaseModel):
+    agent_name: str
+    label_es: str
+    samples: int = 0
+    hits: int = 0
+    misses: int = 0
+    hit_rate_pct: float | None = None
+    avg_score_when_right: float | None = None
+    avg_score_when_wrong: float | None = None
+
+
+class MultiAssetTrackRecord(BaseModel):
+    desk: AssetDeskId | None = None
+    as_of: datetime = Field(default_factory=utc_now)
+    window_days: int = 90
+    trades_closed: int = 0
+    trades_wins: int = 0
+    trades_losses: int = 0
+    trades_win_rate_pct: float | None = None
+    trades_avg_pnl_pct: float | None = None
+    trades_total_pnl_usd: float | None = None
+    briefs_evaluated: int = 0
+    briefs_correct: int = 0
+    brief_hit_rate_pct: float | None = None
+    open_trades: int = 0
+    pending_eval: int = 0
+    recent_closed: list[MultiAssetTrade] = Field(default_factory=list)
+    error_patterns: list[ErrorPattern] = Field(default_factory=list)
+    agents: list[AgentDeskStat] = Field(default_factory=list)
+    best_agent: str | None = None
+    weakest_agent: str | None = None
+    feedback: list[str] = Field(default_factory=list)
+    disclaimer: str = (
+        "Win rate y acierto de brief sobre trades cerrados/evaluados de la mesa beta. "
+        "N pequeño ≠ edge estable. Sirve para bajar errores a futuro, no garantiza resultados."
+    )
+    durable_db: bool = False

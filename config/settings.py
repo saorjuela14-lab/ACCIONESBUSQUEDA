@@ -148,6 +148,8 @@ class Settings(BaseSettings):
     alpaca_beta_paper: bool = True
     alpaca_beta_base_url: str = "https://paper-api.alpaca.markets"
     multiasset_beta_max_notional: float = 500.0
+    # Hours before mark-to-market evaluates an open multi-asset trade brief
+    multiasset_eval_hours: float = 24.0
 
     # Client bank transfer INTO the shared firm Alpaca / operating account.
     # Do NOT send clients to app.alpaca.markets login — they only need deposit destination details.
