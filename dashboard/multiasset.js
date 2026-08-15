@@ -184,7 +184,19 @@
           return line;
         });
         const mode = r.allocation_mode === "offhours_crypto_100" ? "Modo: 100% crypto (mercado US cerrado)\n" : "";
-        alert(`${mode}Deployable $${r.deployable_usd ?? "—"}\n` + lines.join("\n"));
+        const paper = r.paper_orders
+          ? "Órdenes: PAPER REAL → Alpaca paper\n"
+          : "Órdenes: DRY-RUN / sim (NO salen en Alpaca). Pon MULTIASSET_AUTOPILOT_DRY_RUN=false\n";
+        const buyDetail = Object.values(desks).flatMap((v) =>
+          (v.buys || []).map((b) =>
+            `  → ${b.symbol} $${b.notional ?? "?"} dry=${b.dry_run} id=${b.order_id || "—"} ${b.message || ""}`
+          )
+        );
+        alert(
+          `${mode}${paper}Deployable $${r.deployable_usd ?? "—"}\n` +
+            lines.join("\n") +
+            (buyDetail.length ? "\n" + buyDetail.join("\n") : "")
+        );
       }
       await loadStatus();
       await loadHistory();

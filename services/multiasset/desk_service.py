@@ -59,8 +59,11 @@ class MultiAssetDeskService:
                 logger.warning("multiasset.universe_sync_failed", error=str(exc))
         strategy = get_desk(desk)
         configured = self._broker.is_configured()
+        dry_flag = bool(getattr(self._settings, "multiasset_autopilot_dry_run", False))
         if configured:
             msg = "Paper Alpaca listo"
+            if dry_flag:
+                msg += " · OJO: MULTIASSET_AUTOPILOT_DRY_RUN=true → el autopilot NO envía órdenes a Alpaca (solo sim)"
         elif (self._settings.alpaca_beta_api_key or "").strip() and (
             (self._settings.alpaca_beta_api_key or "").strip()
             == (self._settings.alpaca_beta_secret_key or "").strip()

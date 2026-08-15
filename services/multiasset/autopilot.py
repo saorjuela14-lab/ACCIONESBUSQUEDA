@@ -65,6 +65,9 @@ class MultiAssetAutopilotService:
         if not dry and not self._broker.is_configured():
             dry = True
             out["forced_dry_run"] = "broker_unconfigured"
+        out["dry_run"] = dry
+        out["paper_orders"] = (not dry) and self._broker.is_configured()
+        out["broker_base"] = getattr(self._broker, "base_url", "") or ""
 
         market_open = is_market_open()
         out["market_open"] = market_open
@@ -440,6 +443,8 @@ class MultiAssetAutopilotService:
                         "ok": res.ok,
                         "message": res.message,
                         "dry_run": res.dry_run,
+                        "order_id": res.order_id,
+                        "status": res.status,
                     }
                 )
                 open_notional += notional
