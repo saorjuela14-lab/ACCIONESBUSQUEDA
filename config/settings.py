@@ -152,7 +152,7 @@ class Settings(BaseSettings):
     multiasset_eval_hours: float = 24.0
     # Overnight / continuous paper autopilot for gold·forex·crypto desks
     multiasset_autopilot_enabled: bool = True
-    multiasset_autopilot_interval_minutes: int = 30
+    multiasset_autopilot_interval_minutes: int = 15
     # True = sim journal only (safe default). False + ALPACA_BETA_* = paper orders.
     multiasset_autopilot_dry_run: bool = True
     multiasset_sleeve_pct: float = 30.0  # % of paper equity for multi-asset sleeve
