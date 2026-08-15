@@ -15,6 +15,16 @@ def get_beta_broker_provider() -> AlpacaBrokerProvider:
     key = (settings.alpaca_beta_api_key or "").strip()
     secret = (settings.alpaca_beta_secret_key or "").strip()
     reused = False
+    if key and secret and key == secret:
+        logger.error(
+            "multiasset.beta.same_key_and_secret",
+            hint=(
+                "ALPACA_BETA_API_KEY y ALPACA_BETA_SECRET_KEY deben ser distintos. "
+                "En Alpaca Paper → API Keys verás Key ID (PK…) y Secret Key (otra cadena)."
+            ),
+        )
+        # Treat as unconfigured so UI shows a clear message instead of opaque 401s
+        key, secret = "", ""
     if not key or not secret:
         if settings.effective_alpaca_paper and settings.alpaca_api_key and settings.alpaca_secret_key:
             key = settings.alpaca_api_key
@@ -37,5 +47,8 @@ def get_beta_broker_provider() -> AlpacaBrokerProvider:
         configured=broker.is_configured(),
         reused_firm_paper_keys=reused,
         base_url=base,
+        key_len=len(key),
+        secret_len=len(secret),
+        keys_equal=bool(key) and key == secret,
     )
     return broker

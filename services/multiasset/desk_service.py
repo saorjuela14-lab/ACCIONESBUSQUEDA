@@ -47,9 +47,21 @@ class MultiAssetDeskService:
     async def status(self, desk: AssetDeskId) -> DeskStatus:
         strategy = get_desk(desk)
         configured = self._broker.is_configured()
-        msg = "Paper Alpaca listo" if configured else (
-            "Define ALPACA_BETA_API_KEY y ALPACA_BETA_SECRET_KEY (cuenta paper)"
-        )
+        if configured:
+            msg = "Paper Alpaca listo"
+        elif (self._settings.alpaca_beta_api_key or "").strip() and (
+            (self._settings.alpaca_beta_api_key or "").strip()
+            == (self._settings.alpaca_beta_secret_key or "").strip()
+        ):
+            msg = (
+                "Error de keys: Key ID y Secret deben ser DIFERENTES. "
+                "En Alpaca (Paper) → API Keys aparecen dos campos: Key ID (PK…) y Secret Key."
+            )
+        else:
+            msg = (
+                "Define ALPACA_BETA_API_KEY (Key ID) y ALPACA_BETA_SECRET_KEY (Secret) "
+                "de la cuenta paper — son dos valores distintos"
+            )
         equity = cash = None
         positions: list[dict] = []
         orders: list[dict] = []
