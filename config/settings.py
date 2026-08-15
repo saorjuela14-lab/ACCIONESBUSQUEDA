@@ -140,6 +140,15 @@ class Settings(BaseSettings):
     alpaca_base_url: str = ""  # override; empty → api.alpaca.markets (live) or paper-api
     alpaca_data_base_url: str = "https://data.alpaca.markets"
     alpaca_data_feed: str = "iex"  # iex (free) | sip (paid) | delayed_sip
+
+    # Beta multi-asset paper (gold / forex ETF proxies / crypto) — isolated from firm LIVE equity
+    multiasset_beta_enabled: bool = True
+    alpaca_beta_api_key: str = ""  # paper keys; if empty and firm is paper, reuses ALPACA_API_KEY
+    alpaca_beta_secret_key: str = ""
+    alpaca_beta_paper: bool = True
+    alpaca_beta_base_url: str = "https://paper-api.alpaca.markets"
+    multiasset_beta_max_notional: float = 500.0
+
     # Client bank transfer INTO the shared firm Alpaca / operating account.
     # Do NOT send clients to app.alpaca.markets login — they only need deposit destination details.
     alpaca_funding_url: str = ""  # optional custom page; leave empty (never Alpaca login)

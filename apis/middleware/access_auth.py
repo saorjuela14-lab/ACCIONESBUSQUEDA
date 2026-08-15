@@ -51,6 +51,7 @@ CLIENT_FORBIDDEN_PREFIXES = (
     "/api/v1/ops",
     "/api/v1/risk",
     "/api/v1/broker",
+    "/api/v1/beta",
     "/api/v1/providers",
     "/api/v1/dashboard/watchlist-matrix",
 )
@@ -106,6 +107,19 @@ class AccessTokenMiddleware(BaseHTTPMiddleware):
                 return RedirectResponse(url="/login", status_code=302)
             if path == "/dashboard/":
                 return RedirectResponse(url="/dashboard", status_code=302)
+            request.state.principal = principal
+            return await call_next(request)
+
+        if path.startswith("/beta/") and method == "GET":
+            token = _extract_token(request)
+            principal = await self._resolve(token) if token else None
+            if not principal:
+                return RedirectResponse(url="/login", status_code=302)
+            if principal.get("role") != "desk":
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Módulo beta solo para la mesa"},
+                )
             request.state.principal = principal
             return await call_next(request)
 

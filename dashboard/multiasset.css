@@ -1,0 +1,95 @@
+:root {
+  --bg0: #0c1210;
+  --bg1: #14201a;
+  --line: rgba(196, 165, 116, 0.28);
+  --gold: #c4a574;
+  --text: #e8e2d6;
+  --muted: #8a8578;
+  --ok: #5ecf8e;
+  --bad: #e07a6a;
+  --panel: rgba(20, 32, 26, 0.92);
+  --font: "Outfit", system-ui, sans-serif;
+  --display: "Cinzel", Georgia, serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font);
+  color: var(--text);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(196,165,116,0.14), transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, rgba(40,90,70,0.22), transparent 50%),
+    linear-gradient(165deg, var(--bg0), var(--bg1) 55%, #0a100e);
+}
+.ma-top {
+  padding: 1.1rem 1.4rem 0.8rem;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 0.35rem;
+}
+.ma-brand { display: flex; align-items: baseline; gap: 0.7rem; }
+.ma-mark { font-family: var(--display); font-size: 1.55rem; letter-spacing: 0.04em; color: var(--gold); }
+.ma-badge {
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em;
+  border: 1px solid var(--line); color: var(--gold); padding: 0.15rem 0.45rem; border-radius: 999px;
+}
+.ma-sub { margin: 0; color: var(--muted); font-size: 0.92rem; }
+.ma-nav { display: flex; gap: 0.7rem; align-items: center; }
+.ma-nav a { color: var(--gold); text-decoration: none; font-size: 0.9rem; }
+.ma-main { max-width: 1100px; margin: 0 auto; padding: 1rem 1.2rem 3rem; }
+.ma-tabs { display: flex; gap: 0.4rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.ma-tab {
+  background: transparent; border: 1px solid var(--line); color: var(--muted);
+  padding: 0.45rem 0.9rem; border-radius: 6px; cursor: pointer; font: inherit;
+}
+.ma-tab.active { color: var(--bg0); background: var(--gold); border-color: var(--gold); font-weight: 600; }
+.ma-panel {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 1rem 1.1rem; margin-bottom: 1rem;
+}
+.ma-panel h1, .ma-panel h2 { font-family: var(--display); color: var(--gold); margin: 0 0 0.55rem; font-weight: 500; }
+.ma-thesis { margin: 0 0 0.6rem; line-height: 1.45; }
+.ma-muted { color: var(--muted); font-size: 0.88rem; }
+.ma-kpis {
+  display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 0.6rem; margin-top: 0.8rem;
+}
+.ma-kpis label { display: block; font-size: 0.7rem; color: var(--muted); text-transform: uppercase; }
+.ma-kpis strong { font-size: 1.15rem; }
+.ma-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 860px) {
+  .ma-grid, .ma-kpis { grid-template-columns: 1fr; }
+}
+.ma-btn {
+  border: 1px solid var(--line); background: transparent; color: var(--text);
+  padding: 0.45rem 0.8rem; border-radius: 6px; cursor: pointer; font: inherit;
+}
+.ma-btn.primary { background: var(--gold); color: #1a140c; border-color: var(--gold); font-weight: 600; }
+.ma-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.6rem; }
+.ma-row.between { justify-content: space-between; }
+.ma-universe .ma-card {
+  border-top: 1px solid var(--line); padding: 0.55rem 0;
+  display: grid; grid-template-columns: 1fr auto; gap: 0.25rem;
+}
+.ma-universe .sym { font-weight: 600; color: var(--gold); }
+.ma-brief .vote {
+  border-left: 2px solid var(--line); padding: 0.4rem 0.6rem; margin: 0.45rem 0; font-size: 0.9rem;
+}
+.ma-form { display: grid; gap: 0.55rem; }
+.ma-form label { display: grid; gap: 0.25rem; font-size: 0.85rem; color: var(--muted); }
+.ma-form input, .ma-form select, .ma-row select {
+  background: #0b100e; border: 1px solid var(--line); color: var(--text);
+  padding: 0.4rem 0.5rem; border-radius: 5px; font: inherit;
+}
+.ma-check { display: flex !important; align-items: center; gap: 0.4rem; }
+.ma-pre {
+  white-space: pre-wrap; word-break: break-word; font-size: 0.78rem;
+  background: #0b100e; padding: 0.6rem; border-radius: 6px; max-height: 260px; overflow: auto;
+}
+.ma-history .row {
+  border-top: 1px solid var(--line); padding: 0.45rem 0; font-size: 0.88rem;
+}
+.ma-disclaimer { font-size: 0.78rem; color: var(--muted); margin-top: 0.8rem; }
+.rec-buy { color: var(--ok); font-weight: 700; }
+.rec-sell { color: var(--bad); font-weight: 700; }
+.rec-hold { color: var(--gold); font-weight: 700; }

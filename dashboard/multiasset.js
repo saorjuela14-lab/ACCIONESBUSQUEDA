@@ -1,0 +1,168 @@
+(() => {
+  const API = "/api/v1";
+  let desk = "gold";
+  let statusCache = null;
+
+  function token() {
+    return localStorage.getItem("nexbuy_token") || localStorage.getItem("monarch_token") || "";
+  }
+
+  async function api(path, opts = {}) {
+    const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+    const t = token();
+    if (t) headers.Authorization = `Bearer ${t}`;
+    const res = await fetch(path, { ...opts, headers, credentials: "same-origin" });
+    if (res.status === 401) {
+      location.href = "/login";
+      throw new Error("Sesión expirada");
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || res.statusText || "Error");
+    return data;
+  }
+
+  function $(sel) { return document.querySelector(sel); }
+  function money(v) {
+    if (v == null || Number.isNaN(Number(v))) return "—";
+    return `$${Number(v).toLocaleString("es-CO", { maximumFractionDigits: 2 })}`;
+  }
+
+  function fillSymbolSelects(strategy) {
+    const opts = (strategy.symbols || []).map(
+      (s) => `<option value="${s.symbol}">${s.symbol} — ${s.label}</option>`
+    ).join("");
+    $("#brief-symbol").innerHTML = opts;
+    $("#order-symbol").innerHTML = opts;
+  }
+
+  function renderUniverse(st) {
+    const quotes = st.quotes || {};
+    const el = $("#universe");
+    el.innerHTML = (st.strategy.symbols || []).map((s) => {
+      const q = quotes[s.symbol] || {};
+      const px = q.current_price != null ? money(q.current_price) : "—";
+      return `<div class="ma-card"><div><div class="sym">${s.symbol}</div><div class="ma-muted">${s.label} · ${s.notes || ""}</div></div><div>${px}</div></div>`;
+    }).join("") || "Sin símbolos";
+  }
+
+  function renderBook(st) {
+    const pos = st.positions || [];
+    const orders = st.open_orders || [];
+    $("#book-out").textContent =
+      `Posiciones (${pos.length})\n` +
+      (pos.map((p) => `${p.symbol} qty=${p.qty} mv=${p.market_value} pnl=${p.unrealized_pl}`).join("\n") || "(vacío)") +
+      `\n\nÓrdenes abiertas (${orders.length})\n` +
+      (orders.map((o) => `${o.symbol} ${o.side} ${o.qty || o.notional} ${o.status}`).join("\n") || "(vacío)");
+  }
+
+  async function loadStatus() {
+    const st = await api(`${API}/beta/multiasset/${desk}/status`);
+    statusCache = st;
+    $("#desk-title").textContent = st.strategy?.name || desk;
+    $("#desk-thesis").textContent = st.strategy?.thesis || "";
+    $("#desk-broker").textContent = st.broker_message || "";
+    $("#desk-disclaimer").textContent = st.strategy?.disclaimer || "";
+    $("#kpi-equity").textContent = money(st.equity);
+    $("#kpi-cash").textContent = money(st.cash);
+    $("#kpi-pos").textContent = String((st.positions || []).length);
+    fillSymbolSelects(st.strategy || { symbols: [] });
+    renderUniverse(st);
+    renderBook(st);
+  }
+
+  async function runBrief() {
+    const symbol = $("#brief-symbol").value;
+    const out = $("#brief-out");
+    out.textContent = "Analizando con agentes especializados…";
+    try {
+      const b = await api(`${API}/beta/multiasset/${desk}/brief/${encodeURIComponent(symbol)}`);
+      const recClass = b.recommendation === "buy" ? "rec-buy" : b.recommendation === "sell" ? "rec-sell" : "rec-hold";
+      out.innerHTML =
+        `<p><span class="${recClass}">${(b.recommendation || "").toUpperCase()}</span> · score ${b.score} · conf ${(b.confidence * 100).toFixed(0)}%</p>` +
+        `<p>${b.summary || ""}</p>` +
+        (b.entry_hint != null ? `<p class="ma-muted">Entrada ~${money(b.entry_hint)} · stop ${money(b.stop_hint)} · target ${money(b.target_hint)}</p>` : "") +
+        (b.votes || []).map((v) =>
+          `<div class="vote"><strong>${v.label_es}</strong> (${v.score.toFixed?.(1) ?? v.score}) — ${v.summary}</div>`
+        ).join("");
+    } catch (e) {
+      out.textContent = e.message || String(e);
+    }
+  }
+
+  async function loadHistory() {
+    const el = $("#history-out");
+    el.textContent = "Cargando…";
+    try {
+      const r = await api(`${API}/beta/multiasset/history?desk=${desk}&limit=40`);
+      const items = r.items || [];
+      if (!items.length) {
+        el.textContent = "Sin operaciones aún en esta mesa.";
+        return;
+      }
+      el.innerHTML = items.map((h) =>
+        `<div class="row"><b>${h.symbol}</b> ${h.side} · qty=${h.qty ?? "—"} notional=${h.notional ?? "—"} · ${h.status || ""} · ${h.created_at ? new Date(h.created_at).toLocaleString() : ""}<div class="ma-muted">${h.note || ""}</div></div>`
+      ).join("");
+    } catch (e) {
+      el.textContent = e.message || String(e);
+    }
+  }
+
+  async function submitOrder(ev) {
+    ev.preventDefault();
+    const msg = $("#order-msg");
+    const dry = $("#order-dry").checked;
+    const qtyRaw = $("#order-qty").value;
+    const notionalRaw = $("#order-notional").value;
+    const body = {
+      desk,
+      symbol: $("#order-symbol").value,
+      side: $("#order-side").value,
+      qty: qtyRaw ? Number(qtyRaw) : null,
+      notional: notionalRaw ? Number(notionalRaw) : null,
+      dry_run: dry,
+      confirm: !dry,
+      note: "beta UI",
+    };
+    if (!dry && !confirm(`¿Enviar orden PAPER ${body.side} ${body.symbol}?`)) return;
+    msg.textContent = "Enviando…";
+    try {
+      const r = await api(`${API}/beta/multiasset/execute`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      msg.textContent = r.message || (r.ok ? "OK" : "Falló");
+      await loadStatus();
+      await loadHistory();
+    } catch (e) {
+      msg.textContent = e.message || String(e);
+    }
+  }
+
+  document.querySelectorAll(".ma-tab").forEach((btn) => {
+    btn.onclick = async () => {
+      document.querySelectorAll(".ma-tab").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      desk = btn.dataset.desk;
+      await loadStatus();
+      await loadHistory();
+    };
+  });
+
+  $("#btn-refresh").onclick = async () => { await loadStatus(); await loadHistory(); };
+  $("#btn-brief").onclick = runBrief;
+  $("#btn-history").onclick = loadHistory;
+  $("#order-form").onsubmit = submitOrder;
+
+  (async () => {
+    if (!token()) {
+      location.href = "/login";
+      return;
+    }
+    try {
+      await loadStatus();
+      await loadHistory();
+    } catch (e) {
+      $("#desk-broker").textContent = e.message || String(e);
+    }
+  })();
+})();

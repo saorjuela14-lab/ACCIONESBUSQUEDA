@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apis.middleware.access_auth import AccessTokenMiddleware, _extract_token
-from apis.routes import alerts, allocation, analysis, auth, broker, correlations, dashboard, discovery, graph, health, market, ops, portfolio, proposal, providers, recommendations, reports, risk, sentiment, voice, watchlist
+from apis.routes import alerts, allocation, analysis, auth, broker, correlations, dashboard, discovery, graph, health, market, multiasset, ops, portfolio, proposal, providers, recommendations, reports, risk, sentiment, voice, watchlist
 from config.settings import get_settings
 from database.engine import get_session, init_db
 from orchestration.container import Container, bootstrap
@@ -118,6 +118,18 @@ def create_app() -> FastAPI:
                 headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
             )
 
+        @app.get("/beta/multiasset")
+        async def multiasset_beta_page(request: Request):
+            """Paper desks for gold / forex proxies / crypto (isolated from equity LIVE)."""
+            if not _extract_token(request):
+                return RedirectResponse(url="/login", status_code=302)
+            if not get_settings().multiasset_beta_enabled:
+                raise HTTPException(status_code=503, detail="Multi-asset beta desactivado")
+            return FileResponse(
+                dashboard_dir / "multiasset.html",
+                headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+            )
+
         @app.get("/login")
         async def login_page(request: Request):
             from apis.routes.auth import _clear_session_cookies
@@ -168,6 +180,7 @@ def create_app() -> FastAPI:
     app.include_router(discovery.router, prefix="/api/v1", tags=["discovery"])
     app.include_router(recommendations.router, prefix="/api/v1", tags=["recommendations"])
     app.include_router(broker.router, prefix="/api/v1", tags=["broker"])
+    app.include_router(multiasset.router, prefix="/api/v1", tags=["multiasset-beta"])
     app.include_router(risk.router, prefix="/api/v1", tags=["risk"])
     app.include_router(ops.router, prefix="/api/v1", tags=["ops"])
     app.include_router(voice.router, prefix="/api/v1", tags=["voice"])

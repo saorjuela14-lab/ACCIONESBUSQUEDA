@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Monarch · Multi-asset beta (paper)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/dashboard/static/multiasset.css?v=1" />
+</head>
+<body>
+  <header class="ma-top">
+    <div class="ma-brand">
+      <span class="ma-mark">Monarch</span>
+      <span class="ma-badge">BETA · Paper</span>
+    </div>
+    <p class="ma-sub">Mesas independientes · Oro · Forex (ETF) · Crypto — Alpaca paper</p>
+    <nav class="ma-nav">
+      <a href="/dashboard">← Terminal equity</a>
+      <button type="button" id="btn-refresh" class="ma-btn">Actualizar</button>
+    </nav>
+  </header>
+
+  <main class="ma-main">
+    <div class="ma-tabs" role="tablist">
+      <button type="button" class="ma-tab active" data-desk="gold">Oro</button>
+      <button type="button" class="ma-tab" data-desk="forex">Forex</button>
+      <button type="button" class="ma-tab" data-desk="crypto">Crypto</button>
+    </div>
+
+    <section class="ma-panel" id="desk-hero">
+      <h1 id="desk-title">Mesa</h1>
+      <p id="desk-thesis" class="ma-thesis"></p>
+      <p id="desk-broker" class="ma-muted"></p>
+      <div class="ma-kpis">
+        <div><label>Equity paper</label><strong id="kpi-equity">—</strong></div>
+        <div><label>Cash</label><strong id="kpi-cash">—</strong></div>
+        <div><label>Posiciones mesa</label><strong id="kpi-pos">—</strong></div>
+      </div>
+    </section>
+
+    <section class="ma-grid">
+      <div class="ma-panel">
+        <h2>Universo</h2>
+        <div id="universe" class="ma-universe">Cargando…</div>
+      </div>
+      <div class="ma-panel">
+        <h2>Brief de agentes</h2>
+        <div class="ma-row">
+          <select id="brief-symbol"></select>
+          <button type="button" id="btn-brief" class="ma-btn primary">Analizar</button>
+        </div>
+        <div id="brief-out" class="ma-brief">Elige símbolo y analiza con la mesa especializada.</div>
+      </div>
+    </section>
+
+    <section class="ma-grid">
+      <div class="ma-panel">
+        <h2>Operar (paper)</h2>
+        <form id="order-form" class="ma-form">
+          <label>Símbolo
+            <select id="order-symbol" required></select>
+          </label>
+          <label>Lado
+            <select id="order-side">
+              <option value="buy">Comprar</option>
+              <option value="sell">Vender</option>
+            </select>
+          </label>
+          <label>Cantidad (qty)
+            <input id="order-qty" type="number" step="any" min="0" placeholder="ej. 1" />
+          </label>
+          <label>Notional USD (crypto / fraccional)
+            <input id="order-notional" type="number" step="0.01" min="0" placeholder="ej. 50" />
+          </label>
+          <label class="ma-check"><input type="checkbox" id="order-dry" checked /> Solo dry-run</label>
+          <button type="submit" class="ma-btn primary">Enviar</button>
+        </form>
+        <p id="order-msg" class="ma-muted"></p>
+      </div>
+      <div class="ma-panel">
+        <h2>Posiciones / órdenes abiertas</h2>
+        <pre id="book-out" class="ma-pre">—</pre>
+      </div>
+    </section>
+
+    <section class="ma-panel">
+      <div class="ma-row between">
+        <h2>Historial de la mesa</h2>
+        <button type="button" id="btn-history" class="ma-btn">Recargar historial</button>
+      </div>
+      <div id="history-out" class="ma-history">Sin operaciones aún.</div>
+      <p class="ma-disclaimer" id="desk-disclaimer"></p>
+    </section>
+  </main>
+
+  <script src="/dashboard/static/multiasset.js?v=1"></script>
+</body>
+</html>

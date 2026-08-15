@@ -310,3 +310,21 @@ class TradeJournalORM(Base):
     opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     meta_json: Mapped[str] = mapped_column(Text, default="{}")
+
+
+class MultiAssetJournalORM(Base):
+    """Paper order log for gold / forex / crypto beta desks."""
+
+    __tablename__ = "multiasset_journal"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    desk: Mapped[str] = mapped_column(String(16), index=True)  # gold | forex | crypto
+    symbol: Mapped[str] = mapped_column(String(24), index=True)
+    side: Mapped[str] = mapped_column(String(8))
+    qty: Mapped[float | None] = mapped_column(Float, nullable=True)
+    notional: Mapped[float | None] = mapped_column(Float, nullable=True)
+    order_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+    raw_json: Mapped[str] = mapped_column(Text, default="{}")
