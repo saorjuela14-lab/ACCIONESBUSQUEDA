@@ -20,7 +20,8 @@ from domain.multiasset import (
     MultiAssetOrderRequest,
     MultiAssetOrderResult,
 )
-from services.multiasset.desks import DESKS, desk_symbols, get_desk, normalize_symbol
+from services.multiasset.desks import DESKS, desk_symbols, get_desk, normalize_symbol, set_crypto_symbols
+from services.multiasset.crypto_universe import resolve_crypto_universe
 from services.multiasset.paper_broker import get_beta_broker_provider
 from services.multiasset.trade_tracker import MultiAssetTradeTracker
 from utils.logging import get_logger
@@ -41,10 +42,21 @@ class MultiAssetDeskService:
         self._settings = get_settings()
         self._broker = get_beta_broker_provider()
 
+    async def sync_crypto_universe(self) -> int:
+        """Refresh crypto desk symbols from Alpaca (USD pairs, no stables)."""
+        items = await resolve_crypto_universe(self._broker)
+        set_crypto_symbols(items)
+        return len(items)
+
     def list_desks(self) -> list[dict]:
         return [s.model_dump(mode="json") for s in DESKS.values()]
 
     async def status(self, desk: AssetDeskId) -> DeskStatus:
+        if desk == "crypto":
+            try:
+                await self.sync_crypto_universe()
+            except Exception as exc:
+                logger.warning("multiasset.universe_sync_failed", error=str(exc))
         strategy = get_desk(desk)
         configured = self._broker.is_configured()
         if configured:

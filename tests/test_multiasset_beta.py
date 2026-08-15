@@ -35,6 +35,7 @@ def test_desks_catalog_independent():
     assert "GLD" in desk_symbols("gold")
     assert "UUP" in desk_symbols("forex")
     assert "BTC/USD" in desk_symbols("crypto")
+    assert len(get_desk("crypto").symbols) >= 10
     assert gold.agent_names != fx.agent_names != crypto.agent_names
     assert crypto.time_in_force == "gtc"
     assert len(gold.agent_names) == 3

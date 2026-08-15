@@ -174,6 +174,8 @@
           if (v.error) return `${k}: error ${v.error}`;
           if (v.skipped) return `${k}: ${v.skipped}`;
           let line = `${k}: +${(v.buys || []).length} buys / −${(v.sells || []).length} sells (budget $${v.budget})`;
+          if (v.universe) line += ` · univ ${v.universe}`;
+          if (v.chart_prequalified != null) line += ` · chartOK ${v.chart_prequalified}`;
           if (v.reason) line += ` · ${v.reason}`;
           const top = (v.scanned || []).slice(0, 3).map((s) =>
             `${s.symbol} ${s.rec || ""} score=${s.score ?? "—"}` + (s.skip ? ` (${s.skip})` : "")

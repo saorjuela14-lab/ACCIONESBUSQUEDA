@@ -170,5 +170,14 @@ class AlpacaBrokerProvider(BrokerProvider):
     async def get_asset(self, symbol: str) -> dict[str, Any]:
         return await self._request("GET", f"/v2/assets/{symbol.upper()}")
 
+    async def list_crypto_assets(self) -> list[dict[str, Any]]:
+        """GET /v2/assets?asset_class=crypto&status=active"""
+        data = await self._request(
+            "GET",
+            "/v2/assets",
+            params={"asset_class": "crypto", "status": "active"},
+        )
+        return data if isinstance(data, list) else []
+
     async def get_clock(self) -> dict[str, Any]:
         return await self._request("GET", "/v2/clock")

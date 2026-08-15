@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from domain.multiasset import AssetDeskId, DeskStrategy, DeskUniverseItem
+from services.multiasset.crypto_universe import default_crypto_universe
 
 _GOLD = DeskStrategy(
     desk="gold",
@@ -53,8 +54,8 @@ _CRYPTO = DeskStrategy(
     desk="crypto",
     name="Mesa Crypto · Paper",
     thesis=(
-        "Compra liderada por técnico de gráfico (EMA/RSI/MACD/volumen/BB) + "
-        "noticias/redes (percepción). Simulación paper 24/7 BTC/ETH/SOL."
+        "Universo amplio Alpaca USD (no solo BTC/ETH/SOL). Compra liderada por "
+        "técnico de gráfico + noticias/redes. Simulación paper 24/7."
     ),
     horizon="intradía–swing 1–7 días",
     max_notional_usd=5_000.0,
@@ -62,11 +63,7 @@ _CRYPTO = DeskStrategy(
     default_target_pct=0.16,
     allow_fractional=True,
     time_in_force="gtc",
-    symbols=[
-        DeskUniverseItem(symbol="BTC/USD", label="Bitcoin", asset_class="crypto", notes="spot"),
-        DeskUniverseItem(symbol="ETH/USD", label="Ethereum", asset_class="crypto", notes="spot"),
-        DeskUniverseItem(symbol="SOL/USD", label="Solana", asset_class="crypto", notes="spot"),
-    ],
+    symbols=default_crypto_universe(),
     agent_names=[
         "crypto_chart_technical_agent",
         "crypto_news_social_agent",
@@ -74,7 +71,7 @@ _CRYPTO = DeskStrategy(
         "crypto_sentiment_agent",
         "crypto_risk_agent",
     ],
-    disclaimer="Beta paper. Técnico gráfico lidera; noticias/redes confirman percepción.",
+    disclaimer="Beta paper. Universo crypto Alpaca USD; técnico gráfico lidera.",
 )
 
 DESKS: dict[AssetDeskId, DeskStrategy] = {
@@ -90,13 +87,24 @@ def get_desk(desk: AssetDeskId) -> DeskStrategy:
     return DESKS[desk]
 
 
+def set_crypto_symbols(symbols: list[DeskUniverseItem]) -> DeskStrategy:
+    """Replace crypto desk universe (e.g. after Alpaca asset sync)."""
+    base = DESKS["crypto"]
+    updated = base.model_copy(update={"symbols": symbols})
+    DESKS["crypto"] = updated
+    return updated
+
+
 def desk_symbols(desk: AssetDeskId) -> set[str]:
     return {s.symbol.upper().replace(" ", "") for s in get_desk(desk).symbols}
 
 
 def normalize_symbol(symbol: str) -> str:
     s = (symbol or "").strip().upper()
-    # Alpaca crypto accepts BTC/USD or BTCUSD
     if "/" in s:
         return s
+    if s.endswith("USD") and len(s) > 3 and s not in {"GLDM"}:
+        base = s[:-3]
+        if base.isalpha() and len(base) <= 10:
+            return f"{base}/USD"
     return s

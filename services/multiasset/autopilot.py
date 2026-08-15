@@ -71,6 +71,13 @@ class MultiAssetAutopilotService:
         weights = self._weights(market_open)
         out["allocation_mode"] = "rth_split" if market_open else "offhours_crypto_100"
 
+        # Expand crypto universe beyond BTC/ETH/SOL (Alpaca USD pairs)
+        try:
+            n = await self._desk.sync_crypto_universe()
+            out["crypto_universe"] = n
+        except Exception as exc:
+            out["crypto_universe_error"] = str(exc)
+
         capital = await self._capital_snapshot(offhours_crypto=not market_open)
         out["capital"] = capital
         sleeve = float(capital["sleeve_usd"])
@@ -286,9 +293,62 @@ class MultiAssetAutopilotService:
             else:
                 holds.append(sym)
 
-        # 2) Rank fresh entries by brief score
+        # 2) Rank fresh entries — crypto: chart pre-screen entire universe, then full brief
         candidates: list[tuple[float, str, Any]] = []
-        for item in strategy.symbols:
+        symbols_to_brief = list(strategy.symbols)
+
+        if desk == "crypto":
+            from agents.multiasset import CryptoChartTechnicalAgent
+            import asyncio
+
+            chart_agent = CryptoChartTechnicalAgent()
+            pre: list[tuple[float, str]] = []
+
+            async def _screen(sym: str):
+                try:
+                    rep = await chart_agent.analyze(sym)
+                    return sym, float(rep.score), rep.summary
+                except Exception as exc:
+                    return sym, -999.0, str(exc)
+
+            # Bound concurrency
+            sem = asyncio.Semaphore(6)
+
+            async def _bounded(sym: str):
+                async with sem:
+                    return await _screen(sym)
+
+            results = await asyncio.gather(
+                *[_bounded(i.symbol) for i in strategy.symbols if i.symbol not in open_by_sym]
+            )
+            chart_min = float(getattr(self._settings, "multiasset_crypto_chart_prescreen", 6) or 6)
+            for sym, sc, summary in results:
+                if sc <= -900:
+                    scanned.append({"symbol": sym, "skip": f"chart_failed: {summary}"})
+                    continue
+                if sc < chart_min:
+                    scanned.append(
+                        {
+                            "symbol": sym,
+                            "rec": "hold",
+                            "score": round(sc, 1),
+                            "skip": f"prescreen_chart<{chart_min}",
+                        }
+                    )
+                    continue
+                pre.append((sc, sym))
+            pre.sort(key=lambda x: -x[0])
+            # Full committee on all chart-qualified names (unlimited opens)
+            symbols_to_brief = [
+                next(i for i in strategy.symbols if i.symbol == sym) for _, sym in pre
+            ]
+            universe_n = len(strategy.symbols)
+            prequalified = len(pre)
+        else:
+            universe_n = len(strategy.symbols)
+            prequalified = len(symbols_to_brief)
+
+        for item in symbols_to_brief:
             if item.symbol in open_by_sym:
                 continue
             try:
@@ -310,7 +370,6 @@ class MultiAssetAutopilotService:
                 row["skip"] = f"below_gate score>={min_score} conf>={min_conf}"
                 scanned.append(row)
                 continue
-            # Crypto: require chart technical opportunity (primary agent)
             if desk == "crypto":
                 chart_vote = next(
                     (v for v in brief.votes if v.agent_name == "crypto_chart_technical_agent"),
@@ -397,10 +456,12 @@ class MultiAssetAutopilotService:
         return {
             "budget": round(desk_budget, 2),
             "open_before": len(open_trades),
+            "universe": universe_n,
+            "chart_prequalified": prequalified if desk == "crypto" else None,
             "buys": buys,
             "sells": sells,
             "holds": holds,
-            "scanned": scanned,
+            "scanned": scanned[:40],
             "min_score": min_score,
             "reason": reason,
             "dry_run": dry_run,
