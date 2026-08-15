@@ -151,9 +151,9 @@ class MultiAssetDeskService:
         den = sum(max(r.confidence, 0.2) for r in reports) or 1.0
         score = num / den
         confidence = sum(r.confidence for r in reports) / len(reports)
-        # Crypto is noisier — lower bar so overnight autopilot can act
-        buy_bar = 6.0 if desk == "crypto" else 12.0
-        sell_bar = -6.0 if desk == "crypto" else -12.0
+        # Crypto is noisier — micro-like bar so overnight sim can act (equity micro ~soft majority)
+        buy_bar = 3.0 if desk == "crypto" else 12.0
+        sell_bar = -3.0 if desk == "crypto" else -12.0
         if score >= buy_bar:
             rec = "buy"
         elif score <= sell_bar:
@@ -219,7 +219,11 @@ class MultiAssetDeskService:
 
         max_notional = min(
             float(strategy.max_notional_usd),
-            float(self._settings.multiasset_beta_max_notional or 500),
+            float(
+                (self._settings.multiasset_crypto_max_notional if req.desk == "crypto" else None)
+                or self._settings.multiasset_beta_max_notional
+                or 500
+            ),
         )
         qty = req.qty
         notional = req.notional

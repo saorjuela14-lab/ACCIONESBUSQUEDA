@@ -17,11 +17,17 @@ from utils.market_hours import is_market_open
 
 logger = get_logger(__name__)
 
-# Share of the multi-asset sleeve allocated to each desk (sums to 1)
-_DESK_WEIGHTS: dict[AssetDeskId, float] = {
+# Share of the multi-asset sleeve when US equity session is open
+_DESK_WEIGHTS_RTH: dict[AssetDeskId, float] = {
     "gold": 0.40,
     "forex": 0.25,
     "crypto": 0.35,
+}
+# Off-hours / weekend: park full deployable sleeve in crypto (24/7)
+_DESK_WEIGHTS_OFFHOURS: dict[AssetDeskId, float] = {
+    "gold": 0.0,
+    "forex": 0.0,
+    "crypto": 1.0,
 }
 
 
@@ -34,6 +40,13 @@ class MultiAssetAutopilotService:
         self._desk = MultiAssetDeskService(session)
         self._tracker = MultiAssetTradeTracker(session)
         self._broker = get_beta_broker_provider()
+
+    def _weights(self, market_open: bool) -> dict[AssetDeskId, float]:
+        if market_open:
+            return dict(_DESK_WEIGHTS_RTH)
+        if getattr(self._settings, "multiasset_offhours_crypto_full_capital", True):
+            return dict(_DESK_WEIGHTS_OFFHOURS)
+        return dict(_DESK_WEIGHTS_RTH)
 
     async def run(self, *, actor: str = "multiasset_autopilot") -> dict[str, Any]:
         out: dict[str, Any] = {"actor": actor, "desks": {}, "skipped": None}
@@ -48,24 +61,33 @@ class MultiAssetAutopilotService:
             out["skipped"] = "kill_switch_active"
             return out
 
-        dry = bool(getattr(self._settings, "multiasset_autopilot_dry_run", True))
-        # Real paper only if broker configured and dry_run flag off
+        dry = bool(getattr(self._settings, "multiasset_autopilot_dry_run", False))
         if not dry and not self._broker.is_configured():
             dry = True
             out["forced_dry_run"] = "broker_unconfigured"
 
-        capital = await self._capital_snapshot()
+        market_open = is_market_open()
+        out["market_open"] = market_open
+        weights = self._weights(market_open)
+        out["allocation_mode"] = "rth_split" if market_open else "offhours_crypto_100"
+
+        capital = await self._capital_snapshot(offhours_crypto=not market_open)
         out["capital"] = capital
         sleeve = float(capital["sleeve_usd"])
         cash = float(capital["cash_usd"])
         reserve = float(capital["reserve_usd"])
         deployable = max(0.0, min(sleeve, cash - reserve))
         out["deployable_usd"] = round(deployable, 2)
+        out["weights"] = weights
 
-        market_open = is_market_open()
-        out["market_open"] = market_open
-
-        for desk_id, weight in _DESK_WEIGHTS.items():
+        for desk_id, weight in weights.items():
+            if weight <= 0 and desk_id != "crypto":
+                out["desks"][desk_id] = {
+                    "skipped": "market_closed_capital_to_crypto",
+                    "budget": 0,
+                    "weight": 0,
+                }
+                continue
             desk_budget = deployable * weight
             try:
                 out["desks"][desk_id] = await self._run_desk(
@@ -75,6 +97,7 @@ class MultiAssetAutopilotService:
                     market_open=market_open,
                     actor=actor,
                 )
+                out["desks"][desk_id]["weight"] = weight
             except Exception as exc:
                 logger.warning("multiasset.autopilot.desk_failed", desk=desk_id, error=str(exc))
                 out["desks"][desk_id] = {"error": str(exc)}
@@ -82,13 +105,14 @@ class MultiAssetAutopilotService:
         logger.info(
             "multiasset.autopilot.done",
             dry_run=dry,
+            mode=out["allocation_mode"],
             deployable=out["deployable_usd"],
             buys=sum(len(d.get("buys") or []) for d in out["desks"].values() if isinstance(d, dict)),
             sells=sum(len(d.get("sells") or []) for d in out["desks"].values() if isinstance(d, dict)),
         )
         return out
 
-    async def _capital_snapshot(self) -> dict[str, float]:
+    async def _capital_snapshot(self, *, offhours_crypto: bool = False) -> dict[str, float]:
         """Equity/cash from paper beta account; fall back to configured notional caps."""
         equity = float(getattr(self._settings, "multiasset_fallback_equity", 10_000) or 10_000)
         cash = equity
@@ -100,11 +124,23 @@ class MultiAssetAutopilotService:
             except Exception as exc:
                 logger.warning("multiasset.autopilot.account_failed", error=str(exc))
 
-        sleeve_pct = float(getattr(self._settings, "multiasset_sleeve_pct", 30.0) or 30.0) / 100.0
-        reserve_pct = float(getattr(self._settings, "multiasset_cash_reserve_pct", 15.0) or 15.0) / 100.0
-        max_total = float(self._settings.multiasset_beta_max_notional or 500)
-        sleeve_cap = float(getattr(self._settings, "multiasset_sleeve_cap_usd", 5_000) or 5_000)
-        sleeve = min(equity * sleeve_pct, max(sleeve_cap, max_total * 3))
+        # Simulation: off-hours → nearly full paper capital to crypto sleeve
+        if offhours_crypto and getattr(
+            self._settings, "multiasset_offhours_crypto_full_capital", True
+        ):
+            sleeve_pct = float(
+                getattr(self._settings, "multiasset_offhours_sleeve_pct", 100.0) or 100.0
+            ) / 100.0
+            reserve_pct = float(
+                getattr(self._settings, "multiasset_offhours_cash_reserve_pct", 5.0) or 5.0
+            ) / 100.0
+            sleeve = equity * sleeve_pct
+        else:
+            sleeve_pct = float(getattr(self._settings, "multiasset_sleeve_pct", 30.0) or 30.0) / 100.0
+            reserve_pct = float(getattr(self._settings, "multiasset_cash_reserve_pct", 15.0) or 15.0) / 100.0
+            max_total = float(self._settings.multiasset_beta_max_notional or 500)
+            sleeve_cap = float(getattr(self._settings, "multiasset_sleeve_cap_usd", 5_000) or 5_000)
+            sleeve = min(equity * sleeve_pct, max(sleeve_cap, max_total * 3))
         reserve = equity * reserve_pct
         return {
             "equity_usd": round(equity, 2),
@@ -123,23 +159,28 @@ class MultiAssetAutopilotService:
         open_notional: float,
         score: float,
         confidence: float,
+        max_open: int = 3,
     ) -> float:
         strategy = get_desk(desk)
         room = max(0.0, desk_budget - open_notional)
-        cap = min(
-            float(strategy.max_notional_usd),
-            float(self._settings.multiasset_beta_max_notional or 500),
-            room,
-        )
+        if desk == "crypto":
+            # Simulation: allow larger clips — split budget across open slots
+            per_slot = desk_budget / max(1, max_open)
+            strat_cap = float(
+                getattr(self._settings, "multiasset_crypto_max_notional", 0) or 0
+            ) or max(float(strategy.max_notional_usd), per_slot)
+            cap = min(strat_cap, per_slot, room)
+        else:
+            cap = min(
+                float(strategy.max_notional_usd),
+                float(self._settings.multiasset_beta_max_notional or 500),
+                room,
+            )
         if cap < 15:
             return 0.0
-        # Scale 40–100% of cap by score/confidence (portfolio + risk discipline)
-        conf = max(0.35, min(1.0, confidence))
-        score_f = min(1.0, abs(score) / 40.0)
-        frac = 0.4 + 0.6 * (0.5 * conf + 0.5 * score_f)
-        # Crypto: smaller default clip (volatility)
-        if desk == "crypto":
-            frac *= 0.75
+        conf = max(0.30, min(1.0, confidence))
+        score_f = min(1.0, abs(score) / 25.0)  # micro-like: reach full size sooner
+        frac = 0.45 + 0.55 * (0.5 * conf + 0.5 * score_f)
         return round(max(15.0, min(cap, cap * frac)), 2)
 
     async def _run_desk(
@@ -164,11 +205,11 @@ class MultiAssetAutopilotService:
         open_notional = sum(
             float(t.entry_price or 0) * float(t.qty or 0) for t in open_trades
         )
-        max_open = int(getattr(self._settings, "multiasset_max_open_per_desk", 2) or 2)
-        # Crypto overnight: softer gates (risk agent often scores negative on vol)
+        max_open = int(getattr(self._settings, "multiasset_max_open_per_desk", 3) or 3)
+        # Crypto sim: micro-like gates (same spirit as equity micro consensus)
         if desk == "crypto":
-            min_score = float(getattr(self._settings, "multiasset_crypto_min_score_buy", 5) or 5)
-            min_conf = float(getattr(self._settings, "multiasset_crypto_min_confidence", 0.35) or 0.35)
+            min_score = float(getattr(self._settings, "multiasset_crypto_min_score_buy", 3) or 3)
+            min_conf = float(getattr(self._settings, "multiasset_crypto_min_confidence", 0.30) or 0.30)
         else:
             min_score = float(getattr(self._settings, "multiasset_min_score_buy", 12) or 12)
             min_conf = float(getattr(self._settings, "multiasset_min_confidence", 0.45) or 0.45)
@@ -261,17 +302,17 @@ class MultiAssetAutopilotService:
                 row["skip"] = f"below_gate score>={min_score} conf>={min_conf}"
                 scanned.append(row)
                 continue
-            # Risk veto: crypto needs stronger risk panic (vol always looks high)
-            risk_floor = -35 if desk == "crypto" else -20
-            riskish = [
-                v
-                for v in brief.votes
-                if "risk" in v.agent_name and v.score <= risk_floor
-            ]
-            if riskish and brief.score < min_score + (5 if desk == "crypto" else 8):
-                row["skip"] = "risk_veto"
-                scanned.append(row)
-                continue
+            # Crypto simulation: do not hard-veto on vol risk agent (always elevated)
+            if desk != "crypto":
+                riskish = [
+                    v
+                    for v in brief.votes
+                    if "risk" in v.agent_name and v.score <= -20
+                ]
+                if riskish and brief.score < min_score + 8:
+                    row["skip"] = "risk_veto"
+                    scanned.append(row)
+                    continue
             scanned.append({**row, "skip": None})
             candidates.append((brief.score * (brief.confidence or 0.5), item.symbol, brief))
 
@@ -285,6 +326,7 @@ class MultiAssetAutopilotService:
                 open_notional=open_notional,
                 score=brief.score,
                 confidence=brief.confidence or 0.5,
+                max_open=max_open,
             )
             if notional <= 0:
                 scanned.append({"symbol": sym, "skip": "no_budget_room"})

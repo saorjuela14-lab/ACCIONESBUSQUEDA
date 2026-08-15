@@ -57,7 +57,7 @@ _CRYPTO = DeskStrategy(
         "TIF GTC, fracciones permitidas, sin brackets day de equity."
     ),
     horizon="intradía–swing 1–7 días",
-    max_notional_usd=200.0,
+    max_notional_usd=5_000.0,
     default_stop_pct=0.08,
     default_target_pct=0.16,
     allow_fractional=True,

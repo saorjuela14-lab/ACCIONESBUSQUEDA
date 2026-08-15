@@ -181,7 +181,8 @@
           if (top.length) line += `\n  ` + top.join(" | ");
           return line;
         });
-        alert(`Deployable $${r.deployable_usd ?? "—"}\n` + lines.join("\n"));
+        const mode = r.allocation_mode === "offhours_crypto_100" ? "Modo: 100% crypto (mercado US cerrado)\n" : "";
+        alert(`${mode}Deployable $${r.deployable_usd ?? "—"}\n` + lines.join("\n"));
       }
       await loadStatus();
       await loadHistory();

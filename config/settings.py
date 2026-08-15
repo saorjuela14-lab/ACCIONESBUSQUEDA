@@ -157,14 +157,19 @@ class Settings(BaseSettings):
     multiasset_autopilot_dry_run: bool = False
     multiasset_sleeve_pct: float = 30.0  # % of paper equity for multi-asset sleeve
     multiasset_cash_reserve_pct: float = 15.0
-    multiasset_max_open_per_desk: int = 2
+    multiasset_max_open_per_desk: int = 3
     multiasset_min_score_buy: float = 12.0
     multiasset_min_confidence: float = 0.45
-    multiasset_crypto_min_score_buy: float = 5.0
-    multiasset_crypto_min_confidence: float = 0.35
+    # Crypto sim gates — aligned with equity micro softness
+    multiasset_crypto_min_score_buy: float = 3.0
+    multiasset_crypto_min_confidence: float = 0.30
+    multiasset_crypto_max_notional: float = 25_000.0  # per name when capital redirected
     multiasset_fallback_equity: float = 10_000.0  # when paper account unread
-    # Cap of multi-asset sleeve in USD (paper $100k → allow meaningful overnight size)
     multiasset_sleeve_cap_usd: float = 5_000.0
+    # When US market closed: 100% deployable capital → crypto (strategy simulation)
+    multiasset_offhours_crypto_full_capital: bool = True
+    multiasset_offhours_sleeve_pct: float = 100.0
+    multiasset_offhours_cash_reserve_pct: float = 5.0
 
     # Client bank transfer INTO the shared firm Alpaca / operating account.
     # Do NOT send clients to app.alpaca.markets login — they only need deposit destination details.
