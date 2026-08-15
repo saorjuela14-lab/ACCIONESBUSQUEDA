@@ -103,7 +103,8 @@ class MultiAssetAutopilotService:
         sleeve_pct = float(getattr(self._settings, "multiasset_sleeve_pct", 30.0) or 30.0) / 100.0
         reserve_pct = float(getattr(self._settings, "multiasset_cash_reserve_pct", 15.0) or 15.0) / 100.0
         max_total = float(self._settings.multiasset_beta_max_notional or 500)
-        sleeve = min(equity * sleeve_pct, max_total * 3)  # soft ceiling across desks
+        sleeve_cap = float(getattr(self._settings, "multiasset_sleeve_cap_usd", 5_000) or 5_000)
+        sleeve = min(equity * sleeve_pct, max(sleeve_cap, max_total * 3))
         reserve = equity * reserve_pct
         return {
             "equity_usd": round(equity, 2),
@@ -164,12 +165,18 @@ class MultiAssetAutopilotService:
             float(t.entry_price or 0) * float(t.qty or 0) for t in open_trades
         )
         max_open = int(getattr(self._settings, "multiasset_max_open_per_desk", 2) or 2)
-        min_score = float(getattr(self._settings, "multiasset_min_score_buy", 12) or 12)
-        min_conf = float(getattr(self._settings, "multiasset_min_confidence", 0.45) or 0.45)
+        # Crypto overnight: softer gates (risk agent often scores negative on vol)
+        if desk == "crypto":
+            min_score = float(getattr(self._settings, "multiasset_crypto_min_score_buy", 5) or 5)
+            min_conf = float(getattr(self._settings, "multiasset_crypto_min_confidence", 0.35) or 0.35)
+        else:
+            min_score = float(getattr(self._settings, "multiasset_min_score_buy", 12) or 12)
+            min_conf = float(getattr(self._settings, "multiasset_min_confidence", 0.45) or 0.45)
 
         buys: list[dict] = []
         sells: list[dict] = []
         holds: list[str] = []
+        scanned: list[dict] = []
 
         # 1) Manage open risk / exits first (cash flow + risk)
         for sym, trade in list(open_by_sym.items()):
@@ -237,20 +244,35 @@ class MultiAssetAutopilotService:
                 continue
             try:
                 brief = await self._desk.brief(desk, item.symbol)
-            except Exception:
+            except Exception as exc:
+                scanned.append({"symbol": item.symbol, "skip": f"brief_failed: {exc}"})
                 continue
+            row = {
+                "symbol": item.symbol,
+                "rec": brief.recommendation,
+                "score": round(brief.score, 1),
+                "confidence": round(brief.confidence or 0, 2),
+            }
             if brief.recommendation != "buy":
+                row["skip"] = f"rec={brief.recommendation}"
+                scanned.append(row)
                 continue
             if brief.score < min_score or (brief.confidence or 0) < min_conf:
+                row["skip"] = f"below_gate score>={min_score} conf>={min_conf}"
+                scanned.append(row)
                 continue
-            # Risk agent veto soft: if any vote strongly negative, skip
+            # Risk veto: crypto needs stronger risk panic (vol always looks high)
+            risk_floor = -35 if desk == "crypto" else -20
             riskish = [
                 v
                 for v in brief.votes
-                if "risk" in v.agent_name and v.score <= -20
+                if "risk" in v.agent_name and v.score <= risk_floor
             ]
-            if riskish and brief.score < min_score + 8:
+            if riskish and brief.score < min_score + (5 if desk == "crypto" else 8):
+                row["skip"] = "risk_veto"
+                scanned.append(row)
                 continue
+            scanned.append({**row, "skip": None})
             candidates.append((brief.score * (brief.confidence or 0.5), item.symbol, brief))
 
         candidates.sort(key=lambda x: -x[0])
@@ -265,9 +287,9 @@ class MultiAssetAutopilotService:
                 confidence=brief.confidence or 0.5,
             )
             if notional <= 0:
+                scanned.append({"symbol": sym, "skip": "no_budget_room"})
                 break
             qty = None
-            # ETF: prefer qty from price when possible
             if desk != "crypto" and brief.entry_hint:
                 qty = round(notional / float(brief.entry_hint), 4)
                 if qty < 0.01:
@@ -304,11 +326,21 @@ class MultiAssetAutopilotService:
             except Exception as exc:
                 buys.append({"symbol": sym, "error": str(exc)})
 
+        reason = None
+        if not buys and not sells:
+            if not candidates:
+                reason = "no_buy_signal"
+            elif slots <= 0:
+                reason = "max_open_reached"
+
         return {
             "budget": round(desk_budget, 2),
             "open_before": len(open_trades),
             "buys": buys,
             "sells": sells,
             "holds": holds,
+            "scanned": scanned,
+            "min_score": min_score,
+            "reason": reason,
             "dry_run": dry_run,
         }

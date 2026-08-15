@@ -173,7 +173,13 @@
         const lines = Object.entries(desks).map(([k, v]) => {
           if (v.error) return `${k}: error ${v.error}`;
           if (v.skipped) return `${k}: ${v.skipped}`;
-          return `${k}: +${(v.buys || []).length} buys / −${(v.sells || []).length} sells (budget $${v.budget})`;
+          let line = `${k}: +${(v.buys || []).length} buys / −${(v.sells || []).length} sells (budget $${v.budget})`;
+          if (v.reason) line += ` · ${v.reason}`;
+          const top = (v.scanned || []).slice(0, 3).map((s) =>
+            `${s.symbol} ${s.rec || ""} score=${s.score ?? "—"}` + (s.skip ? ` (${s.skip})` : "")
+          );
+          if (top.length) line += `\n  ` + top.join(" | ");
+          return line;
         });
         alert(`Deployable $${r.deployable_usd ?? "—"}\n` + lines.join("\n"));
       }

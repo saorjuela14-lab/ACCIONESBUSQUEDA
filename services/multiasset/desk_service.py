@@ -151,9 +151,12 @@ class MultiAssetDeskService:
         den = sum(max(r.confidence, 0.2) for r in reports) or 1.0
         score = num / den
         confidence = sum(r.confidence for r in reports) / len(reports)
-        if score >= 12:
+        # Crypto is noisier — lower bar so overnight autopilot can act
+        buy_bar = 6.0 if desk == "crypto" else 12.0
+        sell_bar = -6.0 if desk == "crypto" else -12.0
+        if score >= buy_bar:
             rec = "buy"
-        elif score <= -12:
+        elif score <= sell_bar:
             rec = "sell"
         else:
             rec = "hold"

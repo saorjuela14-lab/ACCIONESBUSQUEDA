@@ -153,14 +153,18 @@ class Settings(BaseSettings):
     # Overnight / continuous paper autopilot for gold·forex·crypto desks
     multiasset_autopilot_enabled: bool = True
     multiasset_autopilot_interval_minutes: int = 15
-    # True = sim journal only (safe default). False + ALPACA_BETA_* = paper orders.
-    multiasset_autopilot_dry_run: bool = True
+    # False + ALPACA_BETA_* = órdenes paper reales
+    multiasset_autopilot_dry_run: bool = False
     multiasset_sleeve_pct: float = 30.0  # % of paper equity for multi-asset sleeve
     multiasset_cash_reserve_pct: float = 15.0
     multiasset_max_open_per_desk: int = 2
     multiasset_min_score_buy: float = 12.0
     multiasset_min_confidence: float = 0.45
+    multiasset_crypto_min_score_buy: float = 5.0
+    multiasset_crypto_min_confidence: float = 0.35
     multiasset_fallback_equity: float = 10_000.0  # when paper account unread
+    # Cap of multi-asset sleeve in USD (paper $100k → allow meaningful overnight size)
+    multiasset_sleeve_cap_usd: float = 5_000.0
 
     # Client bank transfer INTO the shared firm Alpaca / operating account.
     # Do NOT send clients to app.alpaca.markets login — they only need deposit destination details.
