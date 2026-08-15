@@ -53,8 +53,8 @@ _CRYPTO = DeskStrategy(
     desk="crypto",
     name="Mesa Crypto · Paper",
     thesis=(
-        "Momentum y riesgo en spot crypto 24/7 (BTC/ETH/SOL). "
-        "TIF GTC, fracciones permitidas, sin brackets day de equity."
+        "Compra liderada por técnico de gráfico (EMA/RSI/MACD/volumen/BB) + "
+        "noticias/redes (percepción). Simulación paper 24/7 BTC/ETH/SOL."
     ),
     horizon="intradía–swing 1–7 días",
     max_notional_usd=5_000.0,
@@ -67,8 +67,14 @@ _CRYPTO = DeskStrategy(
         DeskUniverseItem(symbol="ETH/USD", label="Ethereum", asset_class="crypto", notes="spot"),
         DeskUniverseItem(symbol="SOL/USD", label="Solana", asset_class="crypto", notes="spot"),
     ],
-    agent_names=["crypto_momentum_agent", "crypto_sentiment_agent", "crypto_risk_agent"],
-    disclaimer="Beta paper. Crypto spot Alpaca; alta volatilidad.",
+    agent_names=[
+        "crypto_chart_technical_agent",
+        "crypto_news_social_agent",
+        "crypto_momentum_agent",
+        "crypto_sentiment_agent",
+        "crypto_risk_agent",
+    ],
+    disclaimer="Beta paper. Técnico gráfico lidera; noticias/redes confirman percepción.",
 )
 
 DESKS: dict[AssetDeskId, DeskStrategy] = {

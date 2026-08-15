@@ -164,8 +164,14 @@ class MultiAssetAutopilotService:
         strategy = get_desk(desk)
         room = max(0.0, desk_budget - open_notional)
         if desk == "crypto":
-            # Simulation: allow larger clips — split budget across open slots
-            per_slot = desk_budget / max(1, max_open)
+            # Simulation: allow larger clips — ~12% of budget per name, uncapped opens
+            per_slot = max(
+                50.0,
+                min(
+                    float(getattr(self._settings, "multiasset_crypto_max_notional", 25_000) or 25_000),
+                    desk_budget * 0.12,
+                ),
+            )
             strat_cap = float(
                 getattr(self._settings, "multiasset_crypto_max_notional", 0) or 0
             ) or max(float(strategy.max_notional_usd), per_slot)
@@ -205,8 +211,10 @@ class MultiAssetAutopilotService:
         open_notional = sum(
             float(t.entry_price or 0) * float(t.qty or 0) for t in open_trades
         )
-        max_open = int(getattr(self._settings, "multiasset_max_open_per_desk", 3) or 3)
-        # Crypto sim: micro-like gates (same spirit as equity micro consensus)
+        # 0 / negative => unlimited open positions (strategy simulation)
+        raw_max = int(getattr(self._settings, "multiasset_max_open_per_desk", 0) or 0)
+        max_open = 10_000 if raw_max <= 0 else raw_max
+        # Crypto sim: micro-like gates
         if desk == "crypto":
             min_score = float(getattr(self._settings, "multiasset_crypto_min_score_buy", 3) or 3)
             min_conf = float(getattr(self._settings, "multiasset_crypto_min_confidence", 0.30) or 0.30)
@@ -302,7 +310,18 @@ class MultiAssetAutopilotService:
                 row["skip"] = f"below_gate score>={min_score} conf>={min_conf}"
                 scanned.append(row)
                 continue
-            # Crypto simulation: do not hard-veto on vol risk agent (always elevated)
+            # Crypto: require chart technical opportunity (primary agent)
+            if desk == "crypto":
+                chart_vote = next(
+                    (v for v in brief.votes if v.agent_name == "crypto_chart_technical_agent"),
+                    None,
+                )
+                if chart_vote is None or chart_vote.score < 6:
+                    row["skip"] = (
+                        f"chart_gate score={chart_vote.score if chart_vote else 'n/a'} (need≥6)"
+                    )
+                    scanned.append(row)
+                    continue
             if desk != "crypto":
                 riskish = [
                     v

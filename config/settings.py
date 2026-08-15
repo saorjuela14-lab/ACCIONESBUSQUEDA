@@ -157,7 +157,7 @@ class Settings(BaseSettings):
     multiasset_autopilot_dry_run: bool = False
     multiasset_sleeve_pct: float = 30.0  # % of paper equity for multi-asset sleeve
     multiasset_cash_reserve_pct: float = 15.0
-    multiasset_max_open_per_desk: int = 3
+    multiasset_max_open_per_desk: int = 0  # 0 = unlimited (strategy simulation)
     multiasset_min_score_buy: float = 12.0
     multiasset_min_confidence: float = 0.45
     # Crypto sim gates — aligned with equity micro softness

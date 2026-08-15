@@ -146,15 +146,48 @@ class MultiAssetDeskService:
         if not reports:
             raise RuntimeError("Ningún agente respondió")
 
-        # Weighted average by confidence
-        num = sum(r.score * max(r.confidence, 0.2) for r in reports)
-        den = sum(max(r.confidence, 0.2) for r in reports) or 1.0
+        # Crypto: chart technical leads; news/social next; others support
+        _CRYPTO_WEIGHTS = {
+            "crypto_chart_technical_agent": 2.6,
+            "crypto_news_social_agent": 1.6,
+            "crypto_momentum_agent": 1.0,
+            "crypto_sentiment_agent": 0.9,
+            "crypto_risk_agent": 0.5,
+        }
+
+        def _w(r) -> float:
+            base = max(r.confidence, 0.2)
+            if desk == "crypto":
+                return base * float(_CRYPTO_WEIGHTS.get(r.agent_name, 1.0))
+            return base
+
+        num = sum(r.score * _w(r) for r in reports)
+        den = sum(_w(r) for r in reports) or 1.0
         score = num / den
         confidence = sum(r.confidence for r in reports) / len(reports)
-        # Crypto is noisier — micro-like bar so overnight sim can act (equity micro ~soft majority)
+
+        chart = next((r for r in reports if r.agent_name == "crypto_chart_technical_agent"), None)
+        news = next((r for r in reports if r.agent_name == "crypto_news_social_agent"), None)
+
         buy_bar = 3.0 if desk == "crypto" else 12.0
         sell_bar = -3.0 if desk == "crypto" else -12.0
-        if score >= buy_bar:
+        if desk == "crypto":
+            # Primary gate: chart must not be clearly against the trade
+            chart_ok = chart is None or chart.score >= -2
+            chart_lead = chart is not None and chart.score >= 6
+            news_boost = news is not None and news.score >= 8
+            if chart_lead and score >= buy_bar and chart_ok:
+                rec = "buy"
+            elif chart_lead and news_boost and score >= buy_bar - 1:
+                rec = "buy"  # chart + narrative alignment
+            elif score <= sell_bar and (chart is None or chart.score <= -6):
+                rec = "sell"
+            else:
+                rec = "hold"
+                if chart is not None and chart.score < 6 and score >= buy_bar:
+                    # Block committee buy without chart opportunity
+                    rec = "hold"
+        elif score >= buy_bar:
             rec = "buy"
         elif score <= sell_bar:
             rec = "sell"

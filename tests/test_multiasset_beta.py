@@ -38,6 +38,9 @@ def test_desks_catalog_independent():
     assert gold.agent_names != fx.agent_names != crypto.agent_names
     assert crypto.time_in_force == "gtc"
     assert len(gold.agent_names) == 3
+    assert "crypto_chart_technical_agent" in crypto.agent_names
+    assert "crypto_news_social_agent" in crypto.agent_names
+    assert len(crypto.agent_names) >= 4
 
 
 def test_list_desks_payload():
