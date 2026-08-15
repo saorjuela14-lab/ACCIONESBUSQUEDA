@@ -287,6 +287,23 @@ class SchedulerService:
                 logger.info("scheduler.multiasset_mtm", **result)
                 break
 
+    async def _run_multiasset_autopilot(self) -> None:
+        if not self._settings.multiasset_beta_enabled:
+            return
+        if not getattr(self._settings, "multiasset_autopilot_enabled", True):
+            return
+        async for session in get_session():
+            from services.multiasset.autopilot import MultiAssetAutopilotService
+
+            result = await MultiAssetAutopilotService(session).run(actor="scheduler")
+            logger.info(
+                "scheduler.multiasset_autopilot",
+                skipped=result.get("skipped"),
+                deployable=result.get("deployable_usd"),
+                desks=list((result.get("desks") or {}).keys()),
+            )
+            break
+
     async def _run_status_briefing(self, session_kind: str) -> None:
         """WhatsApp/Telegram portfolio status at market open or close."""
         if not self._settings.whatsapp_briefing_enabled:
@@ -463,6 +480,24 @@ class SchedulerService:
                 replace_existing=True,
             )
 
+        # Multi-asset beta desks (gold / forex / crypto) — capital-aware paper/sim loop
+        if (
+            self._settings.multiasset_beta_enabled
+            and getattr(self._settings, "multiasset_autopilot_enabled", True)
+        ):
+            ma_every = int(
+                getattr(self._settings, "multiasset_autopilot_interval_minutes", 30) or 30
+            )
+            if ma_every > 0:
+                self._scheduler.add_job(
+                    self._run_multiasset_autopilot,
+                    IntervalTrigger(minutes=ma_every),
+                    id="multiasset_autopilot",
+                    replace_existing=True,
+                    misfire_grace_time=20 * 60,
+                    coalesce=True,
+                )
+
         self._scheduler.start()
         logger.info(
             "scheduler.started",
@@ -474,6 +509,9 @@ class SchedulerService:
             autopilot_interval=autopilot_every,
             firm_autonomy=self._settings.firm_autonomy,
             whatsapp_briefing=self._settings.whatsapp_briefing_schedule,
+            multiasset_autopilot_interval=getattr(
+                self._settings, "multiasset_autopilot_interval_minutes", None
+            ),
         )
 
     def stop(self) -> None:

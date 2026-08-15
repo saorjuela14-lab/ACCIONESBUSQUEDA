@@ -162,6 +162,29 @@
     }
   }
 
+  async function runAutopilot() {
+    try {
+      $("#desk-broker").textContent = "Autopilot multi-asset corriendo…";
+      const r = await api(`${API}/beta/multiasset/autopilot/run`, { method: "POST", body: "{}" });
+      if (r.skipped) {
+        alert(`Autopilot omitido: ${r.skipped}`);
+      } else {
+        const desks = r.desks || {};
+        const lines = Object.entries(desks).map(([k, v]) => {
+          if (v.error) return `${k}: error ${v.error}`;
+          if (v.skipped) return `${k}: ${v.skipped}`;
+          return `${k}: +${(v.buys || []).length} buys / −${(v.sells || []).length} sells (budget $${v.budget})`;
+        });
+        alert(`Deployable $${r.deployable_usd ?? "—"}\n` + lines.join("\n"));
+      }
+      await loadStatus();
+      await loadHistory();
+      await loadStats();
+    } catch (e) {
+      alert(e.message || String(e));
+    }
+  }
+
   async function submitOrder(ev) {
     ev.preventDefault();
     const msg = $("#order-msg");
@@ -210,6 +233,7 @@
   $("#btn-history").onclick = loadHistory;
   $("#btn-stats").onclick = loadStats;
   $("#btn-evaluate").onclick = runEvaluate;
+  $("#btn-autopilot") && ($("#btn-autopilot").onclick = runAutopilot);
   $("#order-form").onsubmit = submitOrder;
 
   (async () => {

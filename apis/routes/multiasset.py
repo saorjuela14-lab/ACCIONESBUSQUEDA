@@ -111,3 +111,12 @@ async def evaluate_open(
     if hours is None:
         hours = float(get_settings().multiasset_eval_hours or 24)
     return await MultiAssetTradeTracker(session).evaluate_open_mtm(min_age_hours=hours)
+
+
+@router.post("/beta/multiasset/autopilot/run")
+async def run_multiasset_autopilot(session: AsyncSession = Depends(get_session)):
+    """One capital-aware cycle across gold / forex / crypto paper desks."""
+    _enabled()
+    from services.multiasset.autopilot import MultiAssetAutopilotService
+
+    return await MultiAssetAutopilotService(session).run(actor="api")

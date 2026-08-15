@@ -273,3 +273,77 @@ def test_client_forbidden_includes_beta_api():
     from apis.middleware.access_auth import CLIENT_FORBIDDEN_PREFIXES
 
     assert "/api/v1/beta" in CLIENT_FORBIDDEN_PREFIXES
+
+
+@pytest.mark.asyncio
+async def test_autopilot_capital_aware_dry_cycle(session: AsyncSession, monkeypatch):
+    monkeypatch.setenv("MULTIASSET_BETA_ENABLED", "true")
+    monkeypatch.setenv("MULTIASSET_AUTOPILOT_ENABLED", "true")
+    monkeypatch.setenv("MULTIASSET_AUTOPILOT_DRY_RUN", "true")
+    from config.settings import get_settings
+
+    get_settings.cache_clear()
+
+    from domain.multiasset import DeskBrief, AgentVote
+    from services.multiasset.autopilot import MultiAssetAutopilotService
+
+    brief_buy = DeskBrief(
+        desk="crypto",
+        symbol="BTC/USD",
+        recommendation="buy",
+        confidence=0.7,
+        score=25.0,
+        summary="momentum",
+        entry_hint=50000.0,
+        stop_hint=46000.0,
+        target_hint=58000.0,
+        votes=[
+            AgentVote(
+                agent_name="crypto_momentum_agent",
+                label_es="m",
+                score=30,
+                confidence=0.6,
+                summary="up",
+            )
+        ],
+    )
+
+    mock_broker = MagicMock()
+    mock_broker.is_configured.return_value = False
+
+    async def fake_brief(self, desk, symbol):
+        if desk == "crypto" and "BTC" in symbol:
+            b = brief_buy.model_copy()
+            b.desk = desk
+            b.symbol = symbol
+            return b
+        return DeskBrief(
+            desk=desk,
+            symbol=symbol,
+            recommendation="hold",
+            confidence=0.4,
+            score=0,
+            summary="flat",
+            entry_hint=100.0,
+        )
+
+    with (
+        patch("services.multiasset.autopilot.get_beta_broker_provider", return_value=mock_broker),
+        patch("services.multiasset.desk_service.get_beta_broker_provider", return_value=mock_broker),
+        patch("services.multiasset.autopilot.KillSwitchService.is_active", AsyncMock(return_value=False)),
+        patch("services.multiasset.autopilot.is_market_open", return_value=False),
+        patch.object(MultiAssetDeskService, "brief", fake_brief),
+        patch(
+            "services.multiasset.desk_service.quote_symbol",
+            AsyncMock(return_value={"symbol": "BTC/USD", "current_price": 50000.0}),
+        ),
+    ):
+        result = await MultiAssetAutopilotService(session).run(actor="test")
+        assert result.get("skipped") is None
+        assert result["deployable_usd"] >= 0
+        crypto = result["desks"]["crypto"]
+        assert crypto.get("dry_run") is True
+        # Weekend: gold/forex may still sim; crypto should attempt buys if score passes
+        assert isinstance(crypto.get("buys"), list)
+
+    get_settings.cache_clear()

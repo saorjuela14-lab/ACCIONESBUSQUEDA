@@ -150,6 +150,17 @@ class Settings(BaseSettings):
     multiasset_beta_max_notional: float = 500.0
     # Hours before mark-to-market evaluates an open multi-asset trade brief
     multiasset_eval_hours: float = 24.0
+    # Overnight / continuous paper autopilot for gold·forex·crypto desks
+    multiasset_autopilot_enabled: bool = True
+    multiasset_autopilot_interval_minutes: int = 30
+    # True = sim journal only (safe default). False + ALPACA_BETA_* = paper orders.
+    multiasset_autopilot_dry_run: bool = True
+    multiasset_sleeve_pct: float = 30.0  # % of paper equity for multi-asset sleeve
+    multiasset_cash_reserve_pct: float = 15.0
+    multiasset_max_open_per_desk: int = 2
+    multiasset_min_score_buy: float = 12.0
+    multiasset_min_confidence: float = 0.45
+    multiasset_fallback_equity: float = 10_000.0  # when paper account unread
 
     # Client bank transfer INTO the shared firm Alpaca / operating account.
     # Do NOT send clients to app.alpaca.markets login — they only need deposit destination details.
