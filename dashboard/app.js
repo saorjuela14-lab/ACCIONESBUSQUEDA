@@ -963,9 +963,28 @@ async function loadAgentEffectiveness() {
         lessonsEl.classList.remove("muted");
       }
     }
+    const lastCloseEl = $("#agent-effectiveness-last-close");
+    const last = r.last_close_review || {};
+    if (lastCloseEl) {
+      if (!last.symbol) {
+        lastCloseEl.textContent = "Último cierre: todavía no hay. AMC abierto se puntúa a los miembros al cerrar.";
+      } else {
+        const pnl = last.pnl_pct != null ? `${Number(last.pnl_pct) >= 0 ? "+" : ""}${last.pnl_pct}%` : "—";
+        const verd = last.was_correct ? "acierto de la mesa" : "error de la mesa";
+        const ok = (last.right || []).join(", ") || "—";
+        const bad = (last.wrong || []).join(", ") || "—";
+        lastCloseEl.classList.remove("muted");
+        lastCloseEl.innerHTML =
+          `<strong>Último cierre ${escapeHtml(last.symbol)}</strong> ${escapeHtml(pnl)} · ${escapeHtml(verd)}` +
+          `<ul>` +
+          `<li>Acertaron: ${escapeHtml(ok)}</li>` +
+          `<li>Fallaron: ${escapeHtml(bad)}</li>` +
+          `</ul>`;
+      }
+    }
     if (note) {
       const db = r.durable_db ? "DB persistente" : "SQLite efímero — Neon requerido para que la memoria sobreviva al redeploy";
-      note.textContent = `${db}. Ventana 1 día. Umbral score ±${r.score_threshold}. ${r.method || ""} ${r.disclaimer || ""}`;
+      note.textContent = `${db}. Ventana 1 día. Miembros se puntúan al cerrar cada trade. ${r.disclaimer || ""}`;
     }
   } catch (e) {
     sumEl.textContent = "Efectividad: " + (e.message || "no disponible");

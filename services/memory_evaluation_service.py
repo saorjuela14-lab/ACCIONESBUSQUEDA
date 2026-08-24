@@ -106,22 +106,37 @@ class MemoryEvaluationService:
         return abs(return_pct) < hit  # hold
 
     async def _recalibrate_agent_weights(self, record, was_correct: bool) -> None:
-        if not get_settings().agent_weights_auto_calibrate:
-            return
+        await recalibrate_agent_weights(self._memory, record.scores or {}, was_correct)
 
-        # Daily loop: slightly stronger on misses so tomorrow's committee shifts.
-        adjustment = 0.04 if was_correct else -0.07
-        weights = await self._memory.get_agent_weights()
-        if not weights:
-            from agents.investment_director import InvestmentDirector
-            weights = dict(InvestmentDirector.DEFAULT_WEIGHTS)
 
-        for agent_name, score in record.scores.items():
-            if agent_name not in weights:
-                continue
-            agent_was_right = (score > 0 and was_correct) or (score < 0 and not was_correct)
-            delta = adjustment if agent_was_right else -abs(adjustment) * (0.5 if was_correct else 0.7)
-            new_weight = max(0.4, min(1.8, weights.get(agent_name, 1.0) + delta))
-            weights[agent_name] = new_weight
-            accuracy = 0.62 if agent_was_right else 0.38
-            await self._memory.update_agent_weight(agent_name, new_weight, accuracy)
+async def recalibrate_agent_weights(
+    memory_repo: InvestmentMemoryRepository,
+    scores: dict,
+    was_correct: bool,
+) -> None:
+    """Nudge committee weights after a scored outcome (thesis or closed trade)."""
+    if not get_settings().agent_weights_auto_calibrate:
+        return
+    if not isinstance(scores, dict) or not scores:
+        return
+
+    adjustment = 0.04 if was_correct else -0.07
+    weights = await memory_repo.get_agent_weights()
+    if not weights:
+        from agents.investment_director import InvestmentDirector
+
+        weights = dict(InvestmentDirector.DEFAULT_WEIGHTS)
+
+    for agent_name, raw in scores.items():
+        if agent_name not in weights:
+            continue
+        try:
+            score = float(raw)
+        except (TypeError, ValueError):
+            continue
+        agent_was_right = (score > 0 and was_correct) or (score < 0 and not was_correct)
+        delta = adjustment if agent_was_right else -abs(adjustment) * (0.5 if was_correct else 0.7)
+        new_weight = max(0.4, min(1.8, weights.get(agent_name, 1.0) + delta))
+        weights[agent_name] = new_weight
+        accuracy = 0.62 if agent_was_right else 0.38
+        await memory_repo.update_agent_weight(agent_name, new_weight, accuracy)

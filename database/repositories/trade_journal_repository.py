@@ -99,6 +99,7 @@ class TradeJournalRepository:
         exit_price: float,
         exit_reason: str | None = None,
         closed_at: datetime | None = None,
+        fill_entry_price: float | None = None,
     ) -> TradeJournalEntry | None:
         open_entry = await self.get_open(symbol)
         if not open_entry:
@@ -106,6 +107,8 @@ class TradeJournalRepository:
         row = await self._session.get(TradeJournalORM, open_entry.id)
         if not row:
             return None
+        if fill_entry_price is not None and float(fill_entry_price) > 0:
+            row.entry_price = float(fill_entry_price)
         entry_px = float(row.entry_price or 0)
         qty = float(row.qty or 0)
         exit_px = float(exit_price)
@@ -127,6 +130,13 @@ class TradeJournalRepository:
         row.r_multiple = r_mult
         await self._session.commit()
         return self._to_domain(row)
+
+    async def save_meta(self, entry_id: str, meta: dict) -> None:
+        row = await self._session.get(TradeJournalORM, entry_id)
+        if not row:
+            return
+        row.meta_json = json.dumps(meta or {}, default=str)
+        await self._session.commit()
 
     async def list_closed(self, *, limit: int = 40, days: int | None = 90) -> list[TradeJournalEntry]:
         q = select(TradeJournalORM).where(TradeJournalORM.status == "closed")

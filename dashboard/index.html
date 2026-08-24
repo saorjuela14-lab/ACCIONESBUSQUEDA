@@ -27,7 +27,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/styles.css?v=28-daily-learn" />
+  <link rel="stylesheet" href="/dashboard/static/styles.css?v=29-close-review" />
   <!-- Heavy chart libs: defer so login/session UI is not blocked on cold start -->
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script defer src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -316,6 +316,7 @@
         </table>
       </div>
       <div id="agent-effectiveness-lessons" class="desk-lessons muted">Lecciones 24h: cargando…</div>
+      <div id="agent-effectiveness-last-close" class="desk-lessons muted">Último cierre: se puntúa a los miembros cuando AMC (u otro) cierre.</div>
       <p id="agent-effectiveness-note" class="muted digest-disclaimer"></p>
     </section>
 
@@ -646,7 +647,7 @@
 
   <script src="/dashboard/static/reliability.js?v=22-return-ranges"></script>
   <script src="/dashboard/static/voice.js?v=24-speech-money"></script>
-  <script src="/dashboard/static/app.js?v=28-daily-learn"></script>
+  <script src="/dashboard/static/app.js?v=29-close-review"></script>
   <script>
     // Permanently kill service workers — they were serving stale JS/CSS after deploy
     if ("serviceWorker" in navigator) {

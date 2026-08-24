@@ -49,6 +49,75 @@ async def test_journal_open_close_pnl(session: AsyncSession):
 
 
 @pytest.mark.asyncio
+async def test_close_grades_committee_members(session: AsyncSession):
+    from domain.entities import InvestmentMemoryRecord
+    from database.repositories.investment_memory_repository import InvestmentMemoryRepository
+
+    await InvestmentMemoryRepository(session).save(
+        InvestmentMemoryRecord(
+            ticker="AMC",
+            thesis="buy amc",
+            scores={"technical_agent": 20, "news_agent": -15, "macro_agent": 2},
+            confidence=0.6,
+            scenario="base",
+            expected_outcome="up",
+            recommendation="buy",
+            entry_price=2.70,
+        )
+    )
+    svc = TradeJournalService(session)
+    await svc.record_open(
+        symbol="AMC", qty=2, entry_price=2.70, stop_loss=2.48, take_profit=3.13
+    )
+    await svc.record_close(symbol="AMC", exit_price=2.90, exit_reason="take profit")
+    closed = (await svc.list_closed(days=1))[0]
+    review = closed.meta["member_review"]
+    assert review["was_correct"] is True
+    by_name = {m["agent"]: m for m in review["members"]}
+    assert by_name["technical_agent"]["right"] is True
+    assert by_name["news_agent"]["right"] is False
+    assert "macro_agent" not in by_name  # |score| < 5 skipped
+
+    # Losing close grades the other way
+    await svc.record_open(
+        symbol="PLUG", qty=1, entry_price=2.20, stop_loss=2.02, take_profit=2.55
+    )
+    await InvestmentMemoryRepository(session).save(
+        InvestmentMemoryRecord(
+            ticker="PLUG",
+            thesis="buy plug",
+            scores={"technical_agent": 18, "news_agent": -12},
+            confidence=0.5,
+            scenario="base",
+            expected_outcome="up",
+            recommendation="buy",
+            entry_price=2.20,
+        )
+    )
+    await svc.record_close(symbol="PLUG", exit_price=2.10, exit_reason="eod")
+    plug = next(r for r in await svc.list_closed(days=1) if r.symbol == "PLUG")
+    plug_review = plug.meta["member_review"]
+    assert plug_review["was_correct"] is False
+    plug_by = {m["agent"]: m for m in plug_review["members"]}
+    assert plug_by["technical_agent"]["right"] is False
+    assert plug_by["news_agent"]["right"] is True
+
+
+@pytest.mark.asyncio
+async def test_close_uses_fill_entry_price(session: AsyncSession):
+    svc = TradeJournalService(session)
+    await svc.record_open(symbol="AMC", qty=2, entry_price=2.48, stop_loss=2.48)
+    closed = await svc.record_close(
+        symbol="AMC",
+        exit_price=2.67,
+        exit_reason="mark",
+        fill_entry_price=2.6974,
+    )
+    assert closed.entry_price == pytest.approx(2.6974)
+    assert closed.pnl_pct < 0
+
+
+@pytest.mark.asyncio
 async def test_track_record_win_rate(session: AsyncSession):
     repo = TradeJournalRepository(session)
     await repo.open_entry(
