@@ -1,8 +1,8 @@
-"""Grade committee members against realized P&L when a LIVE trade closes."""
+"""Grade committee members by operation outcome (stop vs TP), not P&L dollars."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,9 +20,56 @@ logger = get_logger(__name__)
 FLAG_KEY = "last_close_review"
 _SCORE_THRESHOLD = 5.0
 
+OperationOutcome = Literal["win", "loss", "gestion"]
+
+_WIN_HINTS = ("take-profit", "take profit", "take_profit")
+_LOSS_HINTS = (
+    "stop/trailing",
+    "stop tocado",
+    "trailing tocado",
+    "tesis invalid",
+    "tesis_invalidada",
+    "time-stop",
+    "time_stop",
+)
+_GESTION_HINTS = (
+    "eod",
+    "smart flat",
+    "asegurar_ganancia",
+    "asegurar ganancia",
+    "posición ausente",
+    "posicion ausente",
+    "ausente en alpaca",
+)
+
+
+def classify_operation(entry: TradeJournalEntry) -> tuple[OperationOutcome, str]:
+    """2R desk: the operation is TP (win), stop/tesis (loss), or process close (no verdict)."""
+    reason = (entry.exit_reason or "").lower()
+    exit_px = entry.exit_price
+    stop = entry.stop_loss
+    tp = entry.take_profit
+
+    if any(h in reason for h in _WIN_HINTS):
+        return "win", "take_profit"
+    if any(h in reason for h in _LOSS_HINTS) or (
+        "stop" in reason and "eod" not in reason and "flat" not in reason
+    ):
+        return "loss", "stop" if "tesis" not in reason else "thesis_invalidated"
+    if any(h in reason for h in _GESTION_HINTS):
+        return "gestion", "gestion"
+
+    if tp is not None and exit_px is not None and float(tp) > 0:
+        if float(exit_px) >= float(tp) * 0.995:
+            return "win", "take_profit"
+    if stop is not None and exit_px is not None and float(stop) > 0:
+        if float(exit_px) <= float(stop) * 1.005:
+            return "loss", "stop"
+    return "gestion", "gestion"
+
 
 class TradeCloseReviewService:
-    """Authoritative member scorecard: closed trade P&L, not mark-to-market."""
+    """Scorecard by operation (TP/stop/tesis), never by dollar P&L."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -40,7 +87,7 @@ class TradeCloseReviewService:
         for entry in closed:
             if (entry.meta or {}).get("member_review"):
                 continue
-            if entry.status != "closed" or entry.pnl_pct is None:
+            if entry.status != "closed":
                 continue
             review = await self.review_closed(entry)
             if review:
@@ -54,9 +101,9 @@ class TradeCloseReviewService:
         if isinstance(existing, dict) and existing.get("symbol"):
             return existing
 
-        pnl = float(entry.pnl_pct or 0.0)
-        # Executed book is long-only: a profitable close = the buy call was right.
-        was_correct = pnl > 0
+        outcome, outcome_tag = classify_operation(entry)
+        verdict = outcome != "gestion"
+        was_correct = True if outcome == "win" else False if outcome == "loss" else None
 
         latest = await self._memory.latest_by_ticker([entry.symbol])
         mem = latest.get(entry.symbol.upper())
@@ -75,31 +122,46 @@ class TradeCloseReviewService:
                 continue
             if abs(score) < _SCORE_THRESHOLD:
                 continue
-            agent_right = (score > 0 and was_correct) or (score < 0 and not was_correct)
             label = agent_display_name(agent_name).title()
+            stance = "a_favor" if score > 0 else "en_contra"
+            agent_right: bool | None = None
+            if was_correct is not None:
+                agent_right = (score > 0 and was_correct) or (score < 0 and not was_correct)
             members.append(
                 {
                     "agent": agent_name,
                     "label_es": label,
                     "score": round(score, 1),
+                    "stance": stance,
                     "right": agent_right,
                 }
             )
-            (right if agent_right else wrong).append(label)
-        members.sort(key=lambda m: (not m["right"], -abs(float(m["score"]))))
+            if agent_right is True:
+                right.append(label)
+            elif agent_right is False:
+                wrong.append(label)
+        members.sort(
+            key=lambda m: (
+                m["right"] is not True,
+                -abs(float(m["score"])),
+            )
+        )
 
-        if mem is not None:
+        if mem is not None and was_correct is not None:
             tag = classify_error(rec_label, was_correct)
-            exit_px = entry.exit_price or 0
             notes = (
-                f"Cierre {entry.symbol}: ${entry.entry_price:.4g} → ${exit_px:.4g} "
-                f"({pnl:+.2f}%). {entry.exit_reason or ''}".strip()
+                f"Operación {entry.symbol}: {outcome_tag}. "
+                f"{entry.exit_reason or ''}".strip()
             )
             await self._memory.evaluate(
-                mem.id, was_correct, notes, pnl, error_tag=tag
+                mem.id,
+                was_correct,
+                notes,
+                float(entry.pnl_pct or 0.0),
+                error_tag=tag,
             )
             mem.was_correct = was_correct
-            mem.actual_return_pct = pnl
+            mem.actual_return_pct = entry.pnl_pct
             mem.evaluation_notes = notes
             mem.error_tag = tag
             await recalibrate_agent_weights(self._memory, scores, was_correct)
@@ -109,8 +171,9 @@ class TradeCloseReviewService:
 
         review: dict[str, Any] = {
             "symbol": entry.symbol.upper(),
-            "pnl_pct": round(pnl, 2),
-            "pnl_usd": round(float(entry.pnl_usd), 4) if entry.pnl_usd is not None else None,
+            "outcome": outcome,
+            "outcome_tag": outcome_tag,
+            "verdict": verdict,
             "was_correct": was_correct,
             "recommendation": rec_label,
             "exit_reason": entry.exit_reason,
@@ -127,7 +190,7 @@ class TradeCloseReviewService:
         logger.info(
             "trade_close.member_review",
             symbol=review["symbol"],
-            pnl_pct=review["pnl_pct"],
+            outcome=outcome,
             correct=was_correct,
             right=right,
             wrong=wrong,

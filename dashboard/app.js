@@ -967,24 +967,30 @@ async function loadAgentEffectiveness() {
     const last = r.last_close_review || {};
     if (lastCloseEl) {
       if (!last.symbol) {
-        lastCloseEl.textContent = "Último cierre: todavía no hay. AMC abierto se puntúa a los miembros al cerrar.";
+        lastCloseEl.textContent = "Última operación: AMC sigue abierta — se puntúa al TP o al stop, no por P&L.";
       } else {
-        const pnl = last.pnl_pct != null ? `${Number(last.pnl_pct) >= 0 ? "+" : ""}${last.pnl_pct}%` : "—";
-        const verd = last.was_correct ? "acierto de la mesa" : "error de la mesa";
+        const outcome = last.outcome || "";
+        const label = {
+          win: "operación ganada (take-profit)",
+          loss: "operación perdida (stop / tesis)",
+          gestion: "cierre de gestión — sin veredicto",
+        }[outcome] || outcome || "sin clasificar";
         const ok = (last.right || []).join(", ") || "—";
         const bad = (last.wrong || []).join(", ") || "—";
         lastCloseEl.classList.remove("muted");
+        let extra = "";
+        if (outcome === "win" || outcome === "loss") {
+          extra = `<ul><li>Acertaron: ${escapeHtml(ok)}</li><li>Fallaron: ${escapeHtml(bad)}</li></ul>`;
+        } else {
+          extra = "<ul><li>EOD u otro cierre de proceso: no mueve pesos de miembros.</li></ul>";
+        }
         lastCloseEl.innerHTML =
-          `<strong>Último cierre ${escapeHtml(last.symbol)}</strong> ${escapeHtml(pnl)} · ${escapeHtml(verd)}` +
-          `<ul>` +
-          `<li>Acertaron: ${escapeHtml(ok)}</li>` +
-          `<li>Fallaron: ${escapeHtml(bad)}</li>` +
-          `</ul>`;
+          `<strong>Operación ${escapeHtml(last.symbol || "")}</strong> · ${escapeHtml(label)}` + extra;
       }
     }
     if (note) {
       const db = r.durable_db ? "DB persistente" : "SQLite efímero — Neon requerido para que la memoria sobreviva al redeploy";
-      note.textContent = `${db}. Ventana 1 día. Miembros se puntúan al cerrar cada trade. ${r.disclaimer || ""}`;
+      note.textContent = `${db}. Ventana 1 día. Miembros por operación (TP vs stop), no por P&L. ${r.disclaimer || ""}`;
     }
   } catch (e) {
     sumEl.textContent = "Efectividad: " + (e.message || "no disponible");

@@ -38,13 +38,13 @@ class DeskEffectivenessSummary(BaseModel):
     best_agent: str | None = None
     weakest_agent: str | None = None
     method: str = (
-        "Por cada trade cerrado: el P&L real puntúa a cada miembro (alcista si score > umbral). "
-    "Las tesis no ejecutadas se evalúan al cierre de sesión (~5h / 1.5%). "
-    "La mesa = % de tesis/cierres con was_correct."
+        "Por cada operación cerrada: take-profit = ganada, stop/tesis inválida = perdida. "
+        "Cierres de gestión (EOD, ausente) no puntúan a los miembros. "
+        "La mesa = % de operaciones/tesis con veredicto."
     )
     disclaimer: str = (
         "N pequeño o SQLite efímero → métricas frágiles. "
-        "Los miembros se puntúan al cerrar cada trade (P&L real) y a diario en tesis. "
+        "Los miembros se puntúan por operación (TP vs stop), no por P&L. "
         "Requiere DATABASE_URL persistente (Neon). No es garantía de edge futuro."
     )
     durable_db: bool = False

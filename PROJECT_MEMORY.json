@@ -397,7 +397,7 @@
       "false_long": "avoid ticker 24h on next open picks/autopilot",
       "weights": "agent_weights recalibrated each eval",
       "persist": "desk_lessons table — requires Neon DATABASE_URL",
-      "trade_close_review": "On every LIVE journal close, grade committee members vs realized P&L and write last_close_review"
+      "trade_close_review": "On LIVE close, grade members by operation (take-profit vs stop/thesis), not dollar P&L. EOD/gestion = no verdict."
     }
   },
   "product_surfaces": {

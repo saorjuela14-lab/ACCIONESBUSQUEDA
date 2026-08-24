@@ -8,6 +8,7 @@ from database.repositories.trade_journal_repository import TradeJournalRepositor
 from domain.trade_journal import TradeJournalEntry
 from services.track_record_service import TrackRecordService
 from services.trade_journal_service import TradeJournalService
+from services.trade_close_review_service import classify_operation
 
 
 @pytest.fixture
@@ -72,13 +73,14 @@ async def test_close_grades_committee_members(session: AsyncSession):
     await svc.record_close(symbol="AMC", exit_price=2.90, exit_reason="take profit")
     closed = (await svc.list_closed(days=1))[0]
     review = closed.meta["member_review"]
+    assert review["outcome"] == "win"
     assert review["was_correct"] is True
     by_name = {m["agent"]: m for m in review["members"]}
     assert by_name["technical_agent"]["right"] is True
     assert by_name["news_agent"]["right"] is False
     assert "macro_agent" not in by_name  # |score| < 5 skipped
 
-    # Losing close grades the other way
+    # Stop = operación perdida (not P&L)
     await svc.record_open(
         symbol="PLUG", qty=1, entry_price=2.20, stop_loss=2.02, take_profit=2.55
     )
@@ -94,13 +96,46 @@ async def test_close_grades_committee_members(session: AsyncSession):
             entry_price=2.20,
         )
     )
-    await svc.record_close(symbol="PLUG", exit_price=2.10, exit_reason="eod")
+    await svc.record_close(
+        symbol="PLUG",
+        exit_price=2.02,
+        exit_reason="Stop/trailing tocado @ 2.0200 ≤ 2.0200",
+    )
     plug = next(r for r in await svc.list_closed(days=1) if r.symbol == "PLUG")
     plug_review = plug.meta["member_review"]
+    assert plug_review["outcome"] == "loss"
     assert plug_review["was_correct"] is False
     plug_by = {m["agent"]: m for m in plug_review["members"]}
     assert plug_by["technical_agent"]["right"] is False
     assert plug_by["news_agent"]["right"] is True
+
+    # EOD / gestión: no veredicto por P&L
+    await svc.record_open(
+        symbol="BBAI", qty=2, entry_price=3.20, stop_loss=2.94, take_profit=3.71
+    )
+    await InvestmentMemoryRepository(session).save(
+        InvestmentMemoryRecord(
+            ticker="BBAI",
+            thesis="buy bbai",
+            scores={"technical_agent": 22, "news_agent": -10},
+            confidence=0.5,
+            scenario="base",
+            expected_outcome="up",
+            recommendation="buy",
+            entry_price=3.20,
+        )
+    )
+    await svc.record_close(
+        symbol="BBAI",
+        exit_price=3.17,
+        exit_reason="EOD smart flat: carry_rojo (scheduled_eod_flat)",
+    )
+    bbai = next(r for r in await svc.list_closed(days=1) if r.symbol == "BBAI")
+    bbai_review = bbai.meta["member_review"]
+    assert bbai_review["outcome"] == "gestion"
+    assert bbai_review["was_correct"] is None
+    assert bbai_review["right"] == []
+    assert bbai_review["wrong"] == []
 
 
 @pytest.mark.asyncio
@@ -115,6 +150,24 @@ async def test_close_uses_fill_entry_price(session: AsyncSession):
     )
     assert closed.entry_price == pytest.approx(2.6974)
     assert closed.pnl_pct < 0
+
+
+def test_classify_operation_is_not_pnl():
+    win = TradeJournalEntry(
+        symbol="AMC", qty=2, entry_price=2.7, stop_loss=2.48, take_profit=3.13,
+        exit_price=2.6, exit_reason="Take-profit @ 3.14 ≥ 3.13", status="closed",
+    )
+    loss = TradeJournalEntry(
+        symbol="AMC", qty=2, entry_price=2.7, stop_loss=2.48, take_profit=3.13,
+        exit_price=2.48, exit_reason="Stop/trailing tocado @ 2.48 ≤ 2.48", status="closed",
+    )
+    red_eod = TradeJournalEntry(
+        symbol="AMC", qty=2, entry_price=2.7, stop_loss=2.48, take_profit=3.13,
+        exit_price=2.67, exit_reason="EOD smart flat: asegurar_ganancia:-1.0%", status="closed",
+    )
+    assert classify_operation(win)[0] == "win"
+    assert classify_operation(loss)[0] == "loss"
+    assert classify_operation(red_eod)[0] == "gestion"
 
 
 @pytest.mark.asyncio
