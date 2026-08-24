@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "document": "Monarch Capital — project memory / full system map",
   "purpose": "Single JSON so any human or agent can understand what this project is, how it works, what was built, current live state, brand, pitch, and next focus — without reading the whole repo.",
-  "updated_at": "2026-08-24T22:00:00Z",
+  "updated_at": "2026-08-24T22:35:00Z",
   "language_primary": "es",
   "owner": {
     "name": "Sergio Orjuela",
@@ -396,7 +396,8 @@
       "jobs_et": ["08:15 pre_open", "16:10 close", "17:30 daily_report"],
       "false_long": "avoid ticker 24h on next open picks/autopilot",
       "weights": "agent_weights recalibrated each eval",
-      "persist": "desk_lessons table — requires Neon DATABASE_URL"
+      "persist": "desk_lessons table — requires Neon DATABASE_URL",
+      "trade_close_review": "On every LIVE journal close, grade committee members vs realized P&L and write last_close_review"
     }
   },
   "product_surfaces": {
@@ -575,6 +576,7 @@
       "daily_status_briefing_service",
       "status_briefing_catchup_service",
       "desk_learning_service",
+      "trade_close_review_service",
       "memory_evaluation_service",
       "scheduler_service",
       "capital_fit",

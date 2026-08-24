@@ -217,6 +217,7 @@ class IntradayFlatService:
                                 exit_price=exit_px,
                                 exit_reason=m.exit_reason,
                                 closed_at=m.closed_at,
+                                fill_entry_price=float(pos.avg_entry_price or 0) or None,
                             )
                     except Exception as jexc:
                         logger.warning("trade_journal.close_failed", symbol=sym, error=str(jexc))

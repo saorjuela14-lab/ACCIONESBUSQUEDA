@@ -307,12 +307,16 @@ class SchedulerService:
                 get_market_provider(),
             )
             result = await memory_svc.evaluate_pending()
+            from services.trade_close_review_service import TradeCloseReviewService
+
+            closes = await TradeCloseReviewService(session).review_unreviewed_closes()
             logger.info(
                 "scheduler.daily_learning",
                 via=via,
                 evaluated=result.get("evaluated"),
                 incorrect=result.get("incorrect"),
                 avoid=result.get("avoid_tickers"),
+                close_reviews=len(closes),
             )
             break
 

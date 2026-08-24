@@ -38,13 +38,13 @@ class DeskEffectivenessSummary(BaseModel):
     best_agent: str | None = None
     weakest_agent: str | None = None
     method: str = (
-        "Por cada tesis evaluada: el agente 'llama' alcista si score > umbral, "
-        "bajista si score < -umbral. Acierto = dirección del retorno real coincide. "
-        "La mesa = % de tesis con was_correct (recomendación del comité)."
+        "Por cada trade cerrado: el P&L real puntúa a cada miembro (alcista si score > umbral). "
+    "Las tesis no ejecutadas se evalúan al cierre de sesión (~5h / 1.5%). "
+    "La mesa = % de tesis/cierres con was_correct."
     )
     disclaimer: str = (
         "N pequeño o SQLite efímero → métricas frágiles. "
-        "Evaluación diaria (mismo día / ~5h). Lecciones 24h evitan repetir false_long. "
+        "Los miembros se puntúan al cerrar cada trade (P&L real) y a diario en tesis. "
         "Requiere DATABASE_URL persistente (Neon). No es garantía de edge futuro."
     )
     durable_db: bool = False

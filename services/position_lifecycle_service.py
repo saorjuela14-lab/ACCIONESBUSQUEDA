@@ -391,6 +391,7 @@ class PositionLifecycleService:
                             exit_price=price,
                             exit_reason=decision.reason,
                             closed_at=now,
+                            fill_entry_price=float(m.entry_price or 0) or None,
                         )
                     except Exception as exc:
                         logger.warning(

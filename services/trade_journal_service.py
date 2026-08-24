@@ -58,12 +58,14 @@ class TradeJournalService:
         exit_price: float,
         exit_reason: str | None = None,
         closed_at: datetime | None = None,
+        fill_entry_price: float | None = None,
     ) -> TradeJournalEntry | None:
         closed = await self._repo.close_symbol(
             symbol,
             exit_price=exit_price,
             exit_reason=exit_reason,
             closed_at=closed_at,
+            fill_entry_price=fill_entry_price,
         )
         if closed:
             logger.info(
@@ -73,6 +75,16 @@ class TradeJournalService:
                 pnl_pct=closed.pnl_pct,
                 reason=(exit_reason or "")[:120],
             )
+            try:
+                from services.trade_close_review_service import TradeCloseReviewService
+
+                await TradeCloseReviewService(self._repo._session).review_closed(closed)
+            except Exception as exc:
+                logger.warning(
+                    "trade_close.member_review_failed",
+                    symbol=closed.symbol,
+                    error=str(exc),
+                )
         return closed
 
     async def list_recent(self, limit: int = 40) -> list[TradeJournalEntry]:

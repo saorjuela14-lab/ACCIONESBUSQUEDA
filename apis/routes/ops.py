@@ -293,6 +293,7 @@ async def get_agent_effectiveness(
     """Per-agent directional hit rate + desk thesis hit rate (decision quality)."""
     from services.agent_effectiveness_service import AgentEffectivenessService
     from services.desk_learning_service import DeskLearningService
+    from services.trade_close_review_service import TradeCloseReviewService
 
     summary = await AgentEffectivenessService(
         session, score_threshold=score_threshold
@@ -300,6 +301,7 @@ async def get_agent_effectiveness(
     lessons = await DeskLearningService(session).snapshot()
     payload = summary.model_dump(mode="json")
     payload["lessons"] = lessons
+    payload["last_close_review"] = await TradeCloseReviewService(session).latest()
     return payload
 
 
@@ -317,11 +319,15 @@ async def run_daily_learning(session: AsyncSession = Depends(get_session)):
     from database.repositories.investment_memory_repository import InvestmentMemoryRepository
     from providers.market.factory import get_market_provider
     from services.memory_evaluation_service import MemoryEvaluationService
+    from services.trade_close_review_service import TradeCloseReviewService
 
-    return await MemoryEvaluationService(
+    result = await MemoryEvaluationService(
         InvestmentMemoryRepository(session),
         get_market_provider(),
     ).evaluate_pending()
+    closes = await TradeCloseReviewService(session).review_unreviewed_closes()
+    result["close_reviews"] = closes
+    return result
 
 
 @router.post("/ops/autopilot/promote-live")
