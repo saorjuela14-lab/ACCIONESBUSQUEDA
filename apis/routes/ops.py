@@ -286,16 +286,42 @@ async def get_track_record(
 
 @router.get("/ops/agent-effectiveness", response_model=None)
 async def get_agent_effectiveness(
-    window_days: int = Query(default=90, ge=7, le=730),
+    window_days: int = Query(default=1, ge=1, le=730),
     score_threshold: float = Query(default=5.0, ge=0.0, le=50.0),
     session: AsyncSession = Depends(get_session),
 ):
     """Per-agent directional hit rate + desk thesis hit rate (decision quality)."""
     from services.agent_effectiveness_service import AgentEffectivenessService
+    from services.desk_learning_service import DeskLearningService
 
-    return await AgentEffectivenessService(
+    summary = await AgentEffectivenessService(
         session, score_threshold=score_threshold
     ).summary(window_days=window_days)
+    lessons = await DeskLearningService(session).snapshot()
+    payload = summary.model_dump(mode="json")
+    payload["lessons"] = lessons
+    return payload
+
+
+@router.get("/ops/lessons")
+async def get_desk_lessons(session: AsyncSession = Depends(get_session)):
+    """Active 24h lessons (avoid tickers + notes) for next open."""
+    from services.desk_learning_service import DeskLearningService
+
+    return await DeskLearningService(session).snapshot()
+
+
+@router.post("/ops/learn")
+async def run_daily_learning(session: AsyncSession = Depends(get_session)):
+    """Force same-day memory evaluation + lesson write (ops)."""
+    from database.repositories.investment_memory_repository import InvestmentMemoryRepository
+    from providers.market.factory import get_market_provider
+    from services.memory_evaluation_service import MemoryEvaluationService
+
+    return await MemoryEvaluationService(
+        InvestmentMemoryRepository(session),
+        get_market_provider(),
+    ).evaluate_pending()
 
 
 @router.post("/ops/autopilot/promote-live")

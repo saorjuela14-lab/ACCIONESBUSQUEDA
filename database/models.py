@@ -59,6 +59,7 @@ class InvestmentMemoryORM(Base):
     was_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     evaluation_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     actual_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    error_tag: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
 
 
 class AgentWeightORM(Base):
@@ -68,6 +69,25 @@ class AgentWeightORM(Base):
     weight: Mapped[float] = mapped_column(Float, default=1.0)
     accuracy: Mapped[float] = mapped_column(Float, default=0.5)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class DeskLessonORM(Base):
+    """Durable daily lessons so the desk does not repeat yesterday's errors."""
+
+    __tablename__ = "desk_lessons"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    lesson_type: Mapped[str] = mapped_column(String(32), index=True)  # avoid_ticker | note
+    ticker: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    agent_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_tag: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    recommendation: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    actual_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    memory_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
 
 
 class AlertORM(Base):

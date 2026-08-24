@@ -101,3 +101,4 @@ class InvestmentMemoryRecord(BaseModel):
     was_correct: bool | None = None
     evaluation_notes: str | None = None
     actual_return_pct: float | None = None
+    error_tag: str | None = None

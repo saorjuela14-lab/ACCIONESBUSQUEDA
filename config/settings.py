@@ -102,7 +102,11 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True
     watchlist_scan_interval_minutes: int = 30
     daily_trade_sessions: str = "08:30,11:30"
-    memory_evaluation_days: int = 90
+    # Daily self-eval: same-session theses become ready after N hours (not 90 days).
+    memory_evaluation_days: int = 1
+    memory_evaluation_min_hours: float = 5.0
+    memory_hit_pct: float = 1.5  # daily move that counts as a hit (5% is a 90-day bar)
+    memory_avoid_hours: int = 24  # do not repeat false_long tickers until next open+
     alert_cooldown_hours: int = 24
 
     # Push notifications (optional)

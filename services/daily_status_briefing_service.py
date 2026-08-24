@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from config.settings import get_settings
 from services.alpaca_order_service import AlpacaOrderService
+from services.desk_learning_service import load_lesson_briefing_lines
 from services.push_notification_service import PushNotificationService
 from services.risk_policy_service import RiskPolicyService
 from utils.logging import get_logger
@@ -160,6 +161,15 @@ class DailyStatusBriefingService:
             lines.append("Gestión: cierre — lifecycle/risk revisaron salidas; fin de sesión.")
         else:
             lines.append("Gestión: status manual bajo demanda.")
+
+        if session_kind in ("open", "close", "manual"):
+            try:
+                lesson_lines = await load_lesson_briefing_lines()
+                if lesson_lines:
+                    lines.append("")
+                    lines.extend(lesson_lines)
+            except Exception:
+                pass
 
         lines.append("— Monarch Capital desk")
         return title, "\n".join(lines)

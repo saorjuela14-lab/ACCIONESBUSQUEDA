@@ -28,7 +28,7 @@ class AgentEffectivenessRow(BaseModel):
 
 class DeskEffectivenessSummary(BaseModel):
     as_of: datetime = Field(default_factory=utc_now)
-    window_days: int = 90
+    window_days: int = 1
     score_threshold: float = 5.0
     theses_evaluated: int = 0
     theses_correct: int = 0
@@ -44,7 +44,8 @@ class DeskEffectivenessSummary(BaseModel):
     )
     disclaimer: str = (
         "N pequeño o SQLite efímero → métricas frágiles. "
-        "Evaluación típica tras ~90 días. No es garantía de edge futuro."
+        "Evaluación diaria (mismo día / ~5h). Lecciones 24h evitan repetir false_long. "
+        "Requiere DATABASE_URL persistente (Neon). No es garantía de edge futuro."
     )
     durable_db: bool = False
     meta: dict[str, Any] = Field(default_factory=dict)

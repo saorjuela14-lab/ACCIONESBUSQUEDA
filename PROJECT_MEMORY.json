@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "document": "Monarch Capital — project memory / full system map",
   "purpose": "Single JSON so any human or agent can understand what this project is, how it works, what was built, current live state, brand, pitch, and next focus — without reading the whole repo.",
-  "updated_at": "2026-08-07T17:55:00Z",
+  "updated_at": "2026-08-24T22:00:00Z",
   "language_primary": "es",
   "owner": {
     "name": "Sergio Orjuela",
@@ -186,7 +186,8 @@
       "alpaca_live_brackets",
       "lifecycle_trail_timestop",
       "reconcile_audit",
-      "smart_eod"
+      "smart_eod",
+      "daily_learn_lessons"
     ],
     "discovery": {
       "orchestrator": "CompanyDiscoveryService",
@@ -378,7 +379,7 @@
       "RiskPolicyService.status",
       "HoldingsStrategyReviewService.review",
       "PositionLifecycleService.scan",
-      "DailyTradeRecommendationService.generate",
+      "DailyTradeRecommendationService.generate (exclude 24h lesson tickers)",
       "AutoExecuteService.run_from_picks",
       "WhatsApp briefing catch-up"
     ],
@@ -388,6 +389,14 @@
       "min_pnl_pct_to_close": 0,
       "carry_max_loss_pct": 8,
       "behavior": "Bank greens/flat; carry moderate reds overnight; cut ≤−8% or sell thesis"
+    },
+    "daily_learn_lessons": {
+      "evaluate_hours": 5,
+      "hit_pct": 1.5,
+      "jobs_et": ["08:15 pre_open", "16:10 close", "17:30 daily_report"],
+      "false_long": "avoid ticker 24h on next open picks/autopilot",
+      "weights": "agent_weights recalibrated each eval",
+      "persist": "desk_lessons table — requires Neon DATABASE_URL"
     }
   },
   "product_surfaces": {
@@ -565,6 +574,8 @@
       "voice_command_service",
       "daily_status_briefing_service",
       "status_briefing_catchup_service",
+      "desk_learning_service",
+      "memory_evaluation_service",
       "scheduler_service",
       "capital_fit",
       "strategy_lab",
@@ -577,6 +588,7 @@
       "watchlist",
       "portfolios",
       "investment_memory",
+      "desk_lessons",
       "agent_weights",
       "alerts",
       "daily_trade_reports",
@@ -612,6 +624,10 @@
       "intraday_flat_winners_only": true,
       "intraday_carry_max_loss_pct": 8,
       "whatsapp_briefing_times": "09:35,12:30,16:05",
+      "memory_evaluation_days": 1,
+      "memory_evaluation_min_hours": 5,
+      "memory_hit_pct": 1.5,
+      "memory_avoid_hours": 24,
       "database_url_default": "sqlite+aiosqlite:///./data/nexbuy.db"
     },
     "env_keys_critical": [
@@ -791,7 +807,7 @@
   "pending_and_recommended_next": [
     "Keep live book transparent for pitch (equity, vs yesterday, open position, gates ON)",
     "If logo still imperfect vs owner's exact file, replace dashboard/assets/logo.png + mark.png from source PNG",
-    "Railway always-on + Neon for production resilience",
+    "Railway always-on + Neon for production resilience (daily lessons die on SQLite redeploy)",
     "Fill Shark Tank ask (amount + equity %) in Canva/oral before the day",
     "Optional: deepen Canva visuals with official crown logo asset once public URL available"
   ],

@@ -1,6 +1,6 @@
 {
   "documento": "Monarch Capital — handoff corto (ops)",
-  "actualizado": "2026-08-07",
+  "actualizado": "2026-08-24",
   "owner": "Sergio Orjuela",
   "producto": "Monarch Capital (ex NexBuy) — Terminal CEO / escritorio autónomo LIVE",
   "repo": "https://github.com/saorjuela14-lab/ACCIONESBUSQUEDA",
@@ -51,6 +51,8 @@
     "POST /api/v1/ops/kill-switch/on",
     "POST /api/v1/ops/reconcile",
     "GET /api/v1/broker/status",
-    "GET /api/v1/risk/status"
+    "GET /api/v1/risk/status",
+    "GET /api/v1/ops/lessons",
+    "POST /api/v1/ops/learn"
   ]
 }

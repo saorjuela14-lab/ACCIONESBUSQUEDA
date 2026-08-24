@@ -903,11 +903,13 @@ async function loadAgentEffectiveness() {
   const sumEl = $("#agent-effectiveness-summary");
   const body = $("#agent-effectiveness-body");
   const note = $("#agent-effectiveness-note");
+  const lessonsEl = $("#agent-effectiveness-lessons");
   if (!sumEl || !isDeskPrincipal()) return;
   sumEl.textContent = "Cargando acierto por agente…";
   if (body) body.innerHTML = `<tr><td colspan="5">Cargando…</td></tr>`;
+  if (lessonsEl) lessonsEl.textContent = "Lecciones 24h: cargando…";
   try {
-    const r = await api(`${API}/ops/agent-effectiveness?window_days=90&score_threshold=5`);
+    const r = await api(`${API}/ops/agent-effectiveness?window_days=1&score_threshold=5`);
     const desk = r.desk_hit_rate_pct != null
       ? `${r.desk_hit_rate_pct}% (${r.theses_correct}/${r.theses_evaluated})`
       : "—";
@@ -920,7 +922,7 @@ async function loadAgentEffectiveness() {
     sumEl.classList.remove("muted");
     sumEl.innerHTML =
       `<div class="track-kpis">` +
-      `<div><label>Mesa (tesis)</label><strong>${escapeHtml(desk)}</strong></div>` +
+      `<div><label>Mesa hoy</label><strong>${escapeHtml(desk)}</strong></div>` +
       `<div><label>Pendientes eval.</label><strong>${r.theses_pending || 0}</strong></div>` +
       `<div><label>Mejor (≥3n)</label><strong>${escapeHtml(String(best))}</strong></div>` +
       `<div><label>Más débil</label><strong>${escapeHtml(String(weak))}</strong></div>` +
@@ -944,9 +946,26 @@ async function loadAgentEffectiveness() {
           `</tr>`;
       }).join("");
     }
+    const lessons = r.lessons || {};
+    const avoids = lessons.avoids || [];
+    const notes = lessons.notes || [];
+    if (lessonsEl) {
+      if (!avoids.length && !notes.length) {
+        lessonsEl.textContent = "Lecciones 24h: ninguna activa — la mesa no está bloqueando tickers por errores recientes.";
+      } else {
+        const items = [
+          ...avoids.map((x) => `No repetir ${x.ticker || "?"} (${x.error_tag || "error"}): ${(x.reason || "").slice(0, 140)}`),
+          ...notes.map((x) => (x.reason || "").slice(0, 160)),
+        ].filter(Boolean);
+        lessonsEl.innerHTML = `<strong>Lecciones 24h</strong><ul>` +
+          items.map((t) => `<li>${escapeHtml(t)}</li>`).join("") +
+          `</ul>`;
+        lessonsEl.classList.remove("muted");
+      }
+    }
     if (note) {
-      const db = r.durable_db ? "DB persistente" : "SQLite efímero";
-      note.textContent = `${db}. Umbral score ±${r.score_threshold}. ${r.method || ""} ${r.disclaimer || ""}`;
+      const db = r.durable_db ? "DB persistente" : "SQLite efímero — Neon requerido para que la memoria sobreviva al redeploy";
+      note.textContent = `${db}. Ventana 1 día. Umbral score ±${r.score_threshold}. ${r.method || ""} ${r.disclaimer || ""}`;
     }
   } catch (e) {
     sumEl.textContent = "Efectividad: " + (e.message || "no disponible");

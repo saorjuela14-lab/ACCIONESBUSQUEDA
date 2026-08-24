@@ -241,10 +241,26 @@ class AnalysisService:
 
             score = 0.0
             rec = (record.recommendation or "").lower()
+            miss = record.was_correct is False
+            hit = record.was_correct is True
+            recent = self._memory_is_recent(record)
+            lesson = await self._active_lesson(ticker)
+
+            # A failed BUY must not stay bullish — otherwise the desk repeats the error.
             if rec in ("buy", "strong_buy"):
-                score = 15.0
+                if miss:
+                    score = -25.0 if recent else -12.0
+                elif hit:
+                    score = 20.0 if recent else 15.0
+                else:
+                    score = 15.0
             elif rec in ("sell", "strong_sell"):
-                score = -20.0
+                if miss:
+                    score = 8.0 if recent else 0.0
+                elif hit:
+                    score = -25.0 if recent else -20.0
+                else:
+                    score = -20.0
             findings = [
                 Finding(
                     category=EvidenceCategory.FACT,
@@ -257,26 +273,39 @@ class AnalysisService:
                     references=[],
                 )
             ]
-            if record.was_correct is True:
+            if hit:
                 findings.append(
                     Finding(
                         category=EvidenceCategory.INTERPRETATION,
-                        statement="Evaluación histórica: tesis previa acertada.",
+                        statement="Evaluación: tesis previa acertada — sesgo a favor.",
                         confidence=0.8,
                         references=[],
                     )
                 )
-                score += 5
-            elif record.was_correct is False:
+            elif miss:
+                tag = record.error_tag or "error"
                 findings.append(
                     Finding(
                         category=EvidenceCategory.RISK,
-                        statement="Evaluación histórica: tesis previa incorrecta — cautela.",
-                        confidence=0.85,
+                        statement=(
+                            f"Lección: tesis previa incorrecta ({tag}). "
+                            "No repetir el mismo sesgo en esta apertura."
+                        ),
+                        confidence=0.9,
                         references=[],
                     )
                 )
-                score -= 10
+            if lesson is not None:
+                findings.append(
+                    Finding(
+                        category=EvidenceCategory.RISK,
+                        statement=f"Lección 24h activa: {(getattr(lesson, 'reason', '') or '')[:180]}",
+                        confidence=0.92,
+                        references=[],
+                    )
+                )
+                if getattr(lesson, "lesson_type", "") == "avoid_ticker":
+                    score -= 15
             return AgentReport(
                 agent_name="investment_memory",
                 ticker=ticker.upper(),
@@ -286,11 +315,44 @@ class AnalysisService:
                 risks=[],
                 opportunities=[],
                 references=[],
-                raw_data={"prior_recommendation": record.recommendation, "record_id": record.id},
+                raw_data={
+                    "prior_recommendation": record.recommendation,
+                    "record_id": record.id,
+                    "was_correct": record.was_correct,
+                    "error_tag": record.error_tag,
+                    "recent_lesson": bool(lesson),
+                },
                 summary=f"Memoria: {record.recommendation} · {(record.expected_outcome or '')[:80]}",
             )
         except Exception as exc:
             logger.warning("analysis.memory_context_failed", error=str(exc))
+            return None
+
+    def _memory_is_recent(self, record) -> bool:
+        from datetime import datetime, timedelta, timezone
+
+        from config.settings import get_settings
+
+        try:
+            hours = float(get_settings().memory_avoid_hours or 24)
+            ts = record.evaluated_at or record.created_at
+            if not isinstance(ts, datetime):
+                return False
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            return datetime.now(timezone.utc) - ts <= timedelta(hours=hours)
+        except Exception:
+            return False
+
+    async def _active_lesson(self, ticker: str):
+        session = getattr(self._memory_repo, "_session", None)
+        if session is None:
+            return None
+        try:
+            from services.desk_learning_service import DeskLearningService
+
+            return await DeskLearningService(session).latest_for_ticker(ticker)
+        except Exception:
             return None
 
     async def _maybe_invalidate_on_sell(
