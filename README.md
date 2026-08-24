@@ -224,7 +224,7 @@ python main.py scheduler
 
 ```bash
 docker build -t nexbuy-ceo .
-docker run -p 8000:8000 -e DASHBOARD_ACCESS_TOKEN=Portafolio111 nexbuy-ceo
+docker run -p 8000:8000 -e DASHBOARD_ACCESS_TOKEN=cambia_este_token nexbuy-ceo
 ```
 
 ## API Endpoints
@@ -332,7 +332,7 @@ Tras el deploy verás una URL tipo:
 | `https://TU-APP.fastapicloud.dev/login` | Pantalla de acceso |
 | `https://TU-APP.fastapicloud.dev/dashboard` | Panel CEO (PWA, móvil y escritorio) |
 
-- Token de acceso: **`Portafolio111`**
+- Token de acceso: variable **`DASHBOARD_ACCESS_TOKEN`** en FastAPI Cloud (márcala Secret). **Nunca** la subas al repo ni al README.
 - En el celular: abre `/login`, entra con el token y usa **Añadir a pantalla de inicio** (PWA).
 
 ### Cómo pedir cambios sin PC local
