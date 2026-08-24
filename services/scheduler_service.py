@@ -126,7 +126,11 @@ class SchedulerService:
                 trade_repo=DailyTradeRepository(session),
                 analysis_service=build_analysis_service(session),
             )
-            report = await service.generate(session=session_label, persist=True)
+            report = await service.generate(
+                session=session_label,
+                persist=True,
+                exclude_tickers=await self._lesson_excludes(session),
+            )
             logger.info(
                 "scheduler.daily_trade",
                 session=session_label,
@@ -152,6 +156,14 @@ class SchedulerService:
             if self._settings.auto_execute_trades and report.picks:
                 await self._maybe_auto_execute(report, session)
             break
+
+    async def _lesson_excludes(self, session) -> list[str]:
+        try:
+            from services.desk_learning_service import DeskLearningService
+
+            return await DeskLearningService(session).avoid_tickers()
+        except Exception:
+            return []
 
     async def _maybe_auto_execute(self, report, session) -> None:
         from services.auto_execute_service import AutoExecuteService
@@ -287,6 +299,23 @@ class SchedulerService:
                 logger.info("scheduler.multiasset_mtm", **result)
                 break
 
+    async def _run_daily_learning(self, via: str = "close") -> None:
+        """Evaluate ready theses and persist 24h lessons before the next open."""
+        async for session in get_session():
+            memory_svc = MemoryEvaluationService(
+                InvestmentMemoryRepository(session),
+                get_market_provider(),
+            )
+            result = await memory_svc.evaluate_pending()
+            logger.info(
+                "scheduler.daily_learning",
+                via=via,
+                evaluated=result.get("evaluated"),
+                incorrect=result.get("incorrect"),
+                avoid=result.get("avoid_tickers"),
+            )
+            break
+
     async def _run_multiasset_autopilot(self) -> None:
         if not self._settings.multiasset_beta_enabled:
             return
@@ -385,6 +414,26 @@ class SchedulerService:
             CronTrigger(hour=17, minute=30, timezone=tz),
             id="daily_investment_report",
             replace_existing=True,
+        )
+
+        # Same-day learning after cash close (before next open picks at 08:30)
+        self._scheduler.add_job(
+            self._run_daily_learning,
+            CronTrigger(hour=16, minute=10, timezone=tz),
+            args=["close"],
+            id="daily_learning_close",
+            replace_existing=True,
+            misfire_grace_time=90 * 60,
+            coalesce=True,
+        )
+        self._scheduler.add_job(
+            self._run_daily_learning,
+            CronTrigger(hour=8, minute=15, timezone=tz),
+            args=["pre_open"],
+            id="daily_learning_pre_open",
+            replace_existing=True,
+            misfire_grace_time=45 * 60,
+            coalesce=True,
         )
 
         # Exactly 3 WhatsApp/Telegram status messages: open, lunch, close (ET)

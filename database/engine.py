@@ -125,6 +125,14 @@ async def _migrate_schema(conn, url: str) -> None:
             )
             logger.info("db.migrate.add_column", table="organizations", column="withdrawal_note")
 
+    # Daily learning: error_tag on investment_memory
+    imcols = await cols("investment_memory")
+    if imcols and "error_tag" not in imcols:
+        await conn.execute(
+            text("ALTER TABLE investment_memory ADD COLUMN error_tag VARCHAR(32)")
+        )
+        logger.info("db.migrate.add_column", table="investment_memory", column="error_tag")
+
 
 def _engine_kwargs(url: str) -> dict:
     kwargs: dict = {"echo": False}

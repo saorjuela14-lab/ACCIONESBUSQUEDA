@@ -42,7 +42,7 @@ Cuando Reddit apruebe tu app OAuth, se conecta sin rehacer el agente.
 - **Asistente de voz** (opcional): comandos en español (Web Speech STT) + respuesta con voz ElevenLabs (tipo secretaria / Friday; fallback al navegador)
 - **Market Monitor**: reportes 08:30 / 11:30 / 15:00 / 17:30 ET
 - **Daily Investment Report**: generado a las 17:30 ET
-- **Investment Memory**: evaluación automática a los 90 días + recalibración de pesos
+- **Investment Memory**: evaluación diaria (~5h, umbral 1.5%) + lecciones 24h para no repetir errores al abrir
 
 ### Risk Desk + macro (gestión de riesgo)
 
@@ -316,6 +316,8 @@ DATABASE_URL=postgresql://USER:PASSWORD@ep-XXXX.neon.tech/neondb?sslmode=require
 
 4. Redeploy. Al arrancar se crean las tablas automáticamente.
 5. En el panel: **Sincronizar desde Alpaca** una vez para cargar cash/posiciones.
+
+Sin Neon, la mesa **olvida lecciones y pesos de agentes** en cada redeploy (SQLite efímero). El aprendizaje diario requiere `DATABASE_URL` persistente.
 
 > Con Postgres ya **no** pierdes datos al redesplegar. El sync Alpaca sigue siendo útil para alinear el panel con el broker.
 

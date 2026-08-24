@@ -20,13 +20,43 @@ async def test_prior_memory_report_sell_bias():
     record.expected_outcome = "caída"
     record.was_correct = False
     record.id = "mem1"
+    record.error_tag = "false_short"
+    record.evaluated_at = None
+    record.created_at = None
     memory_repo.latest_by_ticker = AsyncMock(return_value={"AAA": record})
+    memory_repo._session = None
 
     svc = AnalysisService.__new__(AnalysisService)
     svc._memory_repo = memory_repo
     report = await AnalysisService._prior_memory_report(svc, "AAA")
     assert report is not None
     assert report.agent_name == "investment_memory"
+    # Wrong SELL must not stay bearish — otherwise the desk repeats the short.
+    assert report.score >= 0
+
+
+@pytest.mark.asyncio
+async def test_prior_memory_report_buy_miss_is_bearish():
+    from datetime import datetime, timezone
+
+    memory_repo = MagicMock()
+    record = MagicMock()
+    record.recommendation = "buy"
+    record.confidence = 0.7
+    record.thesis = "Tesis alcista fallida"
+    record.expected_outcome = "subida"
+    record.was_correct = False
+    record.error_tag = "false_long"
+    record.id = "mem2"
+    record.evaluated_at = datetime.now(timezone.utc)
+    record.created_at = datetime.now(timezone.utc)
+    memory_repo.latest_by_ticker = AsyncMock(return_value={"BBAI": record})
+    memory_repo._session = None
+
+    svc = AnalysisService.__new__(AnalysisService)
+    svc._memory_repo = memory_repo
+    report = await AnalysisService._prior_memory_report(svc, "BBAI")
+    assert report is not None
     assert report.score < 0
 
 

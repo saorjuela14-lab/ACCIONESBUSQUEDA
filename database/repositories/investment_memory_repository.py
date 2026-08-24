@@ -1,7 +1,7 @@
 """Investment memory repository."""
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -56,14 +56,25 @@ class InvestmentMemoryRepository:
                 break
         return latest
 
-    async def list_ready_for_evaluation(self, min_age_days: int) -> list[InvestmentMemoryRecord]:
-        from datetime import timedelta
-        cutoff = datetime.now(timezone.utc) - timedelta(days=min_age_days)
+    async def list_ready_for_evaluation(
+        self,
+        min_age_days: int | None = None,
+        *,
+        min_hours: float | None = None,
+        limit: int = 200,
+    ) -> list[InvestmentMemoryRecord]:
+        if min_hours is None:
+            days = 1 if min_age_days is None else int(min_age_days)
+            min_hours = float(days) * 24.0
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=float(min_hours))
         result = await self._session.execute(
-            select(InvestmentMemoryORM).where(
+            select(InvestmentMemoryORM)
+            .where(
                 InvestmentMemoryORM.evaluated_at.is_(None),
                 InvestmentMemoryORM.created_at <= cutoff,
             )
+            .order_by(InvestmentMemoryORM.created_at.asc())
+            .limit(limit)
         )
         return [self._to_domain(r) for r in result.scalars().all()]
 
@@ -73,7 +84,14 @@ class InvestmentMemoryRepository:
         )
         return [self._to_domain(r) for r in result.scalars().all()]
 
-    async def evaluate(self, record_id: str, was_correct: bool, notes: str, actual_return: float) -> None:
+    async def evaluate(
+        self,
+        record_id: str,
+        was_correct: bool,
+        notes: str,
+        actual_return: float,
+        error_tag: str | None = None,
+    ) -> None:
         result = await self._session.execute(
             select(InvestmentMemoryORM).where(InvestmentMemoryORM.id == record_id)
         )
@@ -84,6 +102,7 @@ class InvestmentMemoryRepository:
         row.was_correct = was_correct
         row.evaluation_notes = notes
         row.actual_return_pct = actual_return
+        row.error_tag = error_tag
         await self._session.commit()
 
     async def get_agent_weights(self) -> dict[str, float]:
@@ -121,4 +140,5 @@ class InvestmentMemoryRepository:
             was_correct=row.was_correct,
             evaluation_notes=row.evaluation_notes,
             actual_return_pct=row.actual_return_pct,
+            error_tag=getattr(row, "error_tag", None),
         )

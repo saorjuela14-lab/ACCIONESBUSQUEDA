@@ -23,7 +23,7 @@ class AgentEffectivenessService:
         self._session = session
         self._threshold = float(score_threshold)
 
-    async def summary(self, *, window_days: int = 90) -> DeskEffectivenessSummary:
+    async def summary(self, *, window_days: int = 1) -> DeskEffectivenessSummary:
         since = datetime.now(timezone.utc) - timedelta(days=window_days)
 
         def _aware(dt: datetime | None) -> datetime | None:

@@ -184,6 +184,7 @@ class AutopilotService:
         try:
             market = get_market_provider()
             from services.analysis_factory import build_analysis_service
+            from services.desk_learning_service import DeskLearningService
 
             daily = DailyTradeRecommendationService(
                 market_provider=market,
@@ -191,11 +192,13 @@ class AutopilotService:
                 trade_repo=DailyTradeRepository(self._session),
                 analysis_service=build_analysis_service(self._session),
             )
+            exclude = await DeskLearningService(self._session).merge_excludes()
             report = await daily.generate(
                 session=session_label,
                 persist=True,
                 capital=capital,
                 max_picks=4 if capital and capital <= 100 else 8,
+                exclude_tickers=exclude,
             )
             steps["recommendations"] = {
                 "picks": len(report.picks),

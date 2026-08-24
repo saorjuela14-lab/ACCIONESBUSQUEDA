@@ -17,6 +17,7 @@ from providers.market.factory import get_market_provider
 from services.analysis_factory import build_analysis_service
 from services.company_discovery_service import CompanyDiscoveryService
 from services.daily_trade_recommendation_service import DailyTradeRecommendationService
+from services.desk_learning_service import DeskLearningService
 from services.micro_portfolio_manager_service import MicroPortfolioManagerService
 
 router = APIRouter()
@@ -104,6 +105,7 @@ async def latest_daily_trades(
             session="pre_market",
             persist=True,
             capital=capital,
+            exclude_tickers=await DeskLearningService(session).avoid_tickers(),
         )
     return report
 
@@ -119,6 +121,7 @@ async def generate_daily_trades(
     watchlist = await WatchlistRepository(session).list_active(org_id=org)
     exclude = list(request.exclude_tickers or [])
     exclude.extend(w.ticker for w in watchlist)
+    exclude = await DeskLearningService(session).merge_excludes(exclude)
 
     capital = request.capital
     if capital is None:
@@ -171,6 +174,7 @@ async def manage_micro_capital(
     exclude = list(request.exclude_tickers or [])
     exclude.extend(w.ticker for w in watchlist)
     exclude.extend(await _held_alpaca_tickers(is_desk=scope.is_desk))
+    exclude = await DeskLearningService(session).merge_excludes(exclude)
 
     capital = await _resolve_manage_capital(
         session, request.capital, is_desk=scope.is_desk, org_id=org

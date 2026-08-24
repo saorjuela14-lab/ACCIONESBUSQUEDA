@@ -54,7 +54,11 @@ async def test_build_briefing_includes_positions_and_orders():
     )
 
     with patch("services.daily_status_briefing_service.get_settings") as gs, \
-         patch("services.daily_status_briefing_service.RiskPolicyService") as RS:
+         patch("services.daily_status_briefing_service.RiskPolicyService") as RS, \
+         patch(
+             "services.daily_status_briefing_service.load_lesson_briefing_lines",
+             new=AsyncMock(return_value=["Lecciones 24h (no repetir): BBAI (false_long)"]),
+         ):
         s = MagicMock()
         s.firm_autonomy = True
         s.auto_execute_trades = True
@@ -71,6 +75,7 @@ async def test_build_briefing_includes_positions_and_orders():
     assert "ÓRDENES ABIERTAS" in body
     assert "SOUN" in body
     assert "ÓRDENES CERRADAS HOY" in body
+    assert "BBAI" in body
 
 
 @pytest.mark.asyncio
