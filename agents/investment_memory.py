@@ -2,6 +2,7 @@
 
 from agents.base import BaseAgent
 from database.repositories.investment_memory_repository import InvestmentMemoryRepository
+from domain.agent_briefs import compact_agent_briefs, original_score
 from domain.entities import InvestmentMemoryRecord
 from domain.enums import EvidenceCategory
 from domain.reports import AgentReport, Finding, InvestmentThesis, Reference
@@ -23,7 +24,8 @@ class InvestmentMemoryAgent(BaseAgent):
                 ticker=thesis.ticker,
                 thesis=thesis.investment_thesis,
                 reasons=[f.category.value for f in thesis.catalysts[:5]],
-                scores={r.agent_name: r.score for r in thesis.agent_reports},
+                scores={r.agent_name: original_score(r) for r in thesis.agent_reports},
+                briefs=compact_agent_briefs(thesis.agent_reports),
                 confidence=thesis.confidence,
                 scenario=thesis.base_case.name,
                 expected_outcome=thesis.base_case.thesis,

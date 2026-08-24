@@ -49,6 +49,7 @@ class InvestmentMemoryORM(Base):
     thesis: Mapped[str] = mapped_column(Text)
     reasons_json: Mapped[str] = mapped_column(Text, default="[]")
     scores_json: Mapped[str] = mapped_column(Text, default="{}")
+    briefs_json: Mapped[str] = mapped_column(Text, default="{}")
     confidence: Mapped[float] = mapped_column(Float)
     scenario: Mapped[str] = mapped_column(Text)
     expected_outcome: Mapped[str] = mapped_column(Text)

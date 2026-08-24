@@ -91,6 +91,7 @@ class InvestmentMemoryRecord(BaseModel):
     thesis: str
     reasons: list[str] = Field(default_factory=list)
     scores: dict[str, float] = Field(default_factory=dict)
+    briefs: dict[str, dict] = Field(default_factory=dict)
     confidence: float = Field(ge=0.0, le=1.0)
     scenario: str
     expected_outcome: str

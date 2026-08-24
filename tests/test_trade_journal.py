@@ -79,6 +79,8 @@ async def test_close_grades_committee_members(session: AsyncSession):
     assert by_name["technical_agent"]["right"] is True
     assert by_name["news_agent"]["right"] is False
     assert "macro_agent" not in by_name  # |score| < 5 skipped
+    assert by_name["technical_agent"].get("why")
+    assert by_name["news_agent"].get("pattern") == "false_veto"
 
     # Stop = operación perdida (not P&L)
     await svc.record_open(

@@ -187,7 +187,8 @@
       "lifecycle_trail_timestop",
       "reconcile_audit",
       "smart_eod",
-      "daily_learn_lessons"
+      "daily_learn_lessons",
+      "agent_justification_learn"
     ],
     "discovery": {
       "orchestrator": "CompanyDiscoveryService",
@@ -397,7 +398,8 @@
       "false_long": "avoid ticker 24h on next open picks/autopilot",
       "weights": "agent_weights recalibrated each eval",
       "persist": "desk_lessons table — requires Neon DATABASE_URL",
-      "trade_close_review": "On LIVE close, grade members by operation (take-profit vs stop/thesis), not dollar P&L. EOD/gestion = no verdict."
+      "trade_close_review": "On LIVE close, grade members by operation (TP vs stop/thesis), not P&L. EOD/gestion = no verdict.",
+      "agent_justification_learn": "Persist per-agent briefs (score+summary+findings). On win/loss, critique why. Wrong → desk_lessons agent_error ~7d; next committee injects RISK and clips repeating justification."
     }
   },
   "product_surfaces": {
@@ -577,6 +579,7 @@
       "status_briefing_catchup_service",
       "desk_learning_service",
       "trade_close_review_service",
+      "agent_briefs",
       "memory_evaluation_service",
       "scheduler_service",
       "capital_fit",
@@ -604,6 +607,7 @@
       "Portfolio / PortfolioPosition",
       "TradePick / DailyTradeReport",
       "InvestmentThesis / AgentReport / StrategyConclusion",
+      "AgentBrief / agent_error lesson",
       "DiscoveryCandidate / DiscoveryReport",
       "InvestmentProposal / AllocationLine",
       "PositionMandate / KillSwitchState / ReconcileReport / PortfolioRiskMetrics"
@@ -630,6 +634,7 @@
       "memory_evaluation_min_hours": 5,
       "memory_hit_pct": 1.5,
       "memory_avoid_hours": 24,
+      "memory_agent_error_hours": 168,
       "database_url_default": "sqlite+aiosqlite:///./data/nexbuy.db"
     },
     "env_keys_critical": [
@@ -809,7 +814,7 @@
   "pending_and_recommended_next": [
     "Keep live book transparent for pitch (equity, vs yesterday, open position, gates ON)",
     "If logo still imperfect vs owner's exact file, replace dashboard/assets/logo.png + mark.png from source PNG",
-    "Railway always-on + Neon for production resilience (daily lessons die on SQLite redeploy)",
+    "Railway always-on + Neon for production resilience (daily lessons and agent briefs die on SQLite redeploy)",
     "Fill Shark Tank ask (amount + equity %) in Canva/oral before the day",
     "Optional: deepen Canva visuals with official crown logo asset once public URL available"
   ],

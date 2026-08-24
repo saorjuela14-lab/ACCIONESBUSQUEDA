@@ -107,6 +107,7 @@ class Settings(BaseSettings):
     memory_evaluation_min_hours: float = 5.0
     memory_hit_pct: float = 1.5  # daily move that counts as a hit (5% is a 90-day bar)
     memory_avoid_hours: int = 24  # do not repeat false_long tickers until next open+
+    memory_agent_error_hours: int = 168  # keep per-agent justification errors ~7 days
     alert_cooldown_hours: int = 24
 
     # Push notifications (optional)

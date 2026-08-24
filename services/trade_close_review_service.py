@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database.repositories.investment_memory_repository import InvestmentMemoryRepository
 from database.repositories.ops_repository import OpsFlagRepository
 from database.repositories.trade_journal_repository import TradeJournalRepository
+from domain.agent_briefs import SCORE_THRESHOLD, critique_agent
 from domain.trade_journal import TradeJournalEntry
 from services.desk_learning_service import DeskLearningService, classify_error
 from services.memory_evaluation_service import recalibrate_agent_weights
@@ -18,7 +19,7 @@ from utils.narrative_es import agent_display_name
 logger = get_logger(__name__)
 
 FLAG_KEY = "last_close_review"
-_SCORE_THRESHOLD = 5.0
+_SCORE_THRESHOLD = SCORE_THRESHOLD
 
 OperationOutcome = Literal["win", "loss", "gestion"]
 
@@ -108,11 +109,13 @@ class TradeCloseReviewService:
         latest = await self._memory.latest_by_ticker([entry.symbol])
         mem = latest.get(entry.symbol.upper())
         scores = dict(mem.scores) if mem and isinstance(mem.scores, dict) else {}
+        briefs = dict(mem.briefs) if mem and isinstance(mem.briefs, dict) else {}
         rec_label = (mem.recommendation if mem else "buy") or "buy"
 
         members: list[dict[str, Any]] = []
         right: list[str] = []
         wrong: list[str] = []
+        lessons: list[dict[str, Any]] = []
         for agent_name, raw in scores.items():
             if agent_name in ("investment_director",):
                 continue
@@ -127,6 +130,17 @@ class TradeCloseReviewService:
             agent_right: bool | None = None
             if was_correct is not None:
                 agent_right = (score > 0 and was_correct) or (score < 0 and not was_correct)
+            brief = briefs.get(agent_name) if isinstance(briefs.get(agent_name), dict) else {}
+            if not brief:
+                brief = {"score": score}
+            critique = critique_agent(
+                agent_name=agent_name,
+                brief=brief,
+                outcome=outcome,
+                outcome_tag=outcome_tag,
+                ticker=entry.symbol,
+                pnl_pct=entry.pnl_pct,
+            )
             members.append(
                 {
                     "agent": agent_name,
@@ -134,12 +148,39 @@ class TradeCloseReviewService:
                     "score": round(score, 1),
                     "stance": stance,
                     "right": agent_right,
+                    "verdict": critique.get("verdict"),
+                    "why": critique.get("why"),
+                    "pattern": critique.get("pattern"),
+                    "justification": critique.get("justification"),
+                    "has_brief": bool(critique.get("has_brief")),
                 }
             )
             if agent_right is True:
                 right.append(label)
             elif agent_right is False:
                 wrong.append(label)
+            if (
+                was_correct is not None
+                and critique.get("verdict") == "wrong"
+                and critique.get("why")
+            ):
+                lesson = await self._learn.ingest_agent_error(
+                    agent_name=agent_name,
+                    pattern=str(critique.get("pattern") or "false_long"),
+                    reason=str(critique.get("why")),
+                    ticker=entry.symbol,
+                    payload={
+                        "summary": brief.get("summary"),
+                        "findings": brief.get("findings") or [],
+                        "risks": brief.get("risks") or [],
+                        "score": score,
+                        "outcome": outcome,
+                        "outcome_tag": outcome_tag,
+                        "pattern": critique.get("pattern"),
+                        "journal_id": entry.id,
+                    },
+                )
+                lessons.append(lesson)
         members.sort(
             key=lambda m: (
                 m["right"] is not True,
@@ -167,6 +208,7 @@ class TradeCloseReviewService:
             await recalibrate_agent_weights(self._memory, scores, was_correct)
             if not was_correct:
                 await self._learn.ingest_evaluation(mem, False)
+            if lessons or not was_correct:
                 await self._learn.snapshot()
 
         review: dict[str, Any] = {
@@ -181,6 +223,7 @@ class TradeCloseReviewService:
             "members": members,
             "right": right,
             "wrong": wrong,
+            "lessons": lessons,
             "journal_id": entry.id,
         }
         meta = dict(entry.meta or {})

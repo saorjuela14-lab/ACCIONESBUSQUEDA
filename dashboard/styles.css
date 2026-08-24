@@ -654,6 +654,9 @@ body.tech-chart-fs { overflow: hidden; }
 .desk-lessons { margin-top: 0.75rem; font-size: 0.92rem; line-height: 1.45; }
 .desk-lessons ul { margin: 0.35rem 0 0; padding-left: 1.1rem; }
 .desk-lessons li { margin: 0.15rem 0; }
+.desk-lessons .member-wrong { color: var(--red); }
+.desk-lessons .member-right { color: var(--green); }
+.desk-lessons .why { font-weight: 400; opacity: 0.92; }
 .research-pack ul { margin: 0.25rem 0 0.75rem 1.1rem; padding: 0; }
 .research-pack li { margin: 0.15rem 0; font-size: 12px; }
 @media (max-width: 720px) {

@@ -949,15 +949,21 @@ async function loadAgentEffectiveness() {
     const lessons = r.lessons || {};
     const avoids = lessons.avoids || [];
     const notes = lessons.notes || [];
+    const agentErrors = lessons.agent_errors || [];
     if (lessonsEl) {
-      if (!avoids.length && !notes.length) {
-        lessonsEl.textContent = "Lecciones 24h: ninguna activa — la mesa no está bloqueando tickers por errores recientes.";
+      if (!avoids.length && !notes.length && !agentErrors.length) {
+        lessonsEl.textContent = "Lecciones: ninguna activa — la mesa no está bloqueando tickers ni recortando justificaciones.";
       } else {
         const items = [
           ...avoids.map((x) => `No repetir ${x.ticker || "?"} (${x.error_tag || "error"}): ${(x.reason || "").slice(0, 140)}`),
+          ...agentErrors.map((x) => {
+            const who = x.agent_name || "agente";
+            const pat = x.error_tag ? ` · ${x.error_tag}` : "";
+            return `Error ${who}${pat}: ${(x.reason || "").slice(0, 180)}`;
+          }),
           ...notes.map((x) => (x.reason || "").slice(0, 160)),
         ].filter(Boolean);
-        lessonsEl.innerHTML = `<strong>Lecciones 24h</strong><ul>` +
+        lessonsEl.innerHTML = `<strong>Lecciones activas</strong><ul>` +
           items.map((t) => `<li>${escapeHtml(t)}</li>`).join("") +
           `</ul>`;
         lessonsEl.classList.remove("muted");
@@ -967,7 +973,7 @@ async function loadAgentEffectiveness() {
     const last = r.last_close_review || {};
     if (lastCloseEl) {
       if (!last.symbol) {
-        lastCloseEl.textContent = "Última operación: AMC sigue abierta — se puntúa al TP o al stop, no por P&L.";
+        lastCloseEl.textContent = "Última operación: AMC sigue abierta — al TP o al stop se revisa la justificación de cada agente y se guarda el error.";
       } else {
         const outcome = last.outcome || "";
         const label = {
@@ -975,14 +981,22 @@ async function loadAgentEffectiveness() {
           loss: "operación perdida (stop / tesis)",
           gestion: "cierre de gestión — sin veredicto",
         }[outcome] || outcome || "sin clasificar";
-        const ok = (last.right || []).join(", ") || "—";
-        const bad = (last.wrong || []).join(", ") || "—";
         lastCloseEl.classList.remove("muted");
+        const members = last.members || [];
         let extra = "";
-        if (outcome === "win" || outcome === "loss") {
-          extra = `<ul><li>Acertaron: ${escapeHtml(ok)}</li><li>Fallaron: ${escapeHtml(bad)}</li></ul>`;
+        if (members.length && (outcome === "win" || outcome === "loss")) {
+          extra = "<ul>" + members.map((m) => {
+            const mark = m.right === true ? "✓" : (m.right === false ? "✗" : "·");
+            const cls = m.right === true ? "member-right" : (m.right === false ? "member-wrong" : "");
+            const why = m.why || `${m.label_es || m.agent}: ${m.right === true ? "acertó" : "falló"}`;
+            return `<li class="${cls}"><span class="why">${escapeHtml(mark)} ${escapeHtml(why)}</span></li>`;
+          }).join("") + "</ul>";
+        } else if (outcome === "gestion") {
+          extra = "<ul><li>EOD u otro cierre de proceso: no mueve pesos ni lecciones de justificación.</li></ul>";
         } else {
-          extra = "<ul><li>EOD u otro cierre de proceso: no mueve pesos de miembros.</li></ul>";
+          const ok = (last.right || []).join(", ") || "—";
+          const bad = (last.wrong || []).join(", ") || "—";
+          extra = `<ul><li>Acertaron: ${escapeHtml(ok)}</li><li>Fallaron: ${escapeHtml(bad)}</li></ul>`;
         }
         lastCloseEl.innerHTML =
           `<strong>Operación ${escapeHtml(last.symbol || "")}</strong> · ${escapeHtml(label)}` + extra;
@@ -990,7 +1004,7 @@ async function loadAgentEffectiveness() {
     }
     if (note) {
       const db = r.durable_db ? "DB persistente" : "SQLite efímero — Neon requerido para que la memoria sobreviva al redeploy";
-      note.textContent = `${db}. Ventana 1 día. Miembros por operación (TP vs stop), no por P&L. ${r.disclaimer || ""}`;
+      note.textContent = `${db}. Ventana 1 día. Cada decisión se puntúa (TP vs stop) y se revisa el porqué. Si falló, el próximo comité recorta ese argumento. ${r.disclaimer || ""}`;
     }
   } catch (e) {
     sumEl.textContent = "Efectividad: " + (e.message || "no disponible");

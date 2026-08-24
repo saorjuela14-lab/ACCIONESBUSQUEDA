@@ -76,6 +76,54 @@ class DeskLessonRepository:
         await self._session.commit()
         return row
 
+    async def upsert_agent_error(
+        self,
+        *,
+        agent_name: str,
+        pattern: str,
+        reason: str,
+        expires_at: datetime,
+        ticker: str | None = None,
+        payload: dict | None = None,
+    ) -> DeskLessonORM:
+        name = (agent_name or "").strip()
+        tag = (pattern or "false_long").strip()[:32]
+        now = utc_now()
+        existing = (
+            await self._session.execute(
+                select(DeskLessonORM)
+                .where(
+                    DeskLessonORM.lesson_type == "agent_error",
+                    DeskLessonORM.agent_name == name,
+                    DeskLessonORM.error_tag == tag,
+                    DeskLessonORM.expires_at > now,
+                )
+                .order_by(DeskLessonORM.created_at.desc())
+            )
+        ).scalars().first()
+        if existing:
+            existing.expires_at = expires_at
+            existing.reason = reason
+            existing.ticker = (ticker or existing.ticker or "").upper().strip() or existing.ticker
+            existing.payload_json = json.dumps(payload or {}, default=str)
+            await self._session.commit()
+            return existing
+
+        row = DeskLessonORM(
+            id=str(uuid4()),
+            created_at=now,
+            expires_at=expires_at,
+            lesson_type="agent_error",
+            ticker=(ticker or "").upper().strip() or None,
+            agent_name=name,
+            error_tag=tag,
+            reason=reason,
+            payload_json=json.dumps(payload or {}, default=str),
+        )
+        self._session.add(row)
+        await self._session.commit()
+        return row
+
     async def add_note(
         self,
         *,

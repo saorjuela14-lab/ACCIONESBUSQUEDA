@@ -115,6 +115,7 @@ class AnalysisService:
             prior_reports=prior_reports,
         )
         reports = prior_reports + [technical_report]
+        reports = await self._apply_agent_lessons(reports)
         weights = await self._memory_repo.get_agent_weights()
         if not weights:
             weights = InvestmentDirector.DEFAULT_WEIGHTS
@@ -210,6 +211,8 @@ class AnalysisService:
                     await alert_svc.emit(Alert(**alert_data))
                 for alert in alert_report.raw_data.get("alert_types", []):
                     logger.info("alert.generated", ticker=ticker, type=alert)
+
+        reports = await self._apply_agent_lessons(reports)
 
         weights = await self._memory_repo.get_agent_weights()
         if not weights:
@@ -327,6 +330,22 @@ class AnalysisService:
         except Exception as exc:
             logger.warning("analysis.memory_context_failed", error=str(exc))
             return None
+
+    async def _apply_agent_lessons(self, reports: list[AgentReport]) -> list[AgentReport]:
+        session = getattr(self._memory_repo, "_session", None)
+        if session is None:
+            return reports
+        try:
+            from domain.agent_briefs import apply_agent_error_lessons
+            from services.desk_learning_service import DeskLearningService
+
+            errors = await DeskLearningService(session).active_errors_by_agent()
+            if not errors:
+                return reports
+            return apply_agent_error_lessons(reports, errors)
+        except Exception as exc:
+            logger.warning("analysis.agent_lessons_failed", error=str(exc))
+            return reports
 
     def _memory_is_recent(self, record) -> bool:
         from datetime import datetime, timedelta, timezone

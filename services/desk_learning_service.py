@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 from typing import Any
 
@@ -79,6 +80,67 @@ class DeskLearningService:
         )
         return {"id": row.id, "ticker": record.ticker.upper(), "error_tag": tag, "type": "note"}
 
+    async def ingest_agent_error(
+        self,
+        *,
+        agent_name: str,
+        pattern: str,
+        reason: str,
+        ticker: str | None = None,
+        payload: dict | None = None,
+    ) -> dict[str, Any]:
+        settings = get_settings()
+        try:
+            hours = float(getattr(settings, "memory_agent_error_hours", 168) or 168)
+        except (TypeError, ValueError):
+            hours = 168.0
+        expires = utc_now() + timedelta(hours=hours)
+        row = await self._lessons.upsert_agent_error(
+            agent_name=agent_name,
+            pattern=pattern or "false_long",
+            reason=reason,
+            expires_at=expires,
+            ticker=ticker,
+            payload=payload,
+        )
+        logger.info(
+            "desk_learning.agent_error",
+            agent=agent_name,
+            pattern=pattern,
+            ticker=ticker,
+        )
+        return {
+            "id": row.id,
+            "agent": agent_name,
+            "pattern": pattern,
+            "ticker": (ticker or "").upper() or None,
+            "type": "agent_error",
+        }
+
+    async def active_errors_by_agent(self) -> dict[str, list[dict[str, Any]]]:
+        rows = await self._lessons.list_active(lesson_type="agent_error")
+        out: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            name = (row.agent_name or "").strip()
+            if not name:
+                continue
+            try:
+                payload = json.loads(row.payload_json or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                payload = {}
+            if not isinstance(payload, dict):
+                payload = {}
+            item = {
+                "id": row.id,
+                "ticker": row.ticker,
+                "pattern": row.error_tag or payload.get("pattern"),
+                "reason": row.reason,
+                "summary": payload.get("summary") or "",
+                "findings": payload.get("findings") or [],
+            }
+            out.setdefault(name, []).append(item)
+        return out
+
     async def avoid_tickers(self) -> list[str]:
         return await self._lessons.avoid_tickers()
 
@@ -107,11 +169,13 @@ class DeskLearningService:
         active = await self._lessons.list_active()
         avoids = []
         notes = []
+        agent_errors = []
         for row in active:
             item = {
                 "id": row.id,
                 "ticker": row.ticker,
                 "type": row.lesson_type,
+                "agent_name": row.agent_name,
                 "error_tag": row.error_tag,
                 "reason": row.reason,
                 "recommendation": row.recommendation,
@@ -121,12 +185,15 @@ class DeskLearningService:
             }
             if row.lesson_type == "avoid_ticker":
                 avoids.append(item)
+            elif row.lesson_type == "agent_error":
+                agent_errors.append(item)
             else:
                 notes.append(item)
         snap = {
             "as_of": utc_now().isoformat(),
             "avoid_tickers": [a["ticker"] for a in avoids if a.get("ticker")],
             "avoids": avoids,
+            "agent_errors": agent_errors,
             "notes": notes,
             "count": len(active),
         }
@@ -152,6 +219,11 @@ class DeskLearningService:
             reason = (note.get("reason") or "").strip()
             if reason:
                 lines.append(f"· {reason[:160]}")
+        for err in (snap.get("agent_errors") or [])[:4]:
+            agent = err.get("agent_name") or "agente"
+            reason = (err.get("reason") or "").strip()
+            if reason:
+                lines.append(f"Error {agent}: {reason[:140]}")
         return lines
 
 
