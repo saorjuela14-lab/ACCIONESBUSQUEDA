@@ -252,6 +252,13 @@ class TradeCloseReviewService:
                 await self._learn.ingest_evaluation(mem, False, outcome=outcome)
             if lessons or not was_correct:
                 await self._learn.snapshot()
+        elif outcome == "stagnation":
+            await self._learn.ingest_stagnation_ticker(
+                ticker=entry.symbol,
+                pnl_pct=entry.pnl_pct,
+                recommendation=rec_label,
+            )
+            await self._learn.snapshot()
 
         review: dict[str, Any] = {
             "symbol": entry.symbol.upper(),
@@ -281,3 +288,23 @@ class TradeCloseReviewService:
             wrong=wrong,
         )
         return review
+
+    async def refresh_stagnation_avoids(self, *, days: int = 14) -> list[str]:
+        """Ensure no-progress closes keep the ticker off the next hunt even without memory scores."""
+        closed = await self._journal.list_closed(limit=80, days=days)
+        avoided: list[str] = []
+        for entry in closed:
+            rev = (entry.meta or {}).get("member_review") or {}
+            if rev.get("outcome") != "stagnation":
+                continue
+            await self._learn.ingest_stagnation_ticker(
+                ticker=entry.symbol,
+                pnl_pct=entry.pnl_pct,
+                recommendation=rev.get("recommendation") or "buy",
+            )
+            t = entry.symbol.upper()
+            if t not in avoided:
+                avoided.append(t)
+        if avoided:
+            await self._learn.snapshot()
+        return avoided

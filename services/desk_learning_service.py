@@ -110,6 +110,26 @@ class DeskLearningService:
         )
         return {"id": row.id, "ticker": record.ticker.upper(), "error_tag": tag, "type": "note"}
 
+    async def ingest_stagnation_ticker(
+        self,
+        *,
+        ticker: str,
+        pnl_pct: float | None = None,
+        recommendation: str | None = None,
+    ) -> dict[str, Any] | None:
+        rec = InvestmentMemoryRecord(
+            ticker=(ticker or "").upper().strip(),
+            thesis="stagnation",
+            confidence=0.5,
+            scenario="stagnation",
+            expected_outcome="no_progress",
+            recommendation=(recommendation or "buy"),
+            actual_return_pct=pnl_pct,
+        )
+        if not rec.ticker:
+            return None
+        return await self.ingest_evaluation(rec, False, outcome="stagnation")
+
     async def ingest_agent_error(
         self,
         *,

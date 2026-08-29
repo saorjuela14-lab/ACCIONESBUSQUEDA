@@ -180,6 +180,25 @@ async def test_tiny_eod_is_stagnation_and_avoids_ticker(session: AsyncSession):
 
 
 @pytest.mark.asyncio
+async def test_stagnation_avoids_ticker_without_memory_scores(session: AsyncSession):
+    from services.trade_close_review_service import TradeCloseReviewService
+    from services.desk_learning_service import DeskLearningService
+
+    svc = TradeJournalService(session)
+    await svc.record_open(symbol="AMC", qty=2, entry_price=2.70, stop_loss=2.48, take_profit=3.13)
+    await svc.record_close(
+        symbol="AMC",
+        exit_price=2.705,
+        exit_reason="posición ausente en Alpaca",
+    )
+    closed = (await svc.list_closed(days=1))[0]
+    assert closed.meta["member_review"]["outcome"] == "stagnation"
+    assert "AMC" in await DeskLearningService(session).avoid_tickers()
+    avoided = await TradeCloseReviewService(session).refresh_stagnation_avoids()
+    assert "AMC" in avoided
+
+
+@pytest.mark.asyncio
 async def test_close_uses_fill_entry_price(session: AsyncSession):
     svc = TradeJournalService(session)
     await svc.record_open(symbol="AMC", qty=2, entry_price=2.48, stop_loss=2.48)

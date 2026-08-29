@@ -327,6 +327,7 @@ async def run_daily_learning(session: AsyncSession = Depends(get_session)):
     ).evaluate_pending()
     closes = await TradeCloseReviewService(session).review_unreviewed_closes()
     result["close_reviews"] = closes
+    result["stagnation_avoids"] = await TradeCloseReviewService(session).refresh_stagnation_avoids()
     return result
 
 
