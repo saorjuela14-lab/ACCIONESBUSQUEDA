@@ -350,6 +350,8 @@
       "trail_pct_micro": 0.1,
       "time_stop_days_standard": 10,
       "time_stop_days_micro": 7,
+      "stagnation_days": 2,
+      "stagnation_min_pnl_pct": 1.5,
       "brackets": "Alpaca order_class=bracket, GTC when overnight carry allowed",
       "modules": [
         "services/position_lifecycle_service.py",
@@ -398,8 +400,9 @@
       "false_long": "avoid ticker 24h on next open picks/autopilot",
       "weights": "agent_weights recalibrated each eval",
       "persist": "desk_lessons table — requires Neon DATABASE_URL",
-      "trade_close_review": "On LIVE close, grade members by operation (TP vs stop/thesis), not P&L. EOD/gestion = no verdict.",
-      "agent_justification_learn": "Persist per-agent briefs (score+summary+findings). On win/loss, critique why. Wrong → desk_lessons agent_error ~7d; next committee injects RISK and clips repeating justification."
+      "trade_close_review": "On LIVE close: TP = win, stop/tesis = loss, EOD/absent with |PnL|<1.5% = stagnation (review + avoid 48h). EOD with real progress stays gestión (not 2R).",
+      "agent_justification_learn": "Persist per-agent briefs. On win/loss/stagnation, critique why. Wrong → desk_lessons agent_error ~7d; next committee clips repeating justification.",
+      "stagnation_rotate": "Lifecycle exits if held ≥2d and PnL < 1.5% (even if slightly green). Stops sitting a week in one micro name."
     }
   },
   "product_surfaces": {
@@ -626,6 +629,8 @@
       "lifecycle_default_stop_pct": 0.08,
       "lifecycle_default_target_pct": 0.16,
       "lifecycle_trail_arm_profit_pct": 0.05,
+      "lifecycle_stagnation_days": 2,
+      "lifecycle_stagnation_min_pnl_pct": 1.5,
       "auto_execute_post_stop_cooldown_minutes": 90,
       "intraday_flat_winners_only": true,
       "intraday_carry_max_loss_pct": 8,
@@ -634,6 +639,7 @@
       "memory_evaluation_min_hours": 5,
       "memory_hit_pct": 1.5,
       "memory_avoid_hours": 24,
+      "memory_stagnation_avoid_hours": 48,
       "memory_agent_error_hours": 168,
       "database_url_default": "sqlite+aiosqlite:///./data/nexbuy.db"
     },

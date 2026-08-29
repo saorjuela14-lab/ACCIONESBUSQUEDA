@@ -38,15 +38,16 @@ class DeskEffectivenessSummary(BaseModel):
     best_agent: str | None = None
     weakest_agent: str | None = None
     method: str = (
-        "Por cada operación cerrada: take-profit = ganada, stop/tesis inválida = perdida. "
+        "Por cada operación cerrada: take-profit = ganada, stop/tesis inválida = perdida, "
+        "EOD/ausente sin avanzar 1.5% = estancada. "
         "Se revisa la justificación de cada miembro; si se equivocó, se guarda el porqué "
         "y el próximo comité recorta ese argumento. "
-        "Cierres de gestión (EOD, ausente) no puntúan a los miembros. "
+        "Cierres de gestión con avance real (≥1.5%) no puntúan como 2R. "
         "La mesa = % de operaciones/tesis con veredicto."
     )
     disclaimer: str = (
         "N pequeño o SQLite efímero → métricas frágiles. "
-        "Los miembros se puntúan por operación (TP vs stop) y por justificación, no por P&L. "
+        "Los miembros se puntúan por operación (TP vs stop vs estancamiento) y por justificación, no por P&L. "
         "Requiere DATABASE_URL persistente (Neon). No es garantía de edge futuro."
     )
     durable_db: bool = False

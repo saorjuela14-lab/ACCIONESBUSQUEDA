@@ -46,6 +46,7 @@ PATTERN_NEEDLES: dict[str, tuple[str, ...]] = {
     "gap_failed": ("gap", "hueco", "gap-up", "gap up", "gapdown", "gap-down"),
     "false_long": ("alcista", "compra", "long", "bullish", "momentum"),
     "false_veto": ("veto", "evitar", "bajista", "short", "sobrevalor", "caro"),
+    "stagnation_failed": ("estanc", "sin avance", "no progres", "momentum", "hold"),
 }
 
 _SKIP_AGENTS = {"investment_director"}
@@ -174,6 +175,25 @@ def critique_agent(
 
     findings_s = "; ".join(findings[:3])
     risks_s = "; ".join(risks[:2])
+
+    if outcome == "stagnation":
+        if score >= SCORE_THRESHOLD:
+            base["verdict"] = "wrong"
+            base["pattern"] = "stagnation_failed"
+            base["why"] = _join_bits(
+                f"{agent_name} apoyó el largo ({score:+.0f}) y {ticker} se estancó ({outcome_tag}, PnL {pnl_s}).",
+                "Error: ocupó el capital ultra-micro sin avanzar el umbral de la mesa (1.5%).",
+                f"Justificación que no pagó: {why_core}." if why_core else "",
+                f"Hallazgos: {findings_s}." if findings_s else "",
+                "Ajuste: no recomprar el mismo ticker ni reutilizar esa tesis hasta que haya un setup 2R nuevo.",
+            )
+        else:
+            base["verdict"] = "correct"
+            base["why"] = _join_bits(
+                f"{agent_name} advirtió en contra ({score:+.0f}) y {ticker} no avanzó ({pnl_s}).",
+                "Acertó: no había que sentarse en ese trade.",
+            )
+        return base
 
     if outcome == "win":
         if score >= SCORE_THRESHOLD:

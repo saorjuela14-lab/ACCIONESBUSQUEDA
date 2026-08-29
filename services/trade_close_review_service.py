@@ -21,7 +21,7 @@ logger = get_logger(__name__)
 FLAG_KEY = "last_close_review"
 _SCORE_THRESHOLD = SCORE_THRESHOLD
 
-OperationOutcome = Literal["win", "loss", "gestion"]
+OperationOutcome = Literal["win", "loss", "gestion", "stagnation"]
 
 _WIN_HINTS = ("take-profit", "take profit", "take_profit")
 _LOSS_HINTS = (
@@ -44,12 +44,33 @@ _GESTION_HINTS = (
 )
 
 
-def classify_operation(entry: TradeJournalEntry) -> tuple[OperationOutcome, str]:
-    """2R desk: the operation is TP (win), stop/tesis (loss), or process close (no verdict)."""
+def _entry_pnl_pct(entry: TradeJournalEntry) -> float:
+    if entry.pnl_pct is not None:
+        try:
+            return float(entry.pnl_pct)
+        except (TypeError, ValueError):
+            pass
+    try:
+        entry_px = float(entry.entry_price or 0)
+        exit_px = float(entry.exit_price or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if entry_px > 0 and exit_px > 0:
+        return (exit_px / entry_px - 1.0) * 100.0
+    return 0.0
+
+
+def classify_operation(
+    entry: TradeJournalEntry,
+    *,
+    progress_pct: float = 1.5,
+) -> tuple[OperationOutcome, str]:
+    """2R desk: TP = win, stop/tesis = loss, no-progress EOD = stagnation, else gestión."""
     reason = (entry.exit_reason or "").lower()
     exit_px = entry.exit_price
     stop = entry.stop_loss
     tp = entry.take_profit
+    bar = abs(float(progress_pct or 1.5))
 
     if any(h in reason for h in _WIN_HINTS):
         return "win", "take_profit"
@@ -57,8 +78,6 @@ def classify_operation(entry: TradeJournalEntry) -> tuple[OperationOutcome, str]
         "stop" in reason and "eod" not in reason and "flat" not in reason
     ):
         return "loss", "stop" if "tesis" not in reason else "thesis_invalidated"
-    if any(h in reason for h in _GESTION_HINTS):
-        return "gestion", "gestion"
 
     if tp is not None and exit_px is not None and float(tp) > 0:
         if float(exit_px) >= float(tp) * 0.995:
@@ -66,6 +85,15 @@ def classify_operation(entry: TradeJournalEntry) -> tuple[OperationOutcome, str]
     if stop is not None and exit_px is not None and float(stop) > 0:
         if float(exit_px) <= float(stop) * 1.005:
             return "loss", "stop"
+
+    if any(h in reason for h in _GESTION_HINTS):
+        if "carry" in reason:
+            return "gestion", "gestion"
+        pnl = _entry_pnl_pct(entry)
+        if abs(pnl) < bar:
+            return "stagnation", "no_progress"
+        return "gestion", "gestion"
+
     return "gestion", "gestion"
 
 
@@ -86,10 +114,15 @@ class TradeCloseReviewService:
         out: list[dict[str, Any]] = []
         closed = await self._journal.list_closed(limit=80, days=days)
         for entry in closed:
-            if (entry.meta or {}).get("member_review"):
-                continue
             if entry.status != "closed":
                 continue
+            existing = (entry.meta or {}).get("member_review")
+            if isinstance(existing, dict) and existing.get("outcome") not in (None, "gestion"):
+                continue
+            if isinstance(existing, dict) and existing.get("outcome") == "gestion":
+                fresh, _ = classify_operation(entry)
+                if fresh == "gestion":
+                    continue
             review = await self.review_closed(entry)
             if review:
                 out.append(review)
@@ -100,11 +133,18 @@ class TradeCloseReviewService:
             return None
         existing = (entry.meta or {}).get("member_review")
         if isinstance(existing, dict) and existing.get("symbol"):
-            return existing
+            prev = existing.get("outcome")
+            if prev and prev != "gestion":
+                return existing
+            fresh, _ = classify_operation(entry)
+            if prev == "gestion" and fresh == "gestion":
+                return existing
 
         outcome, outcome_tag = classify_operation(entry)
         verdict = outcome != "gestion"
-        was_correct = True if outcome == "win" else False if outcome == "loss" else None
+        was_correct = (
+            True if outcome == "win" else False if outcome in ("loss", "stagnation") else None
+        )
 
         latest = await self._memory.latest_by_ticker([entry.symbol])
         mem = latest.get(entry.symbol.upper())
@@ -189,11 +229,12 @@ class TradeCloseReviewService:
         )
 
         if mem is not None and was_correct is not None:
-            tag = classify_error(rec_label, was_correct)
+            tag = classify_error(rec_label, was_correct, outcome=outcome)
             notes = (
                 f"Operación {entry.symbol}: {outcome_tag}. "
                 f"{entry.exit_reason or ''}".strip()
             )
+            already_eval = mem.evaluated_at is not None
             await self._memory.evaluate(
                 mem.id,
                 was_correct,
@@ -205,9 +246,10 @@ class TradeCloseReviewService:
             mem.actual_return_pct = entry.pnl_pct
             mem.evaluation_notes = notes
             mem.error_tag = tag
-            await recalibrate_agent_weights(self._memory, scores, was_correct)
+            if not already_eval:
+                await recalibrate_agent_weights(self._memory, scores, was_correct)
             if not was_correct:
-                await self._learn.ingest_evaluation(mem, False)
+                await self._learn.ingest_evaluation(mem, False, outcome=outcome)
             if lessons or not was_correct:
                 await self._learn.snapshot()
 

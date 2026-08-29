@@ -141,6 +141,45 @@ async def test_close_grades_committee_members(session: AsyncSession):
 
 
 @pytest.mark.asyncio
+async def test_tiny_eod_is_stagnation_and_avoids_ticker(session: AsyncSession):
+    from domain.entities import InvestmentMemoryRecord
+    from database.repositories.investment_memory_repository import InvestmentMemoryRepository
+    from services.desk_learning_service import DeskLearningService
+
+    await InvestmentMemoryRepository(session).save(
+        InvestmentMemoryRecord(
+            ticker="AMC",
+            thesis="buy amc",
+            scores={"technical_agent": 20, "news_agent": -12},
+            confidence=0.6,
+            scenario="base",
+            expected_outcome="up",
+            recommendation="buy",
+            entry_price=2.70,
+        )
+    )
+    svc = TradeJournalService(session)
+    await svc.record_open(
+        symbol="AMC", qty=2, entry_price=2.70, stop_loss=2.48, take_profit=3.13
+    )
+    await svc.record_close(
+        symbol="AMC",
+        exit_price=2.705,
+        exit_reason="EOD smart flat: asegurar_ganancia:+0.19% (eod_flat_window_20m)",
+    )
+    closed = (await svc.list_closed(days=1))[0]
+    review = closed.meta["member_review"]
+    assert review["outcome"] == "stagnation"
+    assert review["was_correct"] is False
+    by_name = {m["agent"]: m for m in review["members"]}
+    assert by_name["technical_agent"]["right"] is False
+    assert by_name["technical_agent"]["pattern"] == "stagnation_failed"
+    assert by_name["news_agent"]["right"] is True
+    learning = DeskLearningService(session)
+    assert "AMC" in await learning.avoid_tickers()
+
+
+@pytest.mark.asyncio
 async def test_close_uses_fill_entry_price(session: AsyncSession):
     svc = TradeJournalService(session)
     await svc.record_open(symbol="AMC", qty=2, entry_price=2.48, stop_loss=2.48)
@@ -167,9 +206,29 @@ def test_classify_operation_is_not_pnl():
         symbol="AMC", qty=2, entry_price=2.7, stop_loss=2.48, take_profit=3.13,
         exit_price=2.67, exit_reason="EOD smart flat: asegurar_ganancia:-1.0%", status="closed",
     )
+    tiny_green = TradeJournalEntry(
+        symbol="AMC", qty=2, entry_price=2.6974, stop_loss=2.48, take_profit=3.13,
+        exit_price=2.70, pnl_pct=0.10,
+        exit_reason="EOD smart flat: asegurar_ganancia:+0.10% (eod_flat_window_20m)",
+        status="closed",
+    )
+    banked = TradeJournalEntry(
+        symbol="PLUG", qty=1, entry_price=2.03, stop_loss=1.87, take_profit=2.35,
+        exit_price=2.25, pnl_pct=10.84,
+        exit_reason="EOD smart flat: asegurar_ganancia:+10.84% (scheduled_eod_flat)",
+        status="closed",
+    )
+    carry = TradeJournalEntry(
+        symbol="AMC", qty=2, entry_price=2.7, stop_loss=2.48, take_profit=3.13,
+        exit_price=2.67, exit_reason="EOD smart flat: carry_rojo (scheduled_eod_flat)",
+        status="closed",
+    )
     assert classify_operation(win)[0] == "win"
     assert classify_operation(loss)[0] == "loss"
-    assert classify_operation(red_eod)[0] == "gestion"
+    assert classify_operation(red_eod)[0] == "stagnation"
+    assert classify_operation(tiny_green) == ("stagnation", "no_progress")
+    assert classify_operation(banked)[0] == "gestion"
+    assert classify_operation(carry)[0] == "gestion"
 
 
 @pytest.mark.asyncio

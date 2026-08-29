@@ -979,12 +979,13 @@ async function loadAgentEffectiveness() {
         const label = {
           win: "operación ganada (take-profit)",
           loss: "operación perdida (stop / tesis)",
-          gestion: "cierre de gestión — sin veredicto",
+          stagnation: "operación estancada — capital ocupado sin avanzar 1.5%",
+          gestion: "cierre de gestión con avance — sin veredicto 2R",
         }[outcome] || outcome || "sin clasificar";
         lastCloseEl.classList.remove("muted");
         const members = last.members || [];
         let extra = "";
-        if (members.length && (outcome === "win" || outcome === "loss")) {
+        if (members.length && (outcome === "win" || outcome === "loss" || outcome === "stagnation")) {
           extra = "<ul>" + members.map((m) => {
             const mark = m.right === true ? "✓" : (m.right === false ? "✗" : "·");
             const cls = m.right === true ? "member-right" : (m.right === false ? "member-wrong" : "");

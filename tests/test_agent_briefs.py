@@ -115,6 +115,29 @@ def test_critique_false_veto_on_win():
     assert "vetó" in out["why"].lower() or "veto" in out["why"].lower()
 
 
+def test_critique_stagnation_is_opportunity_cost():
+    out = critique_agent(
+        agent_name="technical_agent",
+        brief={"score": 20, "summary": "Momentum intradía", "findings": ["Ruptura menor"]},
+        outcome="stagnation",
+        outcome_tag="no_progress",
+        ticker="AMC",
+        pnl_pct=0.2,
+    )
+    assert out["verdict"] == "wrong"
+    assert out["pattern"] == "stagnation_failed"
+    assert "estanc" in out["why"].lower()
+    warned = critique_agent(
+        agent_name="news_agent",
+        brief={"score": -12, "summary": "Sin catalizador", "findings": []},
+        outcome="stagnation",
+        outcome_tag="no_progress",
+        ticker="AMC",
+        pnl_pct=0.2,
+    )
+    assert warned["verdict"] == "correct"
+
+
 def test_apply_lessons_clips_repeating_breakout():
     report = _report(
         "technical_agent",

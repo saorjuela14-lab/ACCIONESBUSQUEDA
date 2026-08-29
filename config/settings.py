@@ -107,6 +107,7 @@ class Settings(BaseSettings):
     memory_evaluation_min_hours: float = 5.0
     memory_hit_pct: float = 1.5  # daily move that counts as a hit (5% is a 90-day bar)
     memory_avoid_hours: int = 24  # do not repeat false_long tickers until next open+
+    memory_stagnation_avoid_hours: int = 48  # no-progress names: skip next two sessions
     memory_agent_error_hours: int = 168  # keep per-agent justification errors ~7 days
     alert_cooldown_hours: int = 24
 
@@ -224,6 +225,8 @@ class Settings(BaseSettings):
     # Ultra-micro: wider stops (noise ≠ thesis fail); trail only after profit
     lifecycle_micro_equity_usd: float = 50.0
     lifecycle_micro_time_stop_days: int = 7
+    lifecycle_stagnation_days: float = 2.0  # rotate if no real progress after N days
+    lifecycle_stagnation_min_pnl_pct: float = 1.5  # same bar as daily thesis hit
     lifecycle_micro_trailing_pct: float = 0.10  # 10% from peak once armed
     lifecycle_micro_default_stop_pct: float = 0.08  # ~1–2N room vs 5% noise stops
     lifecycle_micro_default_target_pct: float = 0.16  # 2R

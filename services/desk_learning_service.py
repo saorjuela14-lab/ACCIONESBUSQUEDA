@@ -22,11 +22,19 @@ FLAG_KEY = "desk_lessons"
 _FALSE_LONG = "false_long"
 _FALSE_SHORT = "false_short"
 _HOLD_MISS = "hold_miss"
+_STAGNATION = "stagnation"
 
 
-def classify_error(recommendation: str, was_correct: bool) -> str | None:
+def classify_error(
+    recommendation: str,
+    was_correct: bool,
+    *,
+    outcome: str | None = None,
+) -> str | None:
     if was_correct:
         return None
+    if (outcome or "") == "stagnation":
+        return _STAGNATION
     rec = (recommendation or "").lower()
     if rec in ("strong_buy", "buy"):
         return _FALSE_LONG
@@ -41,24 +49,46 @@ class DeskLearningService:
         self._lessons = DeskLessonRepository(session)
         self._flags = OpsFlagRepository(session)
 
-    async def ingest_evaluation(self, record: InvestmentMemoryRecord, was_correct: bool) -> dict[str, Any] | None:
-        tag = classify_error(record.recommendation, was_correct)
+    async def ingest_evaluation(
+        self,
+        record: InvestmentMemoryRecord,
+        was_correct: bool,
+        *,
+        outcome: str | None = None,
+    ) -> dict[str, Any] | None:
+        tag = classify_error(record.recommendation, was_correct, outcome=outcome)
         if not tag:
             return None
         settings = get_settings()
-        expires = utc_now() + timedelta(hours=float(settings.memory_avoid_hours))
+        try:
+            hours = float(settings.memory_avoid_hours or 24)
+        except (TypeError, ValueError):
+            hours = 24.0
+        if tag == _STAGNATION:
+            try:
+                hours = float(getattr(settings, "memory_stagnation_avoid_hours", 48) or 48)
+            except (TypeError, ValueError):
+                hours = 48.0
+        expires = utc_now() + timedelta(hours=hours)
         ret = record.actual_return_pct
         ret_s = f"{ret:+.1f}%" if ret is not None else "n/d"
-        reason = (
-            f"{tag}: {record.ticker} {record.recommendation} → {ret_s}. "
-            f"No repetir el mismo sesgo en la próxima apertura."
-        )
+        if tag == _STAGNATION:
+            reason = (
+                f"estancada: {record.ticker} {record.recommendation} → {ret_s}. "
+                f"Capital ocupado sin avanzar 1.5%. No repetir el ticker {int(hours)}h."
+            )
+        else:
+            reason = (
+                f"{tag}: {record.ticker} {record.recommendation} → {ret_s}. "
+                f"No repetir el mismo sesgo en la próxima apertura."
+            )
         payload = {
             "memory_id": record.id,
             "recommendation": record.recommendation,
             "actual_return_pct": ret,
+            "outcome": outcome,
         }
-        if tag == _FALSE_LONG:
+        if tag in (_FALSE_LONG, _STAGNATION):
             row = await self._lessons.upsert_avoid(
                 ticker=record.ticker,
                 error_tag=tag,
