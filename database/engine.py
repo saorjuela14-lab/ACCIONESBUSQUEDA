@@ -132,6 +132,11 @@ async def _migrate_schema(conn, url: str) -> None:
             text("ALTER TABLE investment_memory ADD COLUMN error_tag VARCHAR(32)")
         )
         logger.info("db.migrate.add_column", table="investment_memory", column="error_tag")
+    if imcols and "briefs_json" not in imcols:
+        await conn.execute(
+            text("ALTER TABLE investment_memory ADD COLUMN briefs_json TEXT DEFAULT '{}'")
+        )
+        logger.info("db.migrate.add_column", table="investment_memory", column="briefs_json")
 
 
 def _engine_kwargs(url: str) -> dict:

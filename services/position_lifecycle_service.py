@@ -266,12 +266,38 @@ class PositionLifecycleService:
                 new_stop=effective_stop,
             )
 
-        # Time-stop is last resort: only when underwater / flat (never cut winners by calendar)
-        if mandate.time_stop_days and mandate.opened_at:
-            opened = mandate.opened_at
-            if opened.tzinfo is None:
-                opened = opened.replace(tzinfo=timezone.utc)
-            age_days = (now - opened).total_seconds() / 86400.0
+        opened_at = mandate.opened_at
+        age_days = 0.0
+        if opened_at:
+            if opened_at.tzinfo is None:
+                opened_at = opened_at.replace(tzinfo=timezone.utc)
+            age_days = (now - opened_at).total_seconds() / 86400.0
+
+        # Ultra-micro: sitting green-but-flat occupies the only line. Rotate.
+        try:
+            stag_days = float(getattr(self._settings, "lifecycle_stagnation_days", 2.0) or 0)
+        except (TypeError, ValueError):
+            stag_days = 2.0
+        try:
+            stag_bar = float(
+                getattr(self._settings, "lifecycle_stagnation_min_pnl_pct", 1.5) or 1.5
+            )
+        except (TypeError, ValueError):
+            stag_bar = 1.5
+        pnl_pct = ((price / entry) - 1.0) * 100.0 if entry > 0 else 0.0
+        if stag_days > 0 and age_days >= stag_days and pnl_pct < stag_bar:
+            return LifecycleAction(
+                symbol=mandate.symbol,
+                action="exit",
+                reason=(
+                    f"Time-stop estancado {stag_days:.0f}d "
+                    f"({age_days:.1f}d) · {pnl_pct:+.2f}% < {stag_bar:.1f}%"
+                ),
+                new_stop=effective_stop,
+            )
+
+        # Time-stop is last resort: only when underwater / flat (never cut real winners by calendar)
+        if mandate.time_stop_days and opened_at:
             underwater = entry <= 0 or price <= entry * 0.995
             if age_days >= mandate.time_stop_days and underwater:
                 return LifecycleAction(

@@ -307,7 +307,7 @@ async def get_agent_effectiveness(
 
 @router.get("/ops/lessons")
 async def get_desk_lessons(session: AsyncSession = Depends(get_session)):
-    """Active 24h lessons (avoid tickers + notes) for next open."""
+    """Active lessons (avoid tickers + per-agent justification errors)."""
     from services.desk_learning_service import DeskLearningService
 
     return await DeskLearningService(session).snapshot()

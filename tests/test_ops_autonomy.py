@@ -145,6 +145,37 @@ def test_lifecycle_micro_time_stop_three_days():
     assert "Time-stop" in action.reason
 
 
+def test_lifecycle_stagnation_exits_flat_green():
+    svc = PositionLifecycleService.__new__(PositionLifecycleService)
+    svc._settings = type(
+        "S",
+        (),
+        {
+            "lifecycle_trail_arm_profit_pct": 0.05,
+            "lifecycle_stagnation_days": 2.0,
+            "lifecycle_stagnation_min_pnl_pct": 1.5,
+        },
+    )()
+    now = utc_now()
+    m = PositionMandate(
+        symbol="AMC",
+        qty=2,
+        entry_price=2.6974,
+        stop_loss=2.48,
+        take_profit=3.13,
+        trailing_pct=0.10,
+        peak_price=2.71,
+        time_stop_days=7,
+        opened_at=now - timedelta(days=3),
+    )
+    stuck = PositionLifecycleService._evaluate(svc, m, price=2.705, now=now)
+    assert stuck.action == "exit"
+    assert "estancado" in stuck.reason.lower()
+
+    progressing = PositionLifecycleService._evaluate(svc, m, price=2.78, now=now)
+    assert progressing.action != "exit" or "estancado" not in (progressing.reason or "").lower()
+
+
 def test_sector_gate_blocks_overweight():
     metrics = PortfolioRiskMetrics(
         equity=1000,

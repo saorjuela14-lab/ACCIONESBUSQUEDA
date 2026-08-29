@@ -10,6 +10,16 @@ from database.models import AgentWeightORM, InvestmentMemoryORM
 from domain.entities import InvestmentMemoryRecord
 
 
+def _parse_briefs(raw: str | None) -> dict:
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 class InvestmentMemoryRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -21,6 +31,7 @@ class InvestmentMemoryRepository:
             thesis=record.thesis,
             reasons_json=json.dumps(record.reasons),
             scores_json=json.dumps(record.scores),
+            briefs_json=json.dumps(record.briefs or {}, default=str),
             confidence=record.confidence,
             scenario=record.scenario,
             expected_outcome=record.expected_outcome,
@@ -129,7 +140,8 @@ class InvestmentMemoryRepository:
             ticker=row.ticker,
             thesis=row.thesis,
             reasons=json.loads(row.reasons_json),
-            scores=json.loads(row.scores_json),
+            scores=json.loads(row.scores_json or "{}"),
+            briefs=_parse_briefs(getattr(row, "briefs_json", None)),
             confidence=row.confidence,
             scenario=row.scenario,
             expected_outcome=row.expected_outcome,
