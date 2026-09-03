@@ -284,6 +284,17 @@ async def get_track_record(
     return await TrackRecordService(session).summary(window_days=window_days)
 
 
+@router.get("/ops/month-report", response_model=None)
+async def get_month_report(
+    window_days: int = Query(default=30, ge=7, le=120),
+    session: AsyncSession = Depends(get_session),
+):
+    """CEO monthly desk report: equity vs $20, true 2R, stagnation, agents, vs SPY."""
+    from services.month_report_service import MonthReportService
+
+    return await MonthReportService(session).build(window_days=window_days)
+
+
 @router.get("/ops/agent-effectiveness", response_model=None)
 async def get_agent_effectiveness(
     window_days: int = Query(default=1, ge=1, le=730),

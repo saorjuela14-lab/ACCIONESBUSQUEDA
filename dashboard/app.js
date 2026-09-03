@@ -499,13 +499,31 @@ function resizeLwCharts() {
 }
 
 function setTechChartFullscreen(on) {
-  const box = $("#candle-chart-box");
+  const stage = $("#tech-charts-stage") || $("#candle-chart-box");
   const btn = $("#btn-tech-expand");
-  if (!box) return;
-  box.classList.toggle("fullscreen", !!on);
+  const fsBar = $("#tech-fs-bar");
+  const fsTicker = $("#tech-fs-ticker");
+  if (!stage) return;
+  stage.classList.toggle("fullscreen", !!on);
   document.body.classList.toggle("tech-chart-fs", !!on);
-  if (btn) btn.textContent = on ? "✕" : "⛶";
-  requestAnimationFrame(() => resizeLwCharts());
+  if (btn) {
+    btn.textContent = on ? "✕" : "⛶";
+    btn.title = on ? "Cerrar ampliado" : "Ampliar gráfico";
+  }
+  if (fsBar) fsBar.classList.toggle("hidden", !on);
+  if (fsTicker && on) {
+    const t = (typeof ticker === "function" ? ticker() : "") || "";
+    const tf = $("#tech-chart-tf")?.value || "";
+    fsTicker.textContent = [t, tf].filter(Boolean).join(" · ");
+  }
+  // Double rAF so layout settles before Lightweight Charts measures
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => resizeLwCharts());
+  });
+  if (on) {
+    setTimeout(resizeLwCharts, 80);
+    setTimeout(resizeLwCharts, 220);
+  }
 }
 
 function syncTechSummaryCollapse() {
@@ -524,10 +542,12 @@ function syncTechSummaryCollapse() {
 }
 
 function setupTechMobileControls() {
-  $("#btn-tech-expand")?.addEventListener("click", () => {
-    const box = $("#candle-chart-box");
-    setTechChartFullscreen(!box?.classList.contains("fullscreen"));
-  });
+  const toggleExpand = () => {
+    const stage = $("#tech-charts-stage") || $("#candle-chart-box");
+    setTechChartFullscreen(!stage?.classList.contains("fullscreen"));
+  };
+  $("#btn-tech-expand")?.addEventListener("click", toggleExpand);
+  $("#btn-tech-fs-close")?.addEventListener("click", () => setTechChartFullscreen(false));
   $("#btn-tech-summary-more")?.addEventListener("click", () => {
     const summary = $("#tech-summary");
     const more = $("#btn-tech-summary-more");
@@ -547,7 +567,8 @@ function setupTechMobileControls() {
     setTimeout(resizeLwCharts, 250);
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && $("#candle-chart-box")?.classList.contains("fullscreen")) {
+    const stage = $("#tech-charts-stage") || $("#candle-chart-box");
+    if (e.key === "Escape" && stage?.classList.contains("fullscreen")) {
       setTechChartFullscreen(false);
     }
   });
@@ -892,6 +913,108 @@ async function loadTrackRecord() {
   }
 }
 
+function _fmtSignedPct(v) {
+  if (v == null || Number.isNaN(Number(v))) return "—";
+  const n = Number(v);
+  const sign = n > 0 ? "+" : "";
+  return `${sign}${n.toFixed(1)}%`;
+}
+
+async function loadMonthReport() {
+  const headline = $("#month-report-headline");
+  const sumEl = $("#month-report-summary");
+  const outEl = $("#month-report-outcomes");
+  const diagEl = $("#month-report-diagnosis");
+  const noteEl = $("#month-report-note");
+  const winEl = $("#month-report-window");
+  if (!sumEl || !isDeskPrincipal()) return;
+  if (headline) {
+    headline.classList.add("muted");
+    headline.textContent = "Cargando informe del mes…";
+  }
+  sumEl.textContent = "Calculando equity, 2R y estancamiento…";
+  try {
+    const r = await api(`${API}/ops/month-report?window_days=30`);
+    if (winEl) winEl.textContent = `${r.window_days || 30} días`;
+    if (headline) {
+      headline.classList.remove("muted");
+      headline.textContent = r.headline || "Informe del mes";
+    }
+    const eq = r.equity_usd != null ? `$${Number(r.equity_usd).toFixed(2)}` : "—";
+    const ret = _fmtSignedPct(r.equity_return_pct);
+    const pnl = r.closed_pnl_usd != null
+      ? `$${Number(r.closed_pnl_usd).toFixed(2)}`
+      : "—";
+    const thesis = r.thesis_hit_rate_pct != null
+      ? `${r.thesis_hit_rate_pct}% (${r.theses_correct}/${r.theses_evaluated})`
+      : "—";
+    const spy = r.spy_return_pct != null ? _fmtSignedPct(r.spy_return_pct) : "—";
+    const vs = r.vs_spy_pct != null ? _fmtSignedPct(r.vs_spy_pct) : "—";
+    const best = r.best_agent_label || r.best_agent || "—";
+    const weak = r.weakest_agent_label || r.weakest_agent || "—";
+    sumEl.classList.remove("muted");
+    sumEl.innerHTML =
+      `<div class="track-kpis">` +
+      `<div><label>Equity</label><strong>${escapeHtml(eq)}</strong> <span class="muted">${escapeHtml(ret)}</span></div>` +
+      `<div><label>PnL cerrado $</label><strong>${escapeHtml(pnl)}</strong></div>` +
+      `<div><label>Tesis mesa</label><strong>${escapeHtml(thesis)}</strong></div>` +
+      `<div><label>vs SPY</label><strong>${escapeHtml(vs)}</strong> <span class="muted">SPY ${escapeHtml(spy)}</span></div>` +
+      `<div><label>TP reales</label><strong>${r.true_tp ?? 0}</strong></div>` +
+      `<div><label>Stops</label><strong>${r.true_stop ?? 0}</strong></div>` +
+      `<div><label>Mejor agente</label><strong>${escapeHtml(String(best))}</strong></div>` +
+      `<div><label>Más débil</label><strong>${escapeHtml(String(weak))}</strong></div>` +
+      `</div>`;
+    const o = r.outcomes || {};
+    if (outEl) {
+      outEl.classList.remove("muted");
+      const pills = [
+        `<span class="month-pill win">TP ${o.win || 0}</span>`,
+        `<span class="month-pill loss">Stop/tesis ${o.loss || 0}</span>`,
+        `<span class="month-pill stag">Estanc. ${o.stagnation || 0}${r.stagnation_pct != null ? ` (${r.stagnation_pct}%)` : ""}</span>`,
+        `<span class="month-pill gestion">Gestión ${o.gestion || 0}</span>`,
+        `<span class="month-pill">Cierres ${r.trades_closed || 0}</span>`,
+        `<span class="month-pill">Abiertas ${r.open_count || 0}</span>`,
+      ];
+      if (r.journal_win_rate_pct != null) {
+        pills.push(
+          `<span class="month-pill" title="P&L verde engaña si no hay TP">WR P&amp;L ${r.journal_win_rate_pct}%*</span>`
+        );
+      }
+      const tops = (r.top_symbols || []).slice(0, 3).map((s) => {
+        const usd = s.pnl_usd != null ? `$${Number(s.pnl_usd).toFixed(2)}` : "";
+        return `${s.symbol} ${usd}`.trim();
+      }).filter(Boolean);
+      outEl.innerHTML = pills.join("") +
+        (tops.length
+          ? `<p class="month-top-syms">Top PnL$: ${tops.map(escapeHtml).join(" · ")}</p>`
+          : "");
+    }
+    if (diagEl) {
+      const items = r.diagnosis || [];
+      const avoids = r.avoids || [];
+      if (!items.length && !avoids.length) {
+        diagEl.classList.add("muted");
+        diagEl.textContent = "Sin alertas de diagnóstico este mes.";
+      } else {
+        diagEl.classList.remove("muted");
+        diagEl.innerHTML = `<strong>Diagnóstico</strong><ul>` +
+          items.map((t) => `<li>${escapeHtml(t)}</li>`).join("") +
+          (avoids.length
+            ? `<li>Avoid activo: ${avoids.map(escapeHtml).join(", ")}</li>`
+            : "") +
+          `</ul>`;
+      }
+    }
+    if (noteEl) {
+      const db = r.durable_db ? "DB persistente" : "SQLite efímero — configura Neon";
+      noteEl.textContent = `${db}. ${r.disclaimer || ""}`;
+    }
+  } catch (e) {
+    if (headline) headline.textContent = "Informe del mes no disponible";
+    sumEl.textContent = e.message || "Error";
+  }
+}
+
 function _effHitClass(pct) {
   if (pct == null) return "";
   if (pct >= 55) return "agent-eff-hit-good";
@@ -909,7 +1032,7 @@ async function loadAgentEffectiveness() {
   if (body) body.innerHTML = `<tr><td colspan="5">Cargando…</td></tr>`;
   if (lessonsEl) lessonsEl.textContent = "Lecciones 24h: cargando…";
   try {
-    const r = await api(`${API}/ops/agent-effectiveness?window_days=1&score_threshold=5`);
+    const r = await api(`${API}/ops/agent-effectiveness?window_days=30&score_threshold=5`);
     const desk = r.desk_hit_rate_pct != null
       ? `${r.desk_hit_rate_pct}% (${r.theses_correct}/${r.theses_evaluated})`
       : "—";
@@ -922,7 +1045,7 @@ async function loadAgentEffectiveness() {
     sumEl.classList.remove("muted");
     sumEl.innerHTML =
       `<div class="track-kpis">` +
-      `<div><label>Mesa hoy</label><strong>${escapeHtml(desk)}</strong></div>` +
+      `<div><label>Mesa 30d</label><strong>${escapeHtml(desk)}</strong></div>` +
       `<div><label>Pendientes eval.</label><strong>${r.theses_pending || 0}</strong></div>` +
       `<div><label>Mejor (≥3n)</label><strong>${escapeHtml(String(best))}</strong></div>` +
       `<div><label>Más débil</label><strong>${escapeHtml(String(weak))}</strong></div>` +
@@ -2040,6 +2163,7 @@ async function loadDashboard() {
         loadAlpacaStatus(),
         loadRiskDesk(),
         loadOpsDesk(),
+        loadMonthReport(),
         loadTrackRecord(),
         loadAgentEffectiveness(),
         loadAccessRequests(),
@@ -3594,6 +3718,7 @@ $("#btn-ops-reconcile") && ($("#btn-ops-reconcile").onclick = runReconcile);
 $("#btn-ops-lifecycle") && ($("#btn-ops-lifecycle").onclick = runLifecycleScan);
 $("#btn-ops-autopilot") && ($("#btn-ops-autopilot").onclick = runAutopilot);
 $("#btn-ops-audit") && ($("#btn-ops-audit").onclick = loadAuditLog);
+$("#btn-month-report") && ($("#btn-month-report").onclick = loadMonthReport);
 $("#btn-track-record") && ($("#btn-track-record").onclick = loadTrackRecord);
 $("#btn-trade-journal") && ($("#btn-trade-journal").onclick = loadTradeJournal);
 $("#btn-agent-effectiveness") && ($("#btn-agent-effectiveness").onclick = loadAgentEffectiveness);
