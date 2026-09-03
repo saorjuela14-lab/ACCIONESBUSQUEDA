@@ -27,7 +27,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/styles.css?v=33-month-chart" />
+  <link rel="stylesheet" href="/dashboard/static/styles.css?v=34-chart-history" />
   <!-- Heavy chart libs: defer so login/session UI is not blocked on cold start -->
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script defer src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -415,14 +415,18 @@
                     <option value="30m">30m</option>
                     <option value="15m">15m</option>
                   </select>
-                  <select id="tech-period">
+                  <select id="tech-period" title="Historial cargado — arrastra o rueda para ver temporadas anteriores">
                     <option value="3mo">3 meses</option>
-                    <option value="6mo" selected>6 meses</option>
+                    <option value="6mo">6 meses</option>
                     <option value="1y">1 año</option>
+                    <option value="2y" selected>2 años</option>
+                    <option value="5y">5 años</option>
+                    <option value="max">Máximo</option>
                   </select>
                   <button type="button" id="btn-tech-expand" class="btn tech-expand-btn" title="Ampliar gráfico">⛶</button>
                 </div>
               </div>
+              <p id="tech-history-hint" class="muted tech-history-hint hidden">Elige 2 años / 5 años / Máximo y arrastra a la izquierda para temporadas anteriores.</p>
               <div class="tech-kpi-row" id="tech-kpi-row">
                 <div class="tech-kpi"><label>RSI</label><div id="tk-rsi">—</div></div>
                 <div class="tech-kpi"><label>MACD</label><div id="tk-macd">—</div></div>
@@ -670,7 +674,7 @@
 
   <script src="/dashboard/static/reliability.js?v=22-return-ranges"></script>
   <script src="/dashboard/static/voice.js?v=24-speech-money"></script>
-  <script src="/dashboard/static/app.js?v=33-month-chart"></script>
+  <script src="/dashboard/static/app.js?v=34-chart-history"></script>
   <script>
     // Permanently kill service workers — they were serving stale JS/CSS after deploy
     if ("serviceWorker" in navigator) {

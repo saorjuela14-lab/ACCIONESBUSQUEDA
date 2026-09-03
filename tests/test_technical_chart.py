@@ -109,3 +109,24 @@ async def test_technical_chart_invalid_timeframe_defaults_daily():
     data = await svc.build("AAPL", chart_timeframe="INVALID")
 
     assert data.chart_timeframe == "1D"
+
+
+@pytest.mark.asyncio
+async def test_technical_chart_long_history_period():
+    """2y/5y/max must request a longer daily fetch (not trim to 6mo)."""
+    market = MagicMock()
+    # ~500 trading days ≈ 2y
+    market.get_history = AsyncMock(return_value=_ohlcv(rows=520))
+
+    svc = TechnicalChartService(market)
+    data = await svc.build("AAPL", period="2y", chart_timeframe="1D")
+
+    assert data.period == "2y"
+    assert len(data.points) >= 200
+    daily_calls = [
+        c
+        for c in market.get_history.await_args_list
+        if (c.kwargs.get("interval") or (c.args[2] if len(c.args) > 2 else None)) == "1d"
+        and (c.kwargs.get("period") or (c.args[1] if len(c.args) > 1 else None)) == "2y"
+    ]
+    assert daily_calls, "expected get_history(..., period='2y', interval='1d')"

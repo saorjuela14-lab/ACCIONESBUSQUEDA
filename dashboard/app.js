@@ -492,8 +492,8 @@ function resizeLwCharts() {
     const width = el.clientWidth || el.parentElement?.clientWidth || 0;
     const height = el.clientHeight || el.parentElement?.clientHeight || 0;
     if (width > 0 && height > 0) {
+      // Keep current visible range (pan/zoom) — do not fitContent on every resize
       chart.applyOptions({ width, height });
-      chart.timeScale().fitContent();
     }
   });
 }
@@ -2834,8 +2834,53 @@ function renderTechDataStatus(data) {
     : "Sin datos de mercado a día de hoy para este ticker.";
 }
 
+/** How many bars to show initially so long history stays readable (scroll left for older seasons). */
+function visibleBarsForHistory(period, tf, total) {
+  if (!total || total <= 220) return null;
+  if (tf === "1W") return Math.min(total, 120);
+  if (isIntradayTf(tf)) return Math.min(total, 160);
+  if (period === "3mo" || period === "6mo") return null;
+  if (period === "1y") return Math.min(total, 220);
+  // 2y / 5y / max — recent window like TradingView; pan left for prior seasons
+  return Math.min(total, 200);
+}
+
+function applyChartHistoryWindow(chart, total, keepBars) {
+  if (!chart) return;
+  const ts = chart.timeScale();
+  if (!keepBars || keepBars >= total) {
+    ts.fitContent();
+    return;
+  }
+  const from = Math.max(0, total - keepBars);
+  try {
+    ts.setVisibleLogicalRange({ from: from - 0.5, to: total + 0.5 });
+  } catch (_) {
+    ts.fitContent();
+  }
+}
+
+function syncLwTimeScales() {
+  const primary = lwCharts.candle;
+  if (!primary) return;
+  const targets = [lwCharts.rsi, lwCharts.macd].filter(Boolean);
+  if (!targets.length) return;
+  let syncing = false;
+  primary.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+    if (!range || syncing) return;
+    syncing = true;
+    try {
+      targets.forEach((c) => {
+        try { c.timeScale().setVisibleLogicalRange(range); } catch (_) { /* ignore */ }
+      });
+    } finally {
+      syncing = false;
+    }
+  });
+}
+
 async function loadTechnicalChart(t, techAgentReport) {
-  const period = $("#tech-period")?.value || "6mo";
+  const period = $("#tech-period")?.value || "2y";
   const chartTf = $("#tech-chart-tf")?.value || activeGapTf || "1D";
   syncChartTimeframe(chartTf);
   const intraday = isIntradayTf(chartTf);
@@ -2866,11 +2911,28 @@ async function loadTechnicalChart(t, techAgentReport) {
       layout: { background: { color: "transparent" }, textColor: "#7d8fa3" },
       grid: { vertLines: { color: "#1e2a38" }, horzLines: { color: "#1e2a38" } },
       rightPriceScale: { borderColor: "#1e2a38" },
-      timeScale: { borderColor: "#1e2a38", timeVisible: intraday, secondsVisible: false },
+      timeScale: {
+        borderColor: "#1e2a38",
+        timeVisible: intraday,
+        secondsVisible: false,
+        rightOffset: 6,
+        shiftVisibleRangeOnNewBar: true,
+      },
       crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-      handleScroll: { vertTouchDrag: false },
-      handleScale: { axisPressedMouseMove: true },
+      // TradingView-like: drag / wheel / pinch to pan & zoom older seasons
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: false,
+      },
+      handleScale: {
+        mouseWheel: true,
+        pinch: true,
+        axisPressedMouseMove: { time: true, price: true },
+      },
     };
+    const keepBars = visibleBarsForHistory(period, chartTf, pts.length);
 
     const mapTime = (p) => lwTime(p.date, chartTf);
 
@@ -2923,7 +2985,7 @@ async function loadTechnicalChart(t, techAgentReport) {
       lwCharts.candle.priceScale("vol").applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
       volSeries.setData(volData);
     }
-    lwCharts.candle.timeScale().fitContent();
+    applyChartHistoryWindow(lwCharts.candle, pts.length, keepBars);
 
     destroyLwChart("rsi");
     const rsiEl = $("#rsi-chart");
@@ -2937,7 +2999,7 @@ async function loadTechnicalChart(t, techAgentReport) {
     rsiSeries.setData(pts.filter((p) => p.rsi != null).map((p) => ({ time: mapTime(p), value: p.rsi })));
     rsiSeries.createPriceLine({ price: 70, color: "rgba(239,68,68,0.6)", lineWidth: 1, lineStyle: 2 });
     rsiSeries.createPriceLine({ price: 30, color: "rgba(34,197,94,0.6)", lineWidth: 1, lineStyle: 2 });
-    lwCharts.rsi.timeScale().fitContent();
+    applyChartHistoryWindow(lwCharts.rsi, pts.length, keepBars);
 
     destroyLwChart("macd");
     const macdEl = $("#macd-chart");
@@ -2956,7 +3018,16 @@ async function loadTechnicalChart(t, techAgentReport) {
       time: mapTime(p), value: p.macd_hist,
       color: p.macd_hist >= 0 ? "rgba(34,197,94,0.6)" : "rgba(239,68,68,0.6)",
     })));
-    lwCharts.macd.timeScale().fitContent();
+    applyChartHistoryWindow(lwCharts.macd, pts.length, keepBars);
+    syncLwTimeScales();
+    const hint = $("#tech-history-hint");
+    if (hint) {
+      const n = pts.length;
+      hint.textContent = keepBars && n > keepBars
+        ? `${n} velas cargadas (${period}). Arrastra o usa la rueda para ir a temporadas anteriores.`
+        : `${n} velas · ${period}. Arrastra / rueda / pellizca para navegar el historial.`;
+      hint.classList.remove("hidden");
+    }
     requestAnimationFrame(resizeLwCharts);
   } catch (e) {
     destroyAllLwCharts();

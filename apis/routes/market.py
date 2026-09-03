@@ -9,10 +9,13 @@ from services.technical_chart_service import TechnicalChartService
 router = APIRouter()
 
 
+_TECH_PERIOD_PATTERN = r"^(1mo|3mo|6mo|1y|2y|5y|10y|max)$"
+
+
 @router.get("/market/{ticker}/chart", response_model=PriceChartData)
 async def get_price_chart(
     ticker: str,
-    period: str = Query(default="6mo", pattern=r"^(1mo|3mo|6mo|1y|2y|5y)$"),
+    period: str = Query(default="2y", pattern=_TECH_PERIOD_PATTERN),
 ) -> PriceChartData:
     df = await get_market_provider().get_history(ticker.upper(), period=period, interval="1d")
     points: list[PriceChartPoint] = []
@@ -36,7 +39,7 @@ async def get_price_chart(
 @router.get("/market/{ticker}/technical", response_model=TechnicalChartData)
 async def get_technical_chart(
     ticker: str,
-    period: str = Query(default="6mo", pattern=r"^(1mo|3mo|6mo|1y|2y|5y)$"),
+    period: str = Query(default="2y", pattern=_TECH_PERIOD_PATTERN),
     timeframe: str = Query(default="1D", description="1D | 1W | 4H | 1H | 30m | 15m"),
 ) -> TechnicalChartData:
     """OHLC velas + indicadores técnicos (RSI, MACD, SMA, Bollinger) + gaps por horario."""

@@ -71,7 +71,7 @@ class TechnicalChartService:
     async def build(
         self,
         ticker: str,
-        period: str = "6mo",
+        period: str = "2y",
         chart_timeframe: str = "1D",
     ) -> TechnicalChartData:
         ticker = ticker.upper()
