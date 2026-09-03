@@ -27,7 +27,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/styles.css?v=32-stagnation" />
+  <link rel="stylesheet" href="/dashboard/static/styles.css?v=34-chart-history" />
   <!-- Heavy chart libs: defer so login/session UI is not blocked on cold start -->
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script defer src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -279,6 +279,21 @@
       <p id="trade-recs-disclaimer" class="muted digest-disclaimer"></p>
     </section>
 
+    <section class="panel desk-only" id="month-report-panel" aria-label="Informe del mes">
+      <div class="panel-head">
+        <h3>Informe del mes</h3>
+        <div class="panel-actions">
+          <span class="muted" id="month-report-window">30 días</span>
+          <button type="button" id="btn-month-report" class="btn primary">Actualizar</button>
+        </div>
+      </div>
+      <p id="month-report-headline" class="month-report-headline muted">Cargando informe del mes…</p>
+      <div id="month-report-summary" class="track-record-summary muted">—</div>
+      <div id="month-report-outcomes" class="month-outcomes muted"></div>
+      <div id="month-report-diagnosis" class="desk-lessons muted"></div>
+      <p id="month-report-note" class="muted digest-disclaimer"></p>
+    </section>
+
     <section class="panel desk-only" id="track-record-panel" aria-label="Track record de la mesa">
       <div class="panel-head">
         <h3>Track record</h3>
@@ -295,6 +310,7 @@
       <div class="panel-head">
         <h3>Efectividad del comité</h3>
         <div class="panel-actions">
+          <span class="muted">ventana 30d</span>
           <button type="button" id="btn-agent-effectiveness" class="btn primary">Actualizar</button>
         </div>
       </div>
@@ -399,14 +415,18 @@
                     <option value="30m">30m</option>
                     <option value="15m">15m</option>
                   </select>
-                  <select id="tech-period">
+                  <select id="tech-period" title="Historial cargado — arrastra o rueda para ver temporadas anteriores">
                     <option value="3mo">3 meses</option>
-                    <option value="6mo" selected>6 meses</option>
+                    <option value="6mo">6 meses</option>
                     <option value="1y">1 año</option>
+                    <option value="2y" selected>2 años</option>
+                    <option value="5y">5 años</option>
+                    <option value="max">Máximo</option>
                   </select>
                   <button type="button" id="btn-tech-expand" class="btn tech-expand-btn" title="Ampliar gráfico">⛶</button>
                 </div>
               </div>
+              <p id="tech-history-hint" class="muted tech-history-hint hidden">Elige 2 años / 5 años / Máximo y arrastra a la izquierda para temporadas anteriores.</p>
               <div class="tech-kpi-row" id="tech-kpi-row">
                 <div class="tech-kpi"><label>RSI</label><div id="tk-rsi">—</div></div>
                 <div class="tech-kpi"><label>MACD</label><div id="tk-macd">—</div></div>
@@ -421,19 +441,26 @@
                 <button type="button" id="btn-tech-summary-more" class="tech-summary-more hidden">Ver más</button>
               </div>
               <div id="tech-playbook" class="tech-playbook hidden" aria-live="polite"></div>
-              <div class="chart-box tech-chart-box" id="candle-chart-box">
-                <div id="candle-chart" class="lw-chart"></div>
-              </div>
-              <div class="gap-panel" id="gap-panel">
-                <div class="gap-panel-head">
-                  <h4 class="subhead" style="margin:0">Gaps de Precio (fill pendiente)</h4>
-                  <span class="muted" style="font-size:10px">El mercado suele cubrir gaps — resaltados en ámbar</span>
+              <div class="tech-charts-stage" id="tech-charts-stage">
+                <div class="tech-fs-bar hidden" id="tech-fs-bar">
+                  <strong>Gráfico ampliado</strong>
+                  <span class="muted" id="tech-fs-ticker"></span>
+                  <button type="button" id="btn-tech-fs-close" class="btn primary" title="Cerrar ampliado">✕ Cerrar</button>
                 </div>
-                <div id="gap-tf-tabs" class="gap-tf-tabs"></div>
-                <div id="gap-list" class="gap-list"></div>
+                <div class="chart-box tech-chart-box" id="candle-chart-box">
+                  <div id="candle-chart" class="lw-chart"></div>
+                </div>
+                <div class="gap-panel" id="gap-panel">
+                  <div class="gap-panel-head">
+                    <h4 class="subhead" style="margin:0">Gaps de Precio (fill pendiente)</h4>
+                    <span class="muted" style="font-size:10px">El mercado suele cubrir gaps — resaltados en ámbar</span>
+                  </div>
+                  <div id="gap-tf-tabs" class="gap-tf-tabs"></div>
+                  <div id="gap-list" class="gap-list"></div>
+                </div>
+                <div class="chart-box small tech-chart-box" id="rsi-chart-box"><div id="rsi-chart" class="lw-chart"></div></div>
+                <div class="chart-box small tech-chart-box" id="macd-chart-box"><div id="macd-chart" class="lw-chart"></div></div>
               </div>
-              <div class="chart-box small tech-chart-box"><div id="rsi-chart" class="lw-chart"></div></div>
-              <div class="chart-box small tech-chart-box"><div id="macd-chart" class="lw-chart"></div></div>
             </section>
             <div class="scenarios-row" id="scenarios-row"></div>
             <h4 class="subhead">Correlaciones Técnicas (contexto comité)</h4>
@@ -647,7 +674,7 @@
 
   <script src="/dashboard/static/reliability.js?v=22-return-ranges"></script>
   <script src="/dashboard/static/voice.js?v=24-speech-money"></script>
-  <script src="/dashboard/static/app.js?v=32-stagnation"></script>
+  <script src="/dashboard/static/app.js?v=34-chart-history"></script>
   <script>
     // Permanently kill service workers — they were serving stale JS/CSS after deploy
     if ("serviceWorker" in navigator) {
