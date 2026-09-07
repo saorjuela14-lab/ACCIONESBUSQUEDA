@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from domain.broker import BrokerAccount, BrokerOrderResult, BrokerPosition
+from domain.broker import BrokerAccount, BrokerClock, BrokerOrderResult, BrokerPosition
 from services.daily_status_briefing_service import DailyStatusBriefingService
 
 
@@ -95,3 +95,45 @@ async def test_send_briefing_pushes_channels():
     push.notify_message.assert_awaited_once()
     kwargs = push.notify_message.await_args.kwargs
     assert kwargs.get("prefer_plain") is True
+
+
+@pytest.mark.asyncio
+async def test_holiday_briefing_explains_closed_market():
+    broker = MagicMock()
+    broker.is_configured.return_value = True
+    broker.get_account = AsyncMock(
+        return_value=BrokerAccount(
+            equity=22.83, cash=17.53, buying_power=17.53, paper=False, status="ACTIVE"
+        )
+    )
+    broker.get_positions = AsyncMock(return_value=[])
+    broker.list_orders = AsyncMock(return_value=[])
+    broker.get_clock = AsyncMock(
+        return_value=BrokerClock(
+            is_open=False,
+            next_open=datetime(2026, 9, 8, 13, 30, tzinfo=timezone.utc),
+        )
+    )
+
+    with patch("services.daily_status_briefing_service.get_settings") as gs, \
+         patch("services.daily_status_briefing_service.RiskPolicyService") as RS, \
+         patch("services.daily_status_briefing_service.market_holiday_name", return_value="Labor Day (Día del Trabajo)"), \
+         patch(
+             "services.daily_status_briefing_service.load_lesson_briefing_lines",
+             new=AsyncMock(return_value=[]),
+         ):
+        s = MagicMock()
+        s.firm_autonomy = True
+        s.auto_execute_trades = True
+        gs.return_value = s
+        RS.return_value.status = AsyncMock(
+            return_value=MagicMock(
+                macro=MagicMock(mode="neutral", trading_allowed=True, block_reason=None)
+            )
+        )
+        title, body = await DailyStatusBriefingService(broker=broker).build("holiday")
+
+    assert "FESTIVO" in title
+    assert "Labor Day" in body
+    assert "CERRADO" in body
+    assert "Próxima apertura" in body

@@ -12,11 +12,12 @@ from services.desk_learning_service import load_lesson_briefing_lines
 from services.push_notification_service import PushNotificationService
 from services.risk_policy_service import RiskPolicyService
 from utils.logging import get_logger
+from utils.market_hours import market_holiday_name
 
 logger = get_logger(__name__)
 
 ET = ZoneInfo("America/New_York")
-SessionKind = Literal["open", "lunch", "close", "manual"]
+SessionKind = Literal["open", "lunch", "close", "manual", "holiday"]
 
 
 class DailyStatusBriefingService:
@@ -39,10 +40,27 @@ class DailyStatusBriefingService:
             "lunch": "ALMUERZO",
             "close": "CIERRE",
             "manual": "STATUS",
+            "holiday": "FESTIVO",
         }.get(session_kind, "STATUS")
         title = f"Monarch Capital {label} · {now.strftime('%d %b %Y %H:%M ET')}"
 
         lines: list[str] = [title, ""]
+        if session_kind == "holiday":
+            holiday = market_holiday_name(now) or "Festivo NYSE"
+            lines.append(f"Mercado CERRADO — {holiday}.")
+            lines.append("Sin compras, ventas ni alertas de sesión: la mesa no opera en festivo.")
+            try:
+                clock = await self._broker.get_clock()
+                nxt = clock.next_open
+                if nxt is not None:
+                    if nxt.tzinfo is None:
+                        nxt = nxt.replace(tzinfo=timezone.utc)
+                    lines.append(
+                        f"Próxima apertura: {nxt.astimezone(ET).strftime('%a %d %b %Y %H:%M ET')}."
+                    )
+            except Exception:
+                lines.append("Próxima apertura: siguiente día hábil 09:30 ET.")
+            lines.append("")
 
         if not self._broker.is_configured():
             lines.append("Alpaca no configurada — sin datos de cuenta.")
@@ -159,6 +177,8 @@ class DailyStatusBriefingService:
             lines.append("Gestión: almuerzo — revisión de mitad de sesión (posiciones y órdenes).")
         elif session_kind == "close":
             lines.append("Gestión: cierre — lifecycle/risk revisaron salidas; fin de sesión.")
+        elif session_kind == "holiday":
+            lines.append("Gestión: festivo — book en carry; órdenes GTC quedan pendientes hasta la reapertura.")
         else:
             lines.append("Gestión: status manual bajo demanda.")
 

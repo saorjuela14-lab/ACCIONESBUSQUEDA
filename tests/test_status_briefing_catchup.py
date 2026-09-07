@@ -137,3 +137,82 @@ async def test_failed_delivery_not_marked_sent():
 
     assert result["whatsapp"] is False
     flags.set_json.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_weekday_holiday_sends_one_festivo_ping():
+    session = MagicMock()
+    flags = MagicMock()
+    flags.get_json = AsyncMock(return_value={})
+    flags.set_json = AsyncMock()
+
+    with patch("services.status_briefing_catchup_service.OpsFlagRepository", return_value=flags), \
+         patch("services.status_briefing_catchup_service.AuditService") as Audit, \
+         patch("services.status_briefing_catchup_service.DailyStatusBriefingService") as Brief, \
+         patch("services.status_briefing_catchup_service.is_trading_day", return_value=False), \
+         patch(
+             "services.status_briefing_catchup_service.market_holiday_name",
+             return_value="Labor Day (Día del Trabajo)",
+         ), \
+         patch("services.status_briefing_catchup_service.datetime") as dt:
+        Audit.return_value.record = AsyncMock()
+        Brief.return_value.send = AsyncMock(
+            return_value={"telegram": True, "whatsapp": True, "title": "FESTIVO"}
+        )
+        dt.now.return_value = datetime(2026, 9, 7, 10, 0, tzinfo=ET)
+
+        svc = StatusBriefingCatchupService(session)
+        result = await svc.send_if_needed("open", via="cron")
+
+    assert result["whatsapp"] is True
+    Brief.return_value.send.assert_awaited_once_with("holiday")
+    flags.set_json.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_weekday_holiday_skips_lunch_and_close():
+    session = MagicMock()
+    flags = MagicMock()
+    flags.get_json = AsyncMock(return_value={})
+
+    with patch("services.status_briefing_catchup_service.OpsFlagRepository", return_value=flags), \
+         patch("services.status_briefing_catchup_service.AuditService"), \
+         patch("services.status_briefing_catchup_service.DailyStatusBriefingService") as Brief, \
+         patch("services.status_briefing_catchup_service.is_trading_day", return_value=False), \
+         patch(
+             "services.status_briefing_catchup_service.market_holiday_name",
+             return_value="Labor Day (Día del Trabajo)",
+         ), \
+         patch("services.status_briefing_catchup_service.datetime") as dt:
+        Brief.return_value.send = AsyncMock()
+        dt.now.return_value = datetime(2026, 9, 7, 12, 40, tzinfo=ET)
+
+        svc = StatusBriefingCatchupService(session)
+        lunch = await svc.send_if_needed("lunch", via="cron")
+        close = await svc.send_if_needed("close", via="cron")
+
+    assert lunch["skipped"] is True
+    assert close["skipped"] is True
+    Brief.return_value.send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_weekend_stays_silent():
+    session = MagicMock()
+    flags = MagicMock()
+    flags.get_json = AsyncMock(return_value={})
+
+    with patch("services.status_briefing_catchup_service.OpsFlagRepository", return_value=flags), \
+         patch("services.status_briefing_catchup_service.DailyStatusBriefingService") as Brief, \
+         patch("services.status_briefing_catchup_service.is_trading_day", return_value=False), \
+         patch("services.status_briefing_catchup_service.market_holiday_name", return_value=None), \
+         patch("services.status_briefing_catchup_service.datetime") as dt:
+        Brief.return_value.send = AsyncMock()
+        dt.now.return_value = datetime(2026, 9, 5, 10, 0, tzinfo=ET)
+
+        svc = StatusBriefingCatchupService(session)
+        result = await svc.catch_up(via="interval_catchup")
+
+    assert result["skipped"] is True
+    assert result["reason"] == "weekend"
+    Brief.return_value.send.assert_not_awaited()
