@@ -30,7 +30,7 @@ Antes de cambiar estrategia o código de trading, lee en este orden:
 - Autopilot ~**10 min** en horario de mercado.
 - **2R**: stop 8% / TP 16%; trail arma tras +5%; cooldown post-stop 90 min.
 - WhatsApp briefing **3×/día ET**: 09:35 / 12:30 / 16:05 — no spamear.
-- Smart EOD: **15:40 ET** cerrar verdes/flat; carry rojos moderados; cortar ≤−8% o tesis sell.
+- Smart EOD: **15:40 ET** no cosechar verdes de ruido; **carry hacia TP 16%**; carry rojos moderados (recuperación); cortar **≤−8%** / stop / tesis sell. Override CEO 2026-09-18: recuperación + ganancia, no EOD a +0.5%.
 
 ## Host
 - Preferir **Railway always-on**; FastAPI Cloud Hobby hiberna y pierde crons.

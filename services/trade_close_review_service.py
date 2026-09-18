@@ -290,19 +290,37 @@ class TradeCloseReviewService:
         return review
 
     async def refresh_stagnation_avoids(self, *, days: int = 14) -> list[str]:
-        """Ensure no-progress closes keep the ticker off the next hunt even without memory scores."""
+        """Keep no-progress names off the hunt; serial offenders stay out longer."""
+        from collections import Counter
+
+        from config.settings import get_settings
+
+        settings = get_settings()
+        base_h = float(getattr(settings, "memory_stagnation_avoid_hours", 168) or 168)
+        repeat_h = float(getattr(settings, "memory_stagnation_repeat_avoid_hours", 336) or 336)
+        repeat_n = int(getattr(settings, "memory_stagnation_repeat_min_closes", 2) or 2)
+
         closed = await self._journal.list_closed(limit=80, days=days)
-        avoided: list[str] = []
+        counts: Counter[str] = Counter()
+        stagnant: list = []
         for entry in closed:
             rev = (entry.meta or {}).get("member_review") or {}
             if rev.get("outcome") != "stagnation":
                 continue
+            t = (entry.symbol or "").upper()
+            counts[t] += 1
+            stagnant.append(entry)
+        avoided: list[str] = []
+        for entry in stagnant:
+            t = entry.symbol.upper()
+            hours = repeat_h if counts[t] >= repeat_n else base_h
             await self._learn.ingest_stagnation_ticker(
                 ticker=entry.symbol,
                 pnl_pct=entry.pnl_pct,
-                recommendation=rev.get("recommendation") or "buy",
+                recommendation=(entry.meta or {}).get("member_review", {}).get("recommendation")
+                or "buy",
+                hours_override=hours,
             )
-            t = entry.symbol.upper()
             if t not in avoided:
                 avoided.append(t)
         if avoided:

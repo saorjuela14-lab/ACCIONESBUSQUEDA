@@ -285,7 +285,9 @@ class PositionLifecycleService:
         except (TypeError, ValueError):
             stag_bar = 1.5
         pnl_pct = ((price / entry) - 1.0) * 100.0 if entry > 0 else 0.0
-        if stag_days > 0 and age_days >= stag_days and pnl_pct < stag_bar:
+        # Only rotate idle green/flat. Reds inside the stop are recovery, not stagnation.
+        idle = 0.0 <= pnl_pct < stag_bar
+        if stag_days > 0 and age_days >= stag_days and idle:
             return LifecycleAction(
                 symbol=mandate.symbol,
                 action="exit",

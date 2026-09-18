@@ -107,7 +107,9 @@ class Settings(BaseSettings):
     memory_evaluation_min_hours: float = 5.0
     memory_hit_pct: float = 1.5  # daily move that counts as a hit (5% is a 90-day bar)
     memory_avoid_hours: int = 24  # do not repeat false_long tickers until next open+
-    memory_stagnation_avoid_hours: int = 48  # no-progress names: skip next two sessions
+    memory_stagnation_avoid_hours: int = 168  # serial no-progress: 7d, not two sessions
+    memory_stagnation_repeat_avoid_hours: int = 336  # ≥2 stagnations in window → 14d
+    memory_stagnation_repeat_min_closes: int = 2
     memory_agent_error_hours: int = 168  # keep per-agent justification errors ~7 days
     alert_cooldown_hours: int = 24
 
@@ -225,7 +227,7 @@ class Settings(BaseSettings):
     # Ultra-micro: wider stops (noise ≠ thesis fail); trail only after profit
     lifecycle_micro_equity_usd: float = 50.0
     lifecycle_micro_time_stop_days: int = 7
-    lifecycle_stagnation_days: float = 2.0  # rotate if no real progress after N days
+    lifecycle_stagnation_days: float = 2.0  # rotate idle green/flat after N days (not recovery reds)
     lifecycle_stagnation_min_pnl_pct: float = 1.5  # same bar as daily thesis hit
     lifecycle_micro_trailing_pct: float = 0.10  # 10% from peak once armed
     lifecycle_micro_default_stop_pct: float = 0.08  # ~1–2N room vs 5% noise stops
@@ -245,12 +247,13 @@ class Settings(BaseSettings):
     holdings_tp_near_pct: float = 0.98  # exit when price ≥ 98% of TP
     holdings_min_tp_pnl_pct: float = 3.0  # require ≥3% gain to harvest near TP / fade
 
-    # Intraday / EOD: bank winners before close; optionally carry red overnight
+    # Intraday / EOD: 2R hold (CEO 2026-09-18) — do not harvest noise greens; cut stop / ≤−8%
     intraday_only_enabled: bool = True
     intraday_flat_minutes_before_close: int = 20  # decision window from 15:40 ET
     intraday_flat_cron: str = "15:40"  # dedicated ET cron (HH:MM)
-    intraday_flat_winners_only: bool = True  # do not force-close red into a loss at EOD
-    intraday_flat_min_pnl_pct: float = 0.0  # close if PnL% >= this (0 = flat/green)
+    intraday_flat_winners_only: bool = True  # never dump red into a loss at EOD (unless stop)
+    intraday_flat_min_pnl_pct: float = 0.0  # legacy harvest floor; ignored when 2R hold is on
+    intraday_2r_hold_enabled: bool = True  # carry greens toward TP 16%; only bank at TP
     intraday_carry_max_loss_pct: float = 8.0  # still cut if worse than this overnight risk
 
     # Investor risk discipline (Turtle-style % risk + post-stop cooldown)
@@ -258,6 +261,7 @@ class Settings(BaseSettings):
     auto_execute_micro_max_risk_pct: float = 4.0  # tiny books: 1-lot may need slightly more
     auto_execute_post_stop_cooldown_minutes: int = 90  # no revenge rebuy after stop-out
     auto_execute_max_position_pct: float = 0.30  # concentration cap per name
+    auto_execute_micro_max_open: int = 1  # ultra-micro: one line so SNAP can recover
 
     # Continuous reconcile
     reconcile_interval_minutes: int = 20

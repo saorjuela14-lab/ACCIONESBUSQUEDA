@@ -176,6 +176,35 @@ def test_lifecycle_stagnation_exits_flat_green():
     assert progressing.action != "exit" or "estancado" not in (progressing.reason or "").lower()
 
 
+def test_lifecycle_does_not_stagnation_exit_recovery_red():
+    """CEO: SNAP −6% inside the 8% stop must be allowed to recover, not time-stopped as 'flat'."""
+    svc = PositionLifecycleService.__new__(PositionLifecycleService)
+    svc._settings = type(
+        "S",
+        (),
+        {
+            "lifecycle_trail_arm_profit_pct": 0.05,
+            "lifecycle_stagnation_days": 2.0,
+            "lifecycle_stagnation_min_pnl_pct": 1.5,
+        },
+    )()
+    now = utc_now()
+    m = PositionMandate(
+        symbol="SNAP",
+        qty=1,
+        entry_price=5.955,
+        stop_loss=5.4786,
+        take_profit=6.9078,
+        trailing_pct=0.10,
+        peak_price=5.955,
+        time_stop_days=7,
+        opened_at=now - timedelta(days=3),
+    )
+    action = PositionLifecycleService._evaluate(svc, m, price=5.56, now=now)
+    assert action.action != "exit" or "estancado" not in (action.reason or "").lower()
+    assert action.action != "exit" or "Time-stop" not in (action.reason or "")
+
+
 def test_sector_gate_blocks_overweight():
     metrics = PortfolioRiskMetrics(
         equity=1000,
@@ -310,4 +339,60 @@ async def test_auto_execute_skips_picks_without_committee_consensus():
         result = await svc.run_from_picks([pick], actor="test")
         assert result["skipped"] is True
         assert result["reason"] == "no_committee_consensus"
+        broker.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_auto_execute_skips_second_line_on_micro_book():
+    from domain.daily_trade import TradePick
+
+    session = MagicMock()
+    broker = MagicMock()
+    broker.is_configured.return_value = True
+    broker.paper = True
+    broker.get_clock = AsyncMock(return_value=MagicMock(is_open=True))
+    broker.get_account = AsyncMock(
+        return_value=MagicMock(cash=16.2, equity=21.76, buying_power=16.2)
+    )
+    broker.get_positions = AsyncMock(
+        return_value=[MagicMock(symbol="SNAP", qty=1.0)]
+    )
+    broker.execute = AsyncMock()
+
+    with patch("services.auto_execute_service.get_settings") as gs, \
+         patch("services.auto_execute_service.KillSwitchService") as KS, \
+         patch("services.risk_policy_service.RiskPolicyService") as RS:
+        s = MagicMock()
+        s.firm_autonomy = True
+        s.auto_execute_trades = True
+        s.auto_execute_paper_first = False
+        s.auto_execute_live = True
+        s.auto_execute_max_notional = 25
+        s.auto_execute_require_market_open = True
+        s.auto_execute_max_position_pct = 0.30
+        s.auto_execute_max_risk_pct = 2.5
+        s.auto_execute_micro_max_risk_pct = 4.0
+        s.auto_execute_micro_max_open = 1
+        s.lifecycle_micro_equity_usd = 50.0
+        s.lifecycle_micro_default_stop_pct = 0.08
+        s.lifecycle_micro_default_target_pct = 0.16
+        s.intraday_only_enabled = False
+        gs.return_value = s
+        KS.return_value.is_active = AsyncMock(return_value=False)
+        RS.return_value.status = AsyncMock(
+            return_value=MagicMock(
+                macro=MagicMock(trading_allowed=True, mode="neutral", block_reason=None)
+            )
+        )
+        svc = AutoExecuteService(session, broker)
+        pick = TradePick(
+            ticker="AMC",
+            action="compra",
+            current_price=2.6,
+            committee_unanimous=True,
+            sources=["committee"],
+        )
+        result = await svc.run_from_picks([pick], actor="test")
+        assert result["skipped"] is True
+        assert "micro_max_open" in result["reason"]
         broker.execute.assert_not_awaited()
