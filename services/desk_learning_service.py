@@ -55,6 +55,7 @@ class DeskLearningService:
         was_correct: bool,
         *,
         outcome: str | None = None,
+        hours_override: float | None = None,
     ) -> dict[str, Any] | None:
         tag = classify_error(record.recommendation, was_correct, outcome=outcome)
         if not tag:
@@ -66,9 +67,14 @@ class DeskLearningService:
             hours = 24.0
         if tag == _STAGNATION:
             try:
-                hours = float(getattr(settings, "memory_stagnation_avoid_hours", 48) or 48)
+                hours = float(getattr(settings, "memory_stagnation_avoid_hours", 168) or 168)
             except (TypeError, ValueError):
-                hours = 48.0
+                hours = 168.0
+        if hours_override is not None:
+            try:
+                hours = float(hours_override)
+            except (TypeError, ValueError):
+                pass
         expires = utc_now() + timedelta(hours=hours)
         ret = record.actual_return_pct
         ret_s = f"{ret:+.1f}%" if ret is not None else "n/d"
@@ -116,6 +122,7 @@ class DeskLearningService:
         ticker: str,
         pnl_pct: float | None = None,
         recommendation: str | None = None,
+        hours_override: float | None = None,
     ) -> dict[str, Any] | None:
         rec = InvestmentMemoryRecord(
             ticker=(ticker or "").upper().strip(),
@@ -128,7 +135,9 @@ class DeskLearningService:
         )
         if not rec.ticker:
             return None
-        return await self.ingest_evaluation(rec, False, outcome="stagnation")
+        return await self.ingest_evaluation(
+            rec, False, outcome="stagnation", hours_override=hours_override
+        )
 
     async def ingest_agent_error(
         self,

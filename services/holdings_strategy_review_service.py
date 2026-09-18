@@ -145,7 +145,7 @@ class HoldingsStrategyReviewService:
             is_overnight = opened.astimezone(US_EASTERN).date() < now_et().date()
         recovery_harvest = (
             is_overnight
-            and pnl_pct >= float(self._settings.intraday_flat_min_pnl_pct)
+            and pnl_pct >= float(getattr(self._settings, "lifecycle_trail_arm_profit_pct", 0.05) or 0.05) * 100.0
             and rec in ("buy", "hold", "strong_buy")
         )
 

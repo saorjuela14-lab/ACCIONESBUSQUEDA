@@ -180,9 +180,38 @@ class AutoExecuteService:
         if book_cap < 1:
             return {"skipped": True, "reason": "insufficient_buying_power"}
 
+        # Ultra-micro: one open line so a recovering name is not starved by AMC recycling
+        open_syms: set[str] = set()
+        try:
+            positions = await self._broker.get_positions()
+            open_syms = {
+                (p.symbol or "").upper()
+                for p in positions
+                if (p.symbol or "").upper() not in {"USDTUSD", "USDCUSD"}
+                and float(getattr(p, "qty", 0) or 0) > 0
+            }
+        except Exception as exc:
+            logger.warning("auto_execute.positions_failed", error=str(exc))
+        micro = equity > 0 and equity <= float(getattr(self._settings, "lifecycle_micro_equity_usd", 50) or 50)
+        max_open = int(getattr(self._settings, "auto_execute_micro_max_open", 1) or 1)
+        if micro and max_open > 0 and len(open_syms) >= max_open:
+            return {
+                "skipped": True,
+                "reason": f"micro_max_open_{max_open}_hold={','.join(sorted(open_syms)[:4])}",
+            }
+
+        avoid: set[str] = set()
+        try:
+            from services.desk_learning_service import DeskLearningService
+
+            avoid = {t.upper() for t in await DeskLearningService(self._session).avoid_tickers()}
+        except Exception as exc:
+            logger.warning("auto_execute.avoid_failed", error=str(exc))
+
         lines: list[ExecuteLine] = []
         skipped_no_committee = 0
         skipped_risk = 0
+        skipped_avoid = 0
         for pick in picks[:5]:
             action = getattr(pick, "action", "") or ""
             if action == "vigilar":
@@ -196,6 +225,9 @@ class AutoExecuteService:
             ticker = getattr(pick, "ticker", None)
             price = getattr(pick, "current_price", None) or getattr(pick, "entry_price", None)
             if not ticker or not price or price <= 0:
+                continue
+            if str(ticker).upper() in avoid or str(ticker).upper() in open_syms:
+                skipped_avoid += 1
                 continue
             price_f = float(price)
             stop = getattr(pick, "stop_loss", None)
@@ -232,7 +264,9 @@ class AutoExecuteService:
             if len(lines) >= 2:
                 break
         if not lines:
-            if skipped_no_committee:
+            if skipped_avoid and not skipped_no_committee and not skipped_risk:
+                reason_out = "avoid_or_already_open"
+            elif skipped_no_committee:
                 reason_out = "no_committee_consensus"
             elif skipped_risk:
                 reason_out = "risk_budget_blocks_size"

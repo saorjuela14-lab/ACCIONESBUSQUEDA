@@ -31,24 +31,38 @@ def test_smart_flat_classifies_green_vs_red():
     settings.intraday_flat_winners_only = True
     settings.intraday_flat_min_pnl_pct = 0.0
     settings.intraday_carry_max_loss_pct = 8.0
+    settings.intraday_2r_hold_enabled = True
+    settings.lifecycle_trail_arm_profit_pct = 0.05
     svc._settings = settings
 
     green = SimpleNamespace(symbol="BBAI", avg_entry_price=3.0, current_price=3.05, unrealized_plpc=0.016)
-    red = SimpleNamespace(symbol="SNAP", avg_entry_price=5.0, current_price=4.80, unrealized_plpc=-0.04)
+    red = SimpleNamespace(symbol="SNAP", avg_entry_price=5.955, current_price=5.56, unrealized_plpc=-0.066)
     deep = SimpleNamespace(symbol="AMC", avg_entry_price=3.0, current_price=2.70, unrealized_plpc=-0.10)
 
     a1, r1 = IntradayFlatService._classify(svc, green, None)
-    assert a1 == "close"
-    assert "ganancia" in r1
+    assert a1 == "carry"
+    assert "2R" in r1
 
     a2, r2 = IntradayFlatService._classify(svc, red, None)
     assert a2 == "carry"
-    assert "rojo" in r2
+    assert "recuperacion" in r2
 
     a3, r3 = IntradayFlatService._classify(svc, deep, None)
     assert a3 == "close"
     assert "perdida_max_carry" in r3
 
-    invalidated = SimpleNamespace(thesis_invalidated=True, stop_loss=None)
+    invalidated = SimpleNamespace(thesis_invalidated=True, stop_loss=None, take_profit=None)
     a4, _ = IntradayFlatService._classify(svc, red, invalidated)
     assert a4 == "close"
+
+    tp_hit = SimpleNamespace(thesis_invalidated=False, stop_loss=5.48, take_profit=6.91)
+    near_tp = SimpleNamespace(symbol="SNAP", avg_entry_price=5.955, current_price=6.92, unrealized_plpc=0.16)
+    a5, r5 = IntradayFlatService._classify(svc, near_tp, tp_hit)
+    assert a5 == "close"
+    assert "take_profit" in r5
+
+    stop_hit = SimpleNamespace(thesis_invalidated=False, stop_loss=5.48, take_profit=6.91)
+    at_stop = SimpleNamespace(symbol="SNAP", avg_entry_price=5.955, current_price=5.47, unrealized_plpc=-0.081)
+    a6, r6 = IntradayFlatService._classify(svc, at_stop, stop_hit)
+    assert a6 == "close"
+    assert "stop" in r6 or "perdida" in r6

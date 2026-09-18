@@ -1,11 +1,10 @@
-"""Smart EOD flat — bank winners before close; carry underwater for recovery fishing.
+"""Smart EOD — protect the stop; let 2R run; carry recovery reds.
 
+CEO override 2026-09-18: harvesting +0.3–0.8% greens destroyed the +12% mark.
 Policy:
-- Continuous holdings review still runs every autopilot cycle (reformulate / TP).
-- Near regular close: close green / flat positions so overnight news cannot erase gains.
-- Red positions may stay open overnight (last week's pattern: red day → recovery → profit),
-  unless loss exceeds the carry cap or the thesis was invalidated / sell bias.
-- Next session keeps reviewing carried names and harvests when they turn green again.
+- Continuous holdings review still runs every autopilot cycle (reformulate / TP / trail).
+- Near regular close: do **not** flatten noise greens. Carry toward take-profit 16%.
+- Red positions stay open overnight (recovery) unless stop / ≤−8% / tesis sell.
 """
 
 from __future__ import annotations
@@ -82,10 +81,12 @@ class IntradayFlatService:
         mandate: Any | None,
     ) -> tuple[str, str]:
         """Return (action, reason) where action is close|carry."""
-        sym = (pos.symbol or "").upper()
         pnl = self._pnl_pct(pos)
-        min_green = float(self._settings.intraday_flat_min_pnl_pct)
         max_carry_loss = float(self._settings.intraday_carry_max_loss_pct)
+        let_2r = bool(getattr(self._settings, "intraday_2r_hold_enabled", True))
+        min_green = float(self._settings.intraday_flat_min_pnl_pct)
+        trail_arm = float(getattr(self._settings, "lifecycle_trail_arm_profit_pct", 0.05) or 0.05)
+        bank_pct = trail_arm * 100.0  # +5% default — never bank noise ticks
 
         if mandate is not None and getattr(mandate, "thesis_invalidated", False):
             return "close", f"tesis_invalidada:{pnl:+.2f}%"
@@ -96,14 +97,25 @@ class IntradayFlatService:
 
         # Also respect mandate stop if already breached
         stop = getattr(mandate, "stop_loss", None) if mandate else None
+        tp = getattr(mandate, "take_profit", None) if mandate else None
         px = float(getattr(pos, "current_price", 0) or 0)
         if stop and px > 0 and px <= float(stop):
             return "close", f"stop_tocado:@{px:.4f}<={float(stop):.4f}"
+        if tp and px > 0 and float(tp) > 0 and px >= float(tp) * 0.995:
+            return "close", f"take_profit:@{px:.4f}≥{float(tp):.4f}"
+
+        if let_2r:
+            if pnl < 0:
+                return "carry", f"recuperacion_carry:{pnl:+.2f}%"
+            return "carry", f"hacia_2R_hold:{pnl:+.2f}%"
 
         winners_only = bool(self._settings.intraday_flat_winners_only)
         if winners_only:
-            if pnl >= min_green:
+            # Legacy harvest: only bank once trail would arm (≥5%), never +0.5% noise
+            if pnl >= max(min_green, bank_pct):
                 return "close", f"asegurar_ganancia:{pnl:+.2f}%"
+            if pnl >= 0:
+                return "carry", f"hacia_2R_hold:{pnl:+.2f}%"
             return "carry", f"en_rojo_carry_overnight:{pnl:+.2f}%"
 
         # Legacy blunt flat
@@ -236,8 +248,8 @@ class IntradayFlatService:
                     await self._mandates.save(m)
 
         msg = (
-            f"EOD smart flat ({why}): cerradas={len(closed)} "
-            f"carry_rojo={len(carried)}"
+            f"EOD 2R hold ({why}): cerradas={len(closed)} "
+            f"carry={len(carried)}"
             + (f" errores={len(errors)}" if errors else "")
         )
         await self._audit.record(
@@ -252,6 +264,7 @@ class IntradayFlatService:
                 "errors": errors,
                 "reason": why,
                 "winners_only": bool(self._settings.intraday_flat_winners_only),
+                "two_r_hold": bool(getattr(self._settings, "intraday_2r_hold_enabled", True)),
             },
         )
         logger.info(
