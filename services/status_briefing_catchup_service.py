@@ -20,18 +20,19 @@ from services.audit_service import AuditService
 from services.daily_status_briefing_service import DailyStatusBriefingService
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.logging import get_logger
-from utils.market_hours import is_trading_day
+from utils.market_hours import is_trading_day, market_holiday_name
 
 logger = get_logger(__name__)
 
 ET = ZoneInfo("America/New_York")
-SessionKind = Literal["open", "lunch", "close"]
+SessionKind = Literal["open", "lunch", "close", "holiday"]
 
 # Scheduled times (ET). Catch-up is due from this time until desk end (covers cold starts).
 _SLOT_AT: dict[SessionKind, time] = {
     "open": time(9, 35),
     "lunch": time(12, 30),
     "close": time(16, 5),
+    "holiday": time(9, 35),
 }
 # Keep close recoverable late evening if the host slept through 16:05–18:30
 _DESK_END = time(23, 59)
@@ -94,7 +95,14 @@ class StatusBriefingCatchupService:
     ) -> dict | None:
         now = datetime.now(ET)
         if not is_trading_day(now):
-            return {"skipped": True, "reason": "non_trading_day"}
+            # Weekday NYSE holiday: one ping so the CEO is not left in the dark.
+            # Weekends stay silent (expected). Lunch/close crons do not re-send.
+            holiday = market_holiday_name(now)
+            if not holiday:
+                return {"skipped": True, "reason": "non_trading_day"}
+            if kind not in ("open", "holiday"):
+                return {"skipped": True, "reason": "holiday_single_ping", "kind": kind}
+            kind = "holiday"
         if not force and not self._due(kind, now):
             return {"skipped": True, "reason": "outside_window", "kind": kind}
         if not force and await self.already_sent(kind, now):
@@ -122,6 +130,11 @@ class StatusBriefingCatchupService:
 
     async def catch_up(self, *, via: str = "catchup") -> dict:
         """Send at most the overdue slots for today (0–3 messages, usually 0)."""
+        now = datetime.now(ET)
+        if not is_trading_day(now):
+            if market_holiday_name(now):
+                return {"holiday": await self.send_if_needed("holiday", via=via)}
+            return {"skipped": True, "reason": "weekend"}
         out: dict = {}
         for kind in ("open", "lunch", "close"):
             out[kind] = await self.send_if_needed(kind, via=via)  # type: ignore[arg-type]
