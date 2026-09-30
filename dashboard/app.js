@@ -265,11 +265,8 @@ async function ensureAuth() {
     applySessionUi(principal);
     return true;
   } catch (err) {
-    // Cold start / timeout: still show the terminal if we have a local token
-    if (!localStorage.getItem("nexbuy_token")) {
-      location.replace("/login");
-      return false;
-    }
+    // Cold start / timeout: middleware already gated this HTML with cookie or Bearer.
+    // Do not bounce cookie-only sessions to /login (infinite 302 + splash loop).
     setBootMsg("Servidor lento — abriendo igual…");
     let fallbackRole = "viewer";
     try {

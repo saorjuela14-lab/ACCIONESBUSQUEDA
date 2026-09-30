@@ -12,22 +12,13 @@
   <link rel="apple-touch-icon" href="/dashboard/static/apple-touch-icon.png" />
   <title>Monarch Capital — Terminal</title>
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
-  <script>
-    // No token → login immediately (do NOT hide the page forever)
-    (function () {
-      try {
-        if (!localStorage.getItem("nexbuy_token")) {
-          location.replace("/login");
-        }
-      } catch (_) {
-        location.replace("/login");
-      }
-    })();
-  </script>
+  <!-- Session is httponly cookie (nexbuy_token) + /auth/me in app.js.
+       Do NOT bounce on missing localStorage: that races middleware
+       (cookie → /dashboard 200, then JS → /login, cookie → /dashboard …). -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/styles.css?v=34-chart-history" />
+  <link rel="stylesheet" href="/dashboard/static/styles.css?v=35-login-cookie" />
   <!-- Heavy chart libs: defer so login/session UI is not blocked on cold start -->
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script defer src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -672,9 +663,9 @@
     </div>
   </div>
 
-  <script src="/dashboard/static/reliability.js?v=22-return-ranges"></script>
-  <script src="/dashboard/static/voice.js?v=24-speech-money"></script>
-  <script src="/dashboard/static/app.js?v=34-chart-history"></script>
+  <script src="/dashboard/static/reliability.js?v=35-login-cookie"></script>
+  <script src="/dashboard/static/voice.js?v=35-login-cookie"></script>
+  <script src="/dashboard/static/app.js?v=35-login-cookie"></script>
   <script>
     // Permanently kill service workers — they were serving stale JS/CSS after deploy
     if ("serviceWorker" in navigator) {

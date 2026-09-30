@@ -53,6 +53,7 @@
       fetch("/api/v1/auth/client-error", {
         method: "POST",
         headers,
+        credentials: "same-origin",
         body: JSON.stringify(payload),
         keepalive: true,
       }).catch(() => {});

@@ -96,3 +96,31 @@ async def test_client_monitors_firm_book_without_fake_seed():
 
         denied = await client.post("/api/v1/portfolios/default", headers=client_h)
         assert denied.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_cookie_only_session_opens_dashboard_without_bearer():
+    """httponly cookie must be enough: no Authorization, no localStorage."""
+    await init_db()
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+        login = await client.post("/api/v1/auth/login", json={"token": "desk-secret"})
+        assert login.status_code == 200
+        set_cookie = (login.headers.get("set-cookie") or "").lower()
+        assert "nexbuy_token" in set_cookie
+
+        dash = await client.get("/dashboard")
+        assert dash.status_code == 200
+        assert "Monarch Capital" in dash.text
+        head = dash.text.split("</head>", 1)[0]
+        assert "location.replace(\"/login\")" not in head
+        assert 'localStorage.getItem("nexbuy_token")' not in head
+
+        bounced = await client.get("/login")
+        assert bounced.status_code in (302, 307)
+        assert "/dashboard" in bounced.headers.get("location", "")
+
+        me = await client.get("/api/v1/auth/me")
+        assert me.status_code == 200
+        assert me.json().get("role") == "desk"

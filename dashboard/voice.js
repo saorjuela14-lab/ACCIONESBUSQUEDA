@@ -235,7 +235,7 @@
       const token = localStorage.getItem("nexbuy_token");
       const headers = {};
       if (token) headers.Authorization = `Bearer ${token}`;
-      const r = await fetch(`${deps.API}/voice/tts/status`, { headers });
+      const r = await fetch(`${deps.API}/voice/tts/status`, { headers, credentials: "same-origin" });
       if (!r.ok) return false;
       const data = await r.json();
       return !!data.configured;
@@ -252,6 +252,7 @@
     const r = await fetch(`${deps.API}/voice/tts`, {
       method: "POST",
       headers,
+      credentials: "same-origin",
       body: JSON.stringify({ text }),
     });
     if (r.status === 401) {
