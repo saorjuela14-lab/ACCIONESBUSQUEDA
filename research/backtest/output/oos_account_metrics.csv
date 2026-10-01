@@ -1,0 +1,6 @@
+variant,sample,trades,win_rate_pct,expectancy_r,expectancy_pct,profit_factor,max_drawdown_pct,median_mfe_r,median_mae_r,median_tp_atr_multiple,final_equity,account_return_pct,kill_switch_triggered,kill_switch_date,worst_loss_streak_trades,worst_loss_streak_usd,worst_loss_streak_pct,exits
+actual_2R,total,7,42.86,-0.271,-2.168,0.5351,-21.365,0.4588,-1.0393,2.8417,20.5693,-5.472,True,2026-01-13,2,-1.2311,-5.6467,"{'stop': 4, 'stagnation': 2, 'take_profit': 1}"
+adx25_2R,total,36,44.44,-0.0504,-0.4036,0.8566,-42.9642,0.7944,-0.5008,2.5789,20.4641,-5.9554,True,2026-09-23,6,-1.8917,-8.4614,"{'stop_trailing': 15, 'stop': 9, 'stagnation': 7, 'take_profit': 3, 'time_stop': 2}"
+be_tras_1R,total,4,0.0,-0.6437,-5.1499,0.0,-19.0584,0.6813,-0.9309,2.3364,20.2273,-7.0437,True,2025-12-30,4,-1.5326,-7.0437,"{'stop': 2, 'stop_trailing': 1, 'time_stop': 1}"
+stagnation_4d,total,27,37.04,-0.0903,-0.7229,0.7798,-28.5689,0.8027,-0.7441,2.563,20.1248,-7.5147,True,2026-09-22,5,-1.2317,-5.7678,"{'stop': 8, 'stop_trailing': 7, 'stagnation': 4, 'take_profit': 4, 'time_stop': 4}"
+tp_1_5R,total,7,42.86,-0.3423,-2.7386,0.4128,-21.365,0.4588,-1.0393,2.1313,20.2969,-6.7238,True,2026-01-13,2,-1.2147,-5.6467,"{'stop': 4, 'stagnation': 2, 'take_profit': 1}"

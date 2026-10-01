@@ -1,0 +1,16 @@
+variant,sample,trades,win_rate_pct,expectancy_r,expectancy_pct,profit_factor,max_drawdown_pct,median_mfe_r,median_mae_r,median_tp_atr_multiple,final_equity,account_return_pct,kill_switch_triggered,kill_switch_date,worst_loss_streak_trades,worst_loss_streak_usd,worst_loss_streak_pct,exits
+actual_2R,total,54,42.59,-0.2857,-2.2861,0.3086,-76.937,0.7645,-0.8029,2.193,13.9812,-35.7482,True,2024-04-11,7,-2.2824,-12.3688,"{'stop_trailing': 28, 'stop': 17, 'stagnation': 7, 'take_profit': 1, 'time_stop': 1}"
+actual_2R,in_sample,54,42.59,-0.2857,-2.2861,0.3086,-76.937,0.7645,-0.8029,2.193,13.9812,-35.7482,True,2024-04-11,7,-2.2824,-12.3688,"{'stop_trailing': 28, 'stop': 17, 'stagnation': 7, 'take_profit': 1, 'time_stop': 1}"
+actual_2R,out_of_sample,0,0.0,0.0,0.0,0.0,0.0,,,,,,False,,0,0.0,0.0,{}
+adx25_2R,total,36,25.0,-0.4099,-3.2795,0.2113,-75.2956,0.5576,-0.9716,2.1692,14.2728,-34.4081,True,2024-04-16,8,-3.2351,-16.6714,"{'stop_trailing': 17, 'stop': 14, 'stagnation': 2, 'time_stop': 2, 'take_profit': 1}"
+adx25_2R,in_sample,36,25.0,-0.4099,-3.2795,0.2113,-75.2956,0.5576,-0.9716,2.1692,14.2728,-34.4081,True,2024-04-16,8,-3.2351,-16.6714,"{'stop_trailing': 17, 'stop': 14, 'stagnation': 2, 'time_stop': 2, 'take_profit': 1}"
+adx25_2R,out_of_sample,0,0.0,0.0,0.0,0.0,0.0,,,,,,False,,0,0.0,0.0,{}
+be_tras_1R,total,60,38.33,-0.261,-2.0883,0.3211,-77.4627,0.8754,-0.795,2.13,13.8835,-36.1972,True,2024-04-11,7,-2.1615,-11.462,"{'stop_trailing': 33, 'stop': 18, 'stagnation': 7, 'take_profit': 1, 'time_stop': 1}"
+be_tras_1R,in_sample,60,38.33,-0.261,-2.0883,0.3211,-77.4627,0.8754,-0.795,2.13,13.8835,-36.1972,True,2024-04-11,7,-2.1615,-11.462,"{'stop_trailing': 33, 'stop': 18, 'stagnation': 7, 'take_profit': 1, 'time_stop': 1}"
+be_tras_1R,out_of_sample,0,0.0,0.0,0.0,0.0,0.0,,,,,,False,,0,0.0,0.0,{}
+stagnation_4d,total,31,22.58,-0.4766,-3.8132,0.1556,-75.1598,0.6289,-0.8098,2.1216,14.2772,-34.3879,True,2024-04-11,9,-3.9861,-19.7099,"{'stop_trailing': 14, 'stop': 12, 'stagnation': 3, 'take_profit': 1, 'time_stop': 1}"
+stagnation_4d,in_sample,31,22.58,-0.4766,-3.8132,0.1556,-75.1598,0.6289,-0.8098,2.1216,14.2772,-34.3879,True,2024-04-11,9,-3.9861,-19.7099,"{'stop_trailing': 14, 'stop': 12, 'stagnation': 3, 'take_profit': 1, 'time_stop': 1}"
+stagnation_4d,out_of_sample,0,0.0,0.0,0.0,0.0,0.0,,,,,,False,,0,0.0,0.0,{}
+tp_1_5R,total,48,33.33,-0.311,-2.488,0.3624,-75.5162,0.7645,-0.834,1.6478,14.1521,-34.9628,True,2024-04-11,8,-3.7133,-17.3557,"{'stop_trailing': 21, 'stop': 18, 'take_profit': 4, 'stagnation': 4, 'time_stop': 1}"
+tp_1_5R,in_sample,48,33.33,-0.311,-2.488,0.3624,-75.5162,0.7645,-0.834,1.6478,14.1521,-34.9628,True,2024-04-11,8,-3.7133,-17.3557,"{'stop_trailing': 21, 'stop': 18, 'take_profit': 4, 'stagnation': 4, 'time_stop': 1}"
+tp_1_5R,out_of_sample,0,0.0,0.0,0.0,0.0,0.0,,,,,,False,,0,0.0,0.0,{}
