@@ -18,7 +18,7 @@ from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-TRANSFER_ACTIVITY_TYPES = ("CSD", "CSW", "JNLC", "TRANS")
+TRANSFER_ACTIVITY_TYPES = ("CSD", "CSW", "JNLC", "TRANS", "OCT", "ACATC", "FOPT")
 _SKIP_STATUS = frozenset({"canceled", "cancelled", "pending", "rejected", "queued", "failed"})
 _MAX_PAGES = 50
 
