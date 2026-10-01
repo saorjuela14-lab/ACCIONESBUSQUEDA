@@ -8,6 +8,8 @@ import pytest
 
 from config.settings import Settings
 from services.live_safety import (
+    blocked_buy_symbols,
+    buy_thesis_blocked,
     deposited_brake_floor,
     deposited_brake_triggered,
     entry_day_allowed,
@@ -16,8 +18,12 @@ from services.live_safety import (
     filled_exit_price_from_order,
     is_us_equity_live_symbol,
     live_buys_allowed,
+    live_entry_blocked,
+    next_et_session_date,
     order_looks_like_stop,
+    r_multiple_loss,
     record_entry_day_fill,
+    record_stop_1r_block,
     skip_reopen_after_hours_close,
     submit_already_paused,
     submit_fail_pause,
@@ -88,6 +94,8 @@ def test_voice_kill_off_requires_explicit_human():
         "Sergio confirma desactivar kill switch",
     ) is True
     assert voice_kill_off_confirmed({"confirm": True}, "") is False
+    # False positive: "skill" contains "kill"
+    assert voice_kill_off_confirmed({"confirm": True}, "Sergio confirma el skill de voz") is False
 
 
 def test_entry_price_never_uses_stop():
@@ -377,3 +385,112 @@ async def test_health_includes_trading_mode_unconfigured():
     assert out["trading_mode"] == "unconfigured"
     assert out["trading_mode_unconfigured"] is True
     assert out["status"] == "healthy"
+
+
+def test_live_entry_blocked_buys_not_exits():
+    blocked, why = live_entry_blocked(side="buy", paper=False, live_entries_enabled=False)
+    assert blocked is True
+    assert why == "live_entries_disabled"
+    blocked, why = live_entry_blocked(side="sell", paper=False, live_entries_enabled=False)
+    assert blocked is False
+    blocked, _ = live_entry_blocked(side="buy", paper=True, live_entries_enabled=False)
+    assert blocked is False
+
+
+def test_entry_day_counts_each_fill_not_the_batch():
+    _, _, flag = entry_day_allowed({}, max_entries=2, today="2026-10-01")
+    flag = record_entry_day_fill(flag, "AAA")
+    flag = record_entry_day_fill(flag, "BBB")
+    assert flag["count"] == 2
+    assert "at" in flag
+    ok, why, flag = entry_day_allowed(flag, max_entries=2, today="2026-10-01")
+    assert ok is False
+    assert why == "max_1_entry_per_day"
+
+
+def test_stop_1r_blocks_buy_thesis_next_session():
+    assert r_multiple_loss(10.0, 9.2, 9.2) == pytest.approx(1.0)
+    assert r_multiple_loss(10.0, 9.2, 9.5) < 1.0
+    flag = record_stop_1r_block({}, "SNAP", r_mult=1.1, today="2026-10-01")  # Thursday
+    until = next_et_session_date(__import__("datetime").date(2026, 10, 1)).isoformat()
+    assert until == "2026-10-02"
+    blocked, why = buy_thesis_blocked(flag, "SNAP", today="2026-10-01")
+    assert blocked is True
+    blocked, _ = buy_thesis_blocked(flag, "SNAP", today="2026-10-02")
+    assert blocked is True
+    blocked, _ = buy_thesis_blocked(flag, "SNAP", today="2026-10-03")
+    assert blocked is False
+    assert "SNAP" in blocked_buy_symbols(flag, today="2026-10-02")
+    assert buy_thesis_blocked(flag, "AAPL", today="2026-10-02")[0] is False
+
+
+def test_kill_switch_request_flatten_defaults_false():
+    from apis.routes.ops import KillSwitchRequest
+
+    body = KillSwitchRequest(confirm=True, reason="test")
+    assert body.flatten is False
+
+
+@pytest.mark.asyncio
+async def test_submit_one_live_buy_blocked_sell_allowed(monkeypatch):
+    from domain.broker import BrokerOrderRequest
+    from services.alpaca_order_service import AlpacaOrderService
+
+    inner = MagicMock()
+    inner.is_configured.return_value = True
+    inner.paper = False
+    inner.last_request_id = "rid-1"
+    inner.submit_order = AsyncMock(
+        return_value={"id": "s1", "status": "accepted", "symbol": "SNAP", "side": "sell", "qty": "1"}
+    )
+    svc = AlpacaOrderService(broker=inner)
+    monkeypatch.setenv("LIVE_ENTRIES_ENABLED", "false")
+    from config.settings import get_settings
+
+    get_settings.cache_clear()
+    with patch("services.live_safety.production_trading_unconfigured", return_value=False), patch(
+        "utils.market_hours.eod_may_submit_orders", return_value=True
+    ):
+        buy = await svc.submit_one(
+            BrokerOrderRequest(symbol="SNAP", qty=1, side="buy", source_tag="test")
+        )
+        sell = await svc.submit_one(
+            BrokerOrderRequest(symbol="SNAP", qty=1, side="sell", source_tag="test")
+        )
+    assert buy.error == "live_entries_disabled"
+    assert buy.status == "failed"
+    inner.submit_order.assert_awaited_once()  # only the sell
+    assert sell.error is None
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_replace_stop_does_not_submit_if_list_orders_fails():
+    from services.alpaca_order_service import AlpacaOrderService
+
+    inner = MagicMock()
+    inner.is_configured.return_value = True
+    inner.paper = False
+    inner.submit_order = AsyncMock(side_effect=AssertionError("no naked stop"))
+    svc = AlpacaOrderService(broker=inner)
+    svc.list_orders = AsyncMock(side_effect=RuntimeError("timeout"))
+    with patch("services.live_safety.production_trading_unconfigured", return_value=False), patch(
+        "utils.market_hours.eod_may_submit_orders", return_value=True
+    ):
+        out = await svc.replace_protective_stop(symbol="SNAP", qty=1, stop_price=5.0)
+    assert out is not None
+    assert out.error == "list_orders_failed_stop_intact"
+    inner.submit_order.assert_not_called()
+
+
+def test_source_tag_in_client_order_id():
+    from domain.broker import BrokerOrderRequest
+    from services.alpaca_order_service import AlpacaOrderService
+
+    inner = MagicMock()
+    inner.paper = True
+    svc = AlpacaOrderService(broker=inner)
+    payload = svc._build_order_payload(
+        BrokerOrderRequest(symbol="AAPL", qty=1, side="buy", source_tag="voice")
+    )
+    assert payload["client_order_id"].startswith("voice-")

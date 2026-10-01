@@ -840,7 +840,7 @@ class VoiceCommandService:
                 success=False,
                 speech=(
                     "LIVE solo salidas: nuevas compras bloqueadas "
-                    f"({why}). Stops y TP de SNAP siguen activos."
+                    f"({why}). Stops y TP de {ticker} siguen activos."
                 ),
                 params={"ticker": ticker, "blocked": why},
             )
@@ -905,6 +905,15 @@ class VoiceCommandService:
         close_all = bool(params.get("close_all"))
         shares = float(params.get("shares") or 0.0)
         svc = AlpacaOrderService()
+        from services.live_safety import eod_may_submit_orders
+
+        if not eod_may_submit_orders():
+            return VoiceCommandResult(
+                intent="sell",
+                success=False,
+                speech="Mercado cerrado (después de las 16:00 ET). No envío salidas de voz ahora.",
+                params={"ticker": ticker, "blocked": "after_regular_close_no_orders"},
+            )
         if not svc.is_configured():
             return VoiceCommandResult(
                 intent="sell",

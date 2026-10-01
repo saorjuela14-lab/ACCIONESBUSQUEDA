@@ -1283,26 +1283,26 @@ async function runKillSwitch() {
     toast("Solo la mesa puede usar el kill switch", 6000);
     return;
   }
-  if (!confirm("KILL SWITCH: cancela todas las órdenes y CIERRA TODAS las posiciones ahora en Alpaca. ¿Continuar?")) {
+  if (!confirm("KILL SWITCH: bloquea nuevas entradas. El libro NO se cierra (flatten=false). ¿Continuar?")) {
     return;
   }
-  if (!confirm("Confirmación final: se vende TODO el libro de la firma. Esta acción no se puede deshacer.")) {
+  if (!confirm("Confirmación: kill-switch ON, brackets/stops intactos. No se liquidan posiciones.")) {
     return;
   }
-  await withLoading("Cerrando todas las posiciones…", async () => {
+  await withLoading("Armando kill-switch (sin flatten)…", async () => {
     try {
       const r = await api(`${API}/ops/kill-switch/on`, {
         method: "POST",
         body: JSON.stringify({
           confirm: true,
-          flatten: true,
-          reason: "desk UI — cerrar todas las posiciones ahora",
+          flatten: false,
+          reason: "desk UI — kill-switch sin flatten",
           actor: "desk",
         }),
       });
       toast(
         r.active
-          ? `Kill switch ON · ${r.flat_result || "posiciones cerradas"}`
+          ? `Kill switch ON · flatten=false · ${r.flat_result || "libro intacto"}`
           : "Kill switch",
         12000
       );

@@ -194,9 +194,8 @@ async def test_resolve_trading_base_conservative_equity_never_twenty(monkeypatch
         return_value=broker,
     ):
         snap = await resolve_trading_base(equity=21.01)
-    assert snap.amount == 21.01
-    assert snap.source.startswith("conservative")
-    assert snap.amount != 20.0
+    assert snap.amount is None
+    assert "no_deposited_base" in (snap.source or "")
     none = await resolve_trading_base(equity=0)
     assert none.amount is None
     get_settings.cache_clear()

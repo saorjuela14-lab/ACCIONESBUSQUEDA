@@ -71,6 +71,14 @@ class AutoExecuteService:
             return True, "paper mode OK"
         # LIVE path
         if s.firm_autonomy:
+            from services.live_safety import live_buys_allowed
+
+            ok_e, why_e = live_buys_allowed(
+                paper=bool(self._broker.paper),
+                live_entries_enabled=bool(getattr(s, "live_entries_enabled", False)),
+            )
+            if not ok_e:
+                return False, why_e
             return True, "firm_autonomy LIVE"
         if s.auto_execute_paper_first and not self._live_enabled():
             return False, (
@@ -79,6 +87,14 @@ class AutoExecuteService:
             )
         if not self._live_enabled():
             return False, "AUTO_EXECUTE_LIVE=false"
+        from services.live_safety import live_buys_allowed
+
+        ok_e, why_e = live_buys_allowed(
+            paper=False,
+            live_entries_enabled=bool(getattr(s, "live_entries_enabled", False)),
+        )
+        if not ok_e:
+            return False, why_e
         return True, "live promoted"
 
     async def can_auto_trade_async(self) -> tuple[bool, str]:
@@ -268,6 +284,18 @@ class AutoExecuteService:
             if str(ticker).upper() in avoid or str(ticker).upper() in open_syms:
                 skipped_avoid += 1
                 continue
+            try:
+                from database.repositories.ops_repository import OpsFlagRepository
+                from services.live_safety import FLAG_STOP_1R, buy_thesis_blocked
+
+                stop_flag = await OpsFlagRepository(self._session).get_json(FLAG_STOP_1R)
+                blocked_1r, why_1r = buy_thesis_blocked(stop_flag, str(ticker))
+                if blocked_1r:
+                    skipped_avoid += 1
+                    logger.info("auto_execute.skip_stop_1r", ticker=ticker, reason=why_1r)
+                    continue
+            except Exception:
+                pass
             price_f = float(price)
             stop = getattr(pick, "stop_loss", None)
             if stop is None or float(stop) <= 0 or float(stop) >= price_f:
@@ -339,7 +367,6 @@ class AutoExecuteService:
                 )
                 for od in result.submitted:
                     day_flag = record_entry_day_fill(day_flag, od.symbol)
-                    break  # max 1 entry/day — count the batch as one
                 await flags.set_json(FLAG_ENTRY_DAY, day_flag)
             fail_flag = await flags.get_json(FLAG_SUBMIT_FAILS)
             paused, pause_why, fail_flag = submit_fail_pause(
