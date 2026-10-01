@@ -29,6 +29,7 @@ from services.market_dashboard_service import MarketDashboardService
 from services.technical_chart_service import TechnicalChartService
 from services.watchlist_monitor_service import WatchlistMonitorService
 from services.watchlist_service import WatchlistService
+from services.live_safety import is_multiasset_crypto_symbol, is_us_equity_live_symbol
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -36,41 +37,27 @@ logger = get_logger(__name__)
 _PENDING_TTL_S = 120.0
 _PENDING: dict[str, dict[str, Any]] = {}
 
-# Viernes trades the LIVE/firm equity desk only. Crypto pairs belong to Multi-Asset PAPER.
-_MULTIASSET_VOICE_CRYPTO = {
-    "BTC",
-    "ETH",
-    "SOL",
-    "BONK",
-    "SUSHI",
-    "DOGE",
-    "WIF",
-    "ARB",
-    "LDO",
-    "RENDER",
-    "BCH",
-    "XTZ",
-    "BAT",
-    "AVAX",
-    "LINK",
-    "UNI",
-    "PEPE",
-    "SHIB",
-    "LTC",
-    "DOT",
-    "ATOM",
-}
-
-
+# Viernes LIVE path: US equities only. Crypto/multi-asset belongs on PAPER /beta.
 def is_multiasset_voice_symbol(ticker: str) -> bool:
     """True for crypto/multi-asset names that must never go through the LIVE voice path."""
-    t = (ticker or "").upper().replace(" ", "")
-    if not t:
-        return False
-    if "/" in t:
-        return True
-    root = t.replace("/USD", "").replace("-USD", "").replace("USD", "")
-    return root in _MULTIASSET_VOICE_CRYPTO
+    return is_multiasset_crypto_symbol(ticker)
+
+
+def _live_voice_symbol_guard(intent: str, ticker: str) -> VoiceCommandResult | None:
+    t = (ticker or "").upper()
+    if is_us_equity_live_symbol(t):
+        return None
+    if is_multiasset_voice_symbol(t):
+        return _multiasset_voice_refusal(intent, t)
+    return VoiceCommandResult(
+        intent=intent,
+        success=False,
+        speech=(
+            f"{t} no es una acción de EE. UU. Viernes en LIVE solo opera tickers "
+            "NYSE/NASDAQ (1–5 letras). Multi-Asset PAPER: panel /beta/multiasset."
+        ),
+        params={"ticker": t, "blocked": "live_us_equity_whitelist"},
+    )
 
 
 def _multiasset_voice_refusal(intent: str, ticker: str) -> VoiceCommandResult:
@@ -836,8 +823,27 @@ class VoiceCommandService:
 
     async def _buy_preview(self, session, params, portfolio_id) -> VoiceCommandResult:
         ticker = params["ticker"].upper()
-        if is_multiasset_voice_symbol(ticker):
-            return _multiasset_voice_refusal("buy", ticker)
+        blocked = _live_voice_symbol_guard("buy", ticker)
+        if blocked:
+            return blocked
+        settings = get_settings()
+        svc = AlpacaOrderService()
+        from services.live_safety import live_buys_allowed
+
+        ok_buy, why = live_buys_allowed(
+            paper=bool(svc.paper) if svc.is_configured() else True,
+            live_entries_enabled=bool(getattr(settings, "live_entries_enabled", False)),
+        )
+        if not ok_buy:
+            return VoiceCommandResult(
+                intent="buy",
+                success=False,
+                speech=(
+                    "LIVE solo salidas: nuevas compras bloqueadas "
+                    f"({why}). Stops y TP de SNAP siguen activos."
+                ),
+                params={"ticker": ticker, "blocked": why},
+            )
         shares = float(params.get("shares") or 1.0)
         if shares <= 0:
             return VoiceCommandResult(
@@ -846,7 +852,6 @@ class VoiceCommandService:
                 speech="Indica una cantidad positiva. Ejemplo: compra 1 AAPL.",
             )
 
-        svc = AlpacaOrderService()
         if not svc.is_configured():
             return VoiceCommandResult(
                 intent="buy",
@@ -894,8 +899,9 @@ class VoiceCommandService:
 
     async def _sell_preview(self, session, params, portfolio_id) -> VoiceCommandResult:
         ticker = params["ticker"].upper()
-        if is_multiasset_voice_symbol(ticker):
-            return _multiasset_voice_refusal("sell", ticker)
+        blocked = _live_voice_symbol_guard("sell", ticker)
+        if blocked:
+            return blocked
         close_all = bool(params.get("close_all"))
         shares = float(params.get("shares") or 0.0)
         svc = AlpacaOrderService()
@@ -1009,9 +1015,10 @@ class VoiceCommandService:
 
         kind = pending.get("kind")
         ticker = str(pending.get("ticker") or "").upper()
-        if is_multiasset_voice_symbol(ticker):
+        blocked = _live_voice_symbol_guard("confirm", ticker)
+        if blocked:
             _clear_pending(portfolio_id)
-            return _multiasset_voice_refusal("confirm", ticker)
+            return blocked
         shares = pending.get("shares")
         confirm_live = not svc.paper
 

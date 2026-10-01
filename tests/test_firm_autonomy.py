@@ -8,11 +8,14 @@ from config.settings import Settings
 from services.firm_autonomy_bootstrap import ensure_firm_autonomy_flags
 
 
-def test_firm_autonomy_defaults_on():
-    assert Settings.model_fields["firm_autonomy"].default is True
-    assert Settings.model_fields["auto_execute_trades"].default is True
-    assert Settings.model_fields["auto_execute_live"].default is True
-    assert Settings.model_fields["auto_execute_paper_first"].default is False
+def test_firm_autonomy_defaults_safe():
+    """Code defaults are fail-safe; production opts in via env."""
+    assert Settings.model_fields["firm_autonomy"].default is False
+    assert Settings.model_fields["auto_execute_trades"].default is False
+    assert Settings.model_fields["auto_execute_live"].default is False
+    assert Settings.model_fields["auto_execute_paper_first"].default is True
+    assert Settings.model_fields["alpaca_paper"].default is True
+    assert Settings.model_fields["live_entries_enabled"].default is False
     assert Settings.model_fields["autopilot_interval_minutes"].default == 10
 
 

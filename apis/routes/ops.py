@@ -221,6 +221,11 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
         "intraday_flat_min_pnl_pct": settings.intraday_flat_min_pnl_pct,
         "intraday_2r_hold_enabled": settings.intraday_2r_hold_enabled,
         "intraday_carry_max_loss_pct": settings.intraday_carry_max_loss_pct,
+        "live_entries_enabled": bool(settings.live_entries_enabled),
+        "live_max_entries_per_day": settings.live_max_entries_per_day,
+        "live_submit_fail_pause": settings.live_submit_fail_pause,
+        "deposited_brake_pct": settings.deposited_brake_pct,
+        "app_env": settings.app_env,
         "risk_discipline": {
             "max_risk_pct": settings.auto_execute_max_risk_pct,
             "micro_max_risk_pct": settings.auto_execute_micro_max_risk_pct,

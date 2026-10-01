@@ -53,18 +53,23 @@ El escritorio de riesgo aplica **límites duros** a compras (concentración, cas
 | `GET /api/v1/risk/status` | Política + macro + libro Alpaca |
 | `GET /api/v1/risk/macro` | Solo régimen macro |
 
-Firma autónoma (ON por defecto — opera sin click humano):
+Firma autónoma (opt-in en producción — el código default es seguro / paper):
 
 ```
+APP_ENV=production
+ALPACA_PAPER=false
+ALPACA_LIVE_TRADE=true
 FIRM_AUTONOMY=true
 AUTO_EXECUTE_TRADES=true
 AUTO_EXECUTE_LIVE=true
+LIVE_ENTRIES_ENABLED=false
 AUTO_EXECUTE_MAX_NOTIONAL=25
 AUTOPILOT_INTERVAL_MINUTES=10
 ```
 
-Compras solo con **consenso unánime del comité** (BUY corto+largo) + risk desk OK + mercado abierto.  
-Cierres por lifecycle (stop / trailing / time-stop). Panic: `POST /ops/kill-switch/on`.
+LIVE por defecto **solo salidas** (`LIVE_ENTRIES_ENABLED=false`): stops, TP, trailing y EOD siguen; no hay compras nuevas. SNAP conserva su bracket.  
+Compras (cuando el CEO active el flag) solo con **consenso del comité** + risk desk OK + mercado abierto + máximo 1 entrada/día.  
+Panic: `POST /ops/kill-switch/on`. Freno 5% vs depositado arma el kill **sin flatten**. `/metrics` requiere sesión.
 
 ### Escritorio autónomo tipo firma de capital
 
@@ -149,9 +154,13 @@ Redeploy. En el panel → **Probar push** (también dispara un status manual).
 |----------|--------|
 | `ALPACA_API_KEY` | Key ID de cuenta **LIVE** |
 | `ALPACA_SECRET_KEY` | Secret Key LIVE |
-| `ALPACA_PAPER` | `false` (default) |
+| `ALPACA_PAPER` | `false` para LIVE (el código default es paper `true`) |
 | `ALPACA_LIVE_TRADE` | `true` (compatible con [alpacahq/cli](https://github.com/alpacahq/cli)) |
 | `ALPACA_DATA_FEED` | `iex` (gratis) o `sip` si tienes suscripción |
+| `LIVE_ENTRIES_ENABLED` | `false` (LIVE solo salidas; stops/TP/trail siguen) |
+| `FIRM_AUTONOMY` | `true` en prod (default código: `false`) |
+| `AUTO_EXECUTE_TRADES` | `true` en prod |
+| `AUTO_EXECUTE_LIVE` | `true` en prod |
 
 3. Redeploy. El panel mostrará **Alpaca LIVE · dinero real** (+ mercado abierto/cerrado).
 4. **Doctor** verifica trading + market data; **Gestionar capital** → **Ejecutar en Alpaca**.
@@ -301,6 +310,10 @@ En el dashboard de tu app → **Environment Variables** → añade:
 | `ALPACA_PAPER` | `false` (LIVE / dinero real) |
 | `ALPACA_LIVE_TRADE` | `true` (alias CLI; gana sobre PAPER) |
 | `ALPACA_DATA_FEED` | `iex` (default) |
+| `FIRM_AUTONOMY` | `true` (opt-in; el código default es `false`) |
+| `AUTO_EXECUTE_TRADES` | `true` |
+| `AUTO_EXECUTE_LIVE` | `true` |
+| `LIVE_ENTRIES_ENABLED` | `false` (solo salidas LIVE hasta que Sergio active compras) |
 | `ELEVENLABS_API_KEY` | *(recomendado)* Key TTS para voz amigable del asistente |
 | `ELEVENLABS_VOICE_ID` | `EXAVITQu4vr4xnSDxMaL` (Sarah; opcional) |
 | `ELEVENLABS_MODEL_ID` | `eleven_flash_v2_5` (opcional) |

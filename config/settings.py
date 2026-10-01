@@ -18,7 +18,10 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "Monarch Capital"
-    app_env: Literal["development", "staging", "production"] = "development"
+    app_env: Literal["development", "staging", "production"] = Field(
+        default="development",
+        validation_alias=AliasChoices("APP_ENV", "ENVIRONMENT", "ENV"),
+    )
     log_level: str = "INFO"
     api_host: str = "0.0.0.0"
     api_port: int = Field(default=8000, validation_alias=AliasChoices("API_PORT", "PORT"))
@@ -138,11 +141,11 @@ class Settings(BaseSettings):
     # Exactly 3 desk messages per trading day (ET): open, lunch, close
     whatsapp_briefing_times: str = "09:35,12:30,16:05"
 
-    # Alpaca Trading API — LIVE by default (https://docs.alpaca.markets/)
+    # Alpaca Trading API — paper by default (opt into LIVE via env).
     # Compatible with https://github.com/alpacahq/cli env vars
     alpaca_api_key: str = ""
     alpaca_secret_key: str = ""
-    alpaca_paper: bool = False
+    alpaca_paper: bool = True
     # CLI-compatible: ALPACA_LIVE_TRADE=true → live (overrides alpaca_paper when set)
     alpaca_live_trade: bool | None = None
     alpaca_base_url: str = ""  # override; empty → api.alpaca.markets (live) or paper-api
@@ -220,15 +223,21 @@ class Settings(BaseSettings):
     risk_min_reward_risk: float = 1.2
     risk_off_size_mult: float = 0.35
     risk_crisis_block_buys: bool = True
-    # Firm autonomy — independent capital desk (buys/exits without human click).
+    # Firm autonomy / auto-execute — OFF in code. Production must opt in via env.
     # Kill switch + committee unanimity + risk desk remain hard gates.
-    firm_autonomy: bool = True
-    auto_execute_trades: bool = True
-    auto_execute_live: bool = True  # LIVE auto-submit authorized
+    firm_autonomy: bool = False
+    auto_execute_trades: bool = False
+    auto_execute_live: bool = False
     auto_execute_max_notional: float = 25.0
     auto_execute_require_market_open: bool = True
-    auto_execute_paper_first: bool = False  # skip paper soak when firm_autonomy
-    autopilot_interval_minutes: int = 10  # scheduled full desk loop (0 = off)
+    auto_execute_paper_first: bool = True
+    autopilot_interval_minutes: int = 10  # scheduled desk loop (0 = off)
+    # LIVE stocks desk: new buys off by default. Stops/TP/trail/exits keep working.
+    live_entries_enabled: bool = False
+    live_max_entries_per_day: int = 1
+    live_submit_fail_pause: int = 3
+    # Accumulated brake vs deposited base (today $21.76 → floor $20.67 at 5%).
+    deposited_brake_pct: float = 5.0
 
     # Lifecycle desk
     lifecycle_enabled: bool = True
@@ -293,6 +302,18 @@ class Settings(BaseSettings):
         from database.url import normalize_database_url
 
         return normalize_database_url(str(value or ""))
+
+    @field_validator("app_env", mode="before")
+    @classmethod
+    def normalize_app_env(cls, value: object) -> str:
+        raw = str(value or "development").strip().lower()
+        if raw in ("prod", "production", "prd"):
+            return "production"
+        if raw in ("stage", "staging"):
+            return "staging"
+        if raw in ("dev", "development", "local", ""):
+            return "development"
+        return raw
 
     @field_validator("deposited_base_usd", mode="before")
     @classmethod

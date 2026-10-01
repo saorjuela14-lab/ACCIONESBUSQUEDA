@@ -19,7 +19,7 @@ from services.alpaca_order_service import AlpacaOrderService
 from services.audit_service import AuditService
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.logging import get_logger
-from utils.market_hours import US_EASTERN, in_eod_flat_window, now_et
+from utils.market_hours import US_EASTERN, eod_may_submit_orders, in_eod_flat_window, now_et
 
 logger = get_logger(__name__)
 
@@ -142,6 +142,13 @@ class IntradayFlatService:
         if not self._broker.is_configured():
             return {"skipped": True, "reason": "broker_unconfigured"}
 
+        if not eod_may_submit_orders():
+            return {
+                "skipped": True,
+                "reason": "after_regular_close_no_orders",
+                "message": "Sin órdenes después de las 16:00 ET; brackets GTC se conservan.",
+            }
+
         try:
             positions = await self._broker.get_positions()
         except Exception as exc:
@@ -184,19 +191,8 @@ class IntradayFlatService:
         closed: list[dict[str, Any]] = []
         errors: list[str] = []
 
-        # Cancel open orders only for names we are exiting (keep stops on carried)
-        if to_close:
-            try:
-                open_orders = await self._broker.list_orders(status="open", limit=100)
-            except Exception:
-                open_orders = []
-            close_syms = {(p.symbol or "").upper() for p, _ in to_close}
-            for od in open_orders:
-                if (od.symbol or "").upper() in close_syms and od.id:
-                    try:
-                        await self._broker.cancel_order(od.id)
-                    except Exception:
-                        pass
+        # Never cancel a bracket here. close_position is atomic at the broker;
+        # if it fails the GTC stop stays in place.
 
         for pos, detail in to_close:
             sym = (pos.symbol or "").upper().replace("/", "")
