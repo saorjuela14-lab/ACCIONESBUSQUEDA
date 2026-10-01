@@ -161,60 +161,77 @@ class MultiAssetDeskService:
         if not reports:
             raise RuntimeError("Ningún agente respondió")
 
-        # Crypto: chart technical leads; news/social next; others support
-        _CRYPTO_WEIGHTS = {
-            "crypto_chart_technical_agent": 2.6,
-            "crypto_news_social_agent": 1.6,
-            "crypto_momentum_agent": 1.0,
-            "crypto_sentiment_agent": 0.9,
-            "crypto_risk_agent": 0.5,
+        # Specialists lead; supporting agents are evidence, not veto except hard risk.
+        _WEIGHTS = {
+            "gold": {
+                "gold_trend_specialist": 3.2,
+                "gold_macro_agent": 1.0,
+                "gold_technical_agent": 0.8,
+                "gold_flow_agent": 0.6,
+            },
+            "forex": {
+                "fx_momentum_specialist": 3.0,
+                "fx_macro_agent": 1.0,
+                "fx_technical_agent": 0.8,
+                "fx_risk_agent": 0.5,
+            },
+            "crypto": {
+                "crypto_breakout_specialist": 3.0,
+                "crypto_chart_technical_agent": 1.4,
+                "crypto_news_social_agent": 1.0,
+                "crypto_momentum_agent": 0.7,
+                "crypto_sentiment_agent": 0.6,
+                "crypto_risk_agent": 0.4,
+            },
         }
 
         def _w(r) -> float:
-            base = max(r.confidence, 0.2)
-            if desk == "crypto":
-                return base * float(_CRYPTO_WEIGHTS.get(r.agent_name, 1.0))
-            return base
+            table = _WEIGHTS.get(desk) or {}
+            return max(r.confidence, 0.2) * float(table.get(r.agent_name, 1.0))
 
         num = sum(r.score * _w(r) for r in reports)
         den = sum(_w(r) for r in reports) or 1.0
         score = num / den
         confidence = sum(r.confidence for r in reports) / len(reports)
 
+        spec = next((r for r in reports if (r.raw_data or {}).get("specialist")), None)
         chart = next((r for r in reports if r.agent_name == "crypto_chart_technical_agent"), None)
         news = next((r for r in reports if r.agent_name == "crypto_news_social_agent"), None)
 
-        buy_bar = 3.0 if desk == "crypto" else 12.0
-        sell_bar = -3.0 if desk == "crypto" else -12.0
-        if desk == "crypto":
-            # Primary gate: chart must not be clearly against the trade
-            chart_ok = chart is None or chart.score >= -2
-            chart_lead = chart is not None and chart.score >= 6
-            news_boost = news is not None and news.score >= 8
-            if chart_lead and score >= buy_bar and chart_ok:
-                rec = "buy"
-            elif chart_lead and news_boost and score >= buy_bar - 1:
-                rec = "buy"  # chart + narrative alignment
-            elif score <= sell_bar and (chart is None or chart.score <= -6):
-                rec = "sell"
-            else:
-                rec = "hold"
-                if chart is not None and chart.score < 6 and score >= buy_bar:
-                    # Block committee buy without chart opportunity
-                    rec = "hold"
-        elif score >= buy_bar:
+        buy_bar = 8.0 if desk == "crypto" else 10.0
+        sell_bar = -8.0 if desk == "crypto" else -10.0
+        spec_ok = spec is None or spec.score >= 0
+        spec_lead = spec is not None and spec.score >= 12
+        if spec_lead and score >= buy_bar and spec_ok:
             rec = "buy"
-        elif score <= sell_bar:
+        elif spec is None and score >= buy_bar:
+            rec = "buy"
+        elif desk == "crypto" and spec_lead and news is not None and news.score >= 8 and score >= buy_bar - 2:
+            rec = "buy"
+        elif score <= sell_bar and (spec is None or spec.score <= -8):
             rec = "sell"
         else:
             rec = "hold"
+            if spec is not None and spec.score < 8 and score >= buy_bar:
+                rec = "hold"
 
         q = await quote_symbol(sym)
         px = q.get("current_price")
         stop = target = None
+        stop_pct = None
+        trail = None
+        atr_v = None
+        if spec and spec.raw_data:
+            stop_pct = spec.raw_data.get("stop_pct")
+            trail = spec.raw_data.get("trail_atr_mult")
+            atr_v = spec.raw_data.get("atr")
+            if spec.raw_data.get("stop_px"):
+                stop = float(spec.raw_data["stop_px"])
         if px and rec == "buy":
-            stop = round(float(px) * (1 - strategy.default_stop_pct), 4)
-            target = round(float(px) * (1 + strategy.default_target_pct), 4)
+            if stop is None:
+                pct = float(stop_pct or strategy.default_stop_pct)
+                stop = round(float(px) * (1 - pct), 4)
+            target = round(float(px) * (1 + 2 * float(stop_pct or strategy.default_stop_pct)), 4)  # 2R hint; trail can exceed
         elif px and rec == "sell":
             stop = round(float(px) * (1 + strategy.default_stop_pct), 4)
             target = round(float(px) * (1 - strategy.default_target_pct), 4)
@@ -245,6 +262,12 @@ class MultiAssetDeskService:
             entry_hint=float(px) if px else None,
             stop_hint=stop,
             target_hint=target,
+            stop_pct=float(stop_pct) if stop_pct else strategy.default_stop_pct,
+            stop_r=1.0,
+            trail_atr_mult=float(trail) if trail else None,
+            atr=float(atr_v) if atr_v else None,
+            leverage=1.0,
+            specialist=spec.agent_name if spec else None,
             votes=votes,
             strategy=strategy,
         )
@@ -285,7 +308,7 @@ class MultiAssetDeskService:
             "symbol": sym,
             "side": req.side,
             "type": "market",
-            "time_in_force": strategy.time_in_force if is_crypto else "day",
+            "time_in_force": "gtc" if is_crypto or req.side == "buy" else strategy.time_in_force,
         }
         if notional is not None and (is_crypto or strategy.allow_fractional):
             order["notional"] = str(round(float(notional), 2))
@@ -293,6 +316,19 @@ class MultiAssetDeskService:
             order["qty"] = str(qty)
         else:
             raise ValueError("Para equity ETF usa qty; crypto puede usar notional")
+
+        # Protective stop on the PAPER broker (GTC). 1x, no margin. Crypto 24/7.
+        if req.side == "buy" and not req.dry_run:
+            try:
+                qstop = await quote_symbol(sym)
+                px_s = float((qstop or {}).get("current_price") or 0)
+            except Exception:
+                px_s = 0.0
+            if px_s > 0:
+                stop_px = round(px_s * (1 - float(strategy.default_stop_pct)), 4)
+                order["order_class"] = "oto"
+                order["stop_loss"] = {"stop_price": str(stop_px)}
+                order["time_in_force"] = "gtc"
 
         if req.dry_run or not self._broker.is_configured():
             result = MultiAssetOrderResult(
@@ -312,7 +348,19 @@ class MultiAssetDeskService:
                 await self._track_fill(req, result, sym, is_sim=True)
             return result
 
-        raw = await self._broker.submit_order(order)
+        try:
+            raw = await self._broker.submit_order(order)
+        except Exception as exc:
+            if "stop_loss" in order:
+                logger.warning("multiasset.oto_failed_retry_plain", error=str(exc), symbol=sym)
+                plain = {k: v for k, v in order.items() if k not in {"order_class", "stop_loss"}}
+                raw = await self._broker.submit_order(plain)
+            else:
+                raise
+        if isinstance(raw, dict) and str(raw.get("status") or "") in {"rejected", "canceled"} and "stop_loss" in order:
+            logger.warning("multiasset.oto_rejected_retry_plain", symbol=sym)
+            plain = {k: v for k, v in order.items() if k not in {"order_class", "stop_loss"}}
+            raw = await self._broker.submit_order(plain)
         result = MultiAssetOrderResult(
             ok=True,
             desk=req.desk,
@@ -406,6 +454,34 @@ class MultiAssetDeskService:
                     result.message += f" · {tag}"
             else:
                 result.message = f"{result.message} · sin trade abierto que cerrar"
+
+    async def journal_stop_adjust(
+        self,
+        *,
+        desk: AssetDeskId,
+        symbol: str,
+        old_stop: float | None,
+        new_stop: float,
+        reason: str,
+    ) -> None:
+        """Record trailing / stop-replace in the paper journal (not LIVE)."""
+        if self._session is None:
+            return
+        from domain.multiasset import MultiAssetOrderRequest, MultiAssetOrderResult
+
+        dummy = MultiAssetOrderRequest(desk=desk, symbol=symbol, side="sell", dry_run=True, note=reason)
+        result = MultiAssetOrderResult(
+            ok=True,
+            desk=desk,
+            symbol=symbol,
+            side="sell",
+            paper=True,
+            dry_run=True,
+            status="stop_adjust",
+            message=reason,
+            payload={"old_stop": old_stop, "new_stop": new_stop, "kind": "trailing"},
+        )
+        await self._journal_write(dummy, result)
 
     async def _journal_write(self, req: MultiAssetOrderRequest, result: MultiAssetOrderResult) -> None:
         assert self._session is not None

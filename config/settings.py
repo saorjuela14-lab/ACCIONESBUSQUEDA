@@ -182,6 +182,16 @@ class Settings(BaseSettings):
     multiasset_offhours_crypto_full_capital: bool = True
     multiasset_offhours_sleeve_pct: float = 100.0
     multiasset_offhours_cash_reserve_pct: float = 5.0
+    # Aggressive paper risk (1x, no margin). Distinct from LIVE equity 2R book.
+    multiasset_risk_pct_gold: float = 2.5
+    multiasset_risk_pct_forex: float = 2.5
+    multiasset_risk_pct_crypto: float = 3.0
+    multiasset_max_daily_loss_pct: float = 6.0
+    multiasset_max_weekly_loss_pct: float = 12.0
+    multiasset_max_drawdown_pct: float = 20.0
+    multiasset_trail_arm_r: float = 1.0
+    multiasset_allow_leverage: bool = False
+    multiasset_crypto_specialist_prescreen: float = 12.0
 
     # Client bank transfer INTO the shared firm Alpaca / operating account.
     # Do NOT send clients to app.alpaca.markets login — they only need deposit destination details.

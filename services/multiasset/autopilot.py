@@ -7,9 +7,11 @@ from typing import Any
 from config.settings import get_settings
 from domain.multiasset import AssetDeskId, MultiAssetOrderRequest
 from services.kill_switch_service import KillSwitchService
+from services.multiasset.allocator import allocate
 from services.multiasset.desk_service import MultiAssetDeskService
 from services.multiasset.desks import DESKS, get_desk
 from services.multiasset.paper_broker import get_beta_broker_provider
+from services.multiasset.risk_engine import MultiAssetRiskDesk, size_notional_1x, trail_stop
 from services.multiasset.trade_tracker import MultiAssetTradeTracker
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.logging import get_logger
@@ -40,6 +42,7 @@ class MultiAssetAutopilotService:
         self._desk = MultiAssetDeskService(session)
         self._tracker = MultiAssetTradeTracker(session)
         self._broker = get_beta_broker_provider()
+        self._risk = MultiAssetRiskDesk(session)
 
     def _weights(self, market_open: bool) -> dict[AssetDeskId, float]:
         if market_open:
@@ -57,8 +60,9 @@ class MultiAssetAutopilotService:
             out["skipped"] = "multiasset_autopilot_disabled"
             return out
 
+        # LIVE kill-switch is read-only (CEO panic). Mesa paper has its own DD kill.
         if await KillSwitchService(self._session).is_active():
-            out["skipped"] = "kill_switch_active"
+            out["skipped"] = "firm_kill_switch_active"
             return out
 
         dry = bool(getattr(self._settings, "multiasset_autopilot_dry_run", False))
@@ -71,8 +75,30 @@ class MultiAssetAutopilotService:
 
         market_open = is_market_open()
         out["market_open"] = market_open
-        weights = self._weights(market_open)
-        out["allocation_mode"] = "rth_split" if market_open else "offhours_crypto_100"
+        out["leverage"] = 1.0
+        out["paper"] = True
+
+        records = {}
+        try:
+            for d in ("gold", "forex", "crypto"):
+                records[d] = await self._tracker.track_record(desk=d, window_days=90)
+        except Exception as exc:
+            logger.warning("multiasset.autopilot.records_failed", error=str(exc))
+        plan = allocate(market_open=market_open, records=records)
+        weights = plan["weights"]
+        out["allocation_mode"] = plan["mode"]
+        out["director"] = {k: plan[k] for k in ("notes", "profit_factors", "expectancy_pct") if k in plan}
+
+        equity = 0.0
+        try:
+            capital_preview = await self._capital_snapshot(offhours_crypto=not market_open)
+            equity = float(capital_preview.get("equity_usd") or 0)
+        except Exception:
+            equity = float(getattr(self._settings, "multiasset_fallback_equity", 10_000) or 10_000)
+        blocked, why = await self._risk.block_new_buys(equity)
+        out["risk"] = await self._risk.snapshot(equity=equity)
+        out["new_buys_blocked"] = blocked
+        out["block_reason"] = why
 
         # Expand crypto universe beyond BTC/ETH/SOL (Alpaca USD pairs)
         try:
@@ -106,11 +132,36 @@ class MultiAssetAutopilotService:
                     dry_run=dry,
                     market_open=market_open,
                     actor=actor,
+                    allow_buys=not blocked,
+                    equity=float(capital.get("equity_usd") or equity),
+                    cash=cash,
                 )
                 out["desks"][desk_id]["weight"] = weight
             except Exception as exc:
                 logger.warning("multiasset.autopilot.desk_failed", desk=desk_id, error=str(exc))
                 out["desks"][desk_id] = {"error": str(exc)}
+
+        try:
+            await self._risk.record_cycle(
+                {
+                    "actor": actor,
+                    "skipped": out.get("skipped"),
+                    "dry_run": dry,
+                    "deployable_usd": out.get("deployable_usd"),
+                    "block_reason": why,
+                    "desks": {
+                        k: {
+                            "buys": len((v or {}).get("buys") or []),
+                            "sells": len((v or {}).get("sells") or []),
+                            "skipped": (v or {}).get("skipped"),
+                        }
+                        for k, v in (out.get("desks") or {}).items()
+                    },
+                    "message": why or ("ok" if not blocked else "no_new_buys"),
+                }
+            )
+        except Exception as exc:
+            logger.warning("multiasset.cycle_record_failed", error=str(exc))
 
         logger.info(
             "multiasset.autopilot.done",
@@ -207,6 +258,9 @@ class MultiAssetAutopilotService:
         dry_run: bool,
         market_open: bool,
         actor: str,
+        allow_buys: bool = True,
+        equity: float = 0.0,
+        cash: float = 0.0,
     ) -> dict[str, Any]:
         strategy = get_desk(desk)
         # ETFs need RTH unless simulating; crypto is 24/7
@@ -247,10 +301,38 @@ class MultiAssetAutopilotService:
             exit_reason = None
             px = brief.entry_hint
             if px and trade.entry_price > 0:
+                # Trail: ratchet stop after +1R (software) — broker GTC stop remains the floor.
+                atr_abs = float(brief.atr or 0)
+                trail_mult = float(brief.trail_atr_mult or 0)
+                peak = float((trade.meta or {}).get("peak") or trade.entry_price)
+                peak = max(peak, float(px))
+                init_stop = float(trade.stop_hint or 0)
+                if init_stop and atr_abs > 0 and trail_mult > 0:
+                    new_stop, moved = trail_stop(
+                        entry=float(trade.entry_price),
+                        stop=init_stop,
+                        peak=peak,
+                        price=float(px),
+                        trail_atr_abs=atr_abs * trail_mult,
+                        arm_r=float(self._risk.policy.trail_arm_r),
+                    )
+                    if moved and new_stop > init_stop:
+                        await self._tracker.update_stop(
+                            desk=desk, symbol=sym, stop=new_stop, peak=peak
+                        )
+                        await self._desk.journal_stop_adjust(
+                            desk=desk,
+                            symbol=sym,
+                            old_stop=init_stop,
+                            new_stop=new_stop,
+                            reason=f"trailing +1R {init_stop:.4f}→{new_stop:.4f}",
+                        )
+                        trade = await self._tracker.get_open(desk, sym) or trade
                 ret = (float(px) - float(trade.entry_price)) / float(trade.entry_price)
                 if trade.stop_hint and float(px) <= float(trade.stop_hint):
                     exit_reason = "stop_hint"
-                elif trade.target_hint and float(px) >= float(trade.target_hint):
+                elif trade.target_hint and float(px) >= float(trade.target_hint) and trail_mult <= 0:
+                    # Hard TP only when not trailing (legacy). New book lets winners run.
                     exit_reason = "target_hint"
                 elif brief.recommendation == "sell" and brief.score <= -min_score:
                     exit_reason = "brief_sell"
@@ -296,20 +378,33 @@ class MultiAssetAutopilotService:
             else:
                 holds.append(sym)
 
-        # 2) Rank fresh entries — crypto: chart pre-screen entire universe, then full brief
+        if not allow_buys:
+            return {
+                "budget": round(desk_budget, 2),
+                "open_before": len(open_trades),
+                "universe": len(strategy.symbols),
+                "buys": [],
+                "sells": sells,
+                "holds": holds,
+                "scanned": scanned[:40],
+                "reason": "new_buys_blocked",
+                "dry_run": dry_run,
+            }
+
+        # 2) Rank fresh entries — crypto: specialist pre-screen, then full brief
         candidates: list[tuple[float, str, Any]] = []
         symbols_to_brief = list(strategy.symbols)
 
         if desk == "crypto":
-            from agents.multiasset import CryptoChartTechnicalAgent
+            from agents.multiasset.specialists import CryptoBreakoutSpecialist
             import asyncio
 
-            chart_agent = CryptoChartTechnicalAgent()
+            spec_agent = CryptoBreakoutSpecialist()
             pre: list[tuple[float, str]] = []
 
             async def _screen(sym: str):
                 try:
-                    rep = await chart_agent.analyze(sym)
+                    rep = await spec_agent.analyze(sym)
                     return sym, float(rep.score), rep.summary
                 except Exception as exc:
                     return sym, -999.0, str(exc)
@@ -324,7 +419,7 @@ class MultiAssetAutopilotService:
             results = await asyncio.gather(
                 *[_bounded(i.symbol) for i in strategy.symbols if i.symbol not in open_by_sym]
             )
-            chart_min = float(getattr(self._settings, "multiasset_crypto_chart_prescreen", 6) or 6)
+            chart_min = float(getattr(self._settings, "multiasset_crypto_specialist_prescreen", 12) or 12)
             for sym, sc, summary in results:
                 if sc <= -900:
                     scanned.append({"symbol": sym, "skip": f"chart_failed: {summary}"})
@@ -374,13 +469,13 @@ class MultiAssetAutopilotService:
                 scanned.append(row)
                 continue
             if desk == "crypto":
-                chart_vote = next(
-                    (v for v in brief.votes if v.agent_name == "crypto_chart_technical_agent"),
+                spec_vote = next(
+                    (v for v in brief.votes if v.agent_name == "crypto_breakout_specialist"),
                     None,
                 )
-                if chart_vote is None or chart_vote.score < 6:
+                if spec_vote is None or spec_vote.score < 12:
                     row["skip"] = (
-                        f"chart_gate score={chart_vote.score if chart_vote else 'n/a'} (need≥6)"
+                        f"specialist_gate score={spec_vote.score if spec_vote else 'n/a'} (need≥12)"
                     )
                     scanned.append(row)
                     continue
@@ -401,17 +496,22 @@ class MultiAssetAutopilotService:
         slots = max(0, max_open - len(open_by_sym))
 
         for _, sym, brief in candidates[:slots]:
-            notional = self._size_notional(
-                desk=desk,
+            entry = float(brief.entry_hint or 0)
+            stop = float(brief.stop_hint or 0)
+            risk_pct = float(self._risk.policy.risk_pct.get(desk, 2.5))
+            notional, size_info = size_notional_1x(
+                equity=equity or desk_budget,
+                cash=cash or desk_budget,
                 desk_budget=desk_budget,
+                entry=entry,
+                stop=stop,
+                risk_pct=risk_pct,
                 open_notional=open_notional,
-                score=brief.score,
-                confidence=brief.confidence or 0.5,
-                max_open=max_open,
+                max_leverage=1.0,
             )
             if notional <= 0:
-                scanned.append({"symbol": sym, "skip": "no_budget_room"})
-                break
+                scanned.append({"symbol": sym, "skip": size_info.get("reason") or "no_budget_room"})
+                continue
             qty = None
             if desk != "crypto" and brief.entry_hint:
                 qty = round(notional / float(brief.entry_hint), 4)

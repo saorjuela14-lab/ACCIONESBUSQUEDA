@@ -7,15 +7,15 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/multiasset.css?v=3-cookie-session" />
+  <link rel="stylesheet" href="/dashboard/static/multiasset.css?v=4-aggressive-paper" />
 </head>
 <body>
   <header class="ma-top">
     <div class="ma-brand">
       <span class="ma-mark">Monarch</span>
-      <span class="ma-badge">BETA · Paper</span>
+      <span class="ma-badge">BETA · Paper · 1x</span>
     </div>
-    <p class="ma-sub">Mesas independientes · Oro · Forex (ETF) · Crypto — Alpaca paper</p>
+    <p class="ma-sub">Mesas independientes · Oro · Forex (ETF) · Crypto 24/7 — Alpaca paper, sin margen, stop obligatorio</p>
     <nav class="ma-nav">
       <a href="/dashboard">← Terminal equity</a>
       <button type="button" id="btn-autopilot" class="ma-btn primary">Correr ciclo ahora</button>
@@ -38,7 +38,11 @@
         <div><label>Equity paper</label><strong id="kpi-equity">—</strong></div>
         <div><label>Cash</label><strong id="kpi-cash">—</strong></div>
         <div><label>Posiciones mesa</label><strong id="kpi-pos">—</strong></div>
+        <div><label>P&amp;L cerrado</label><strong id="kpi-pnl">—</strong></div>
+        <div><label>Riesgo usado $</label><strong id="kpi-risk">—</strong></div>
+        <div><label>Kill mesa</label><strong id="kpi-kill">—</strong></div>
       </div>
+      <p id="director-line" class="ma-muted"></p>
     </section>
 
     <section class="ma-grid">
@@ -98,6 +102,7 @@
         <div><label>Win rate</label><strong id="st-win">—</strong></div>
         <div><label>Acierto brief</label><strong id="st-brief">—</strong></div>
         <div><label>PnL cerrado</label><strong id="st-pnl">—</strong></div>
+        <div><label>Peso director</label><strong id="st-weight">—</strong></div>
       </div>
       <ul id="stats-feedback" class="ma-feedback"></ul>
       <div class="ma-grid">
@@ -127,6 +132,6 @@
     </section>
   </main>
 
-  <script src="/dashboard/static/multiasset.js?v=8-cookie-session"></script>
+  <script src="/dashboard/static/multiasset.js?v=9-aggressive-paper"></script>
 </body>
 </html>

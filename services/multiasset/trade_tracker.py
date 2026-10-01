@@ -214,6 +214,32 @@ class MultiAssetTradeTracker:
         await self._session.commit()
         return self._to_domain(row)
 
+    async def update_stop(
+        self,
+        *,
+        desk: AssetDeskId,
+        symbol: str,
+        stop: float,
+        peak: float | None = None,
+    ) -> MultiAssetTrade | None:
+        open_t = await self.get_open(desk, symbol)
+        if not open_t:
+            return None
+        row = await self._session.get(MultiAssetTradeORM, open_t.id)
+        if not row:
+            return None
+        row.stop_hint = float(stop)
+        try:
+            meta = json.loads(row.meta_json or "{}")
+        except json.JSONDecodeError:
+            meta = {}
+        if peak is not None:
+            meta["peak"] = peak
+        meta["trail_stop"] = float(stop)
+        row.meta_json = json.dumps(meta, default=str)
+        await self._session.commit()
+        return self._to_domain(row)
+
     async def close_trade(
         self,
         *,

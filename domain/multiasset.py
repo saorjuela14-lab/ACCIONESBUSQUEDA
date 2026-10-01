@@ -59,6 +59,12 @@ class DeskBrief(BaseModel):
     entry_hint: float | None = None
     stop_hint: float | None = None
     target_hint: float | None = None
+    stop_pct: float | None = None
+    stop_r: float = 1.0
+    trail_atr_mult: float | None = None
+    atr: float | None = None
+    leverage: float = 1.0
+    specialist: str | None = None
     votes: list[AgentVote] = Field(default_factory=list)
     strategy: DeskStrategy | None = None
 
@@ -112,6 +118,12 @@ class DeskStatus(BaseModel):
     positions: list[dict[str, Any]] = Field(default_factory=list)
     open_orders: list[dict[str, Any]] = Field(default_factory=list)
     quotes: dict[str, Any] = Field(default_factory=dict)
+    pnl_usd: float | None = None
+    risk_used_usd: float | None = None
+    risk_used_pct: float | None = None
+    director_weight: float | None = None
+    kill_switch: dict[str, Any] = Field(default_factory=dict)
+    leverage: float = 1.0
 
 
 TradeStatus = Literal["open", "closed"]
@@ -165,6 +177,8 @@ class AgentDeskStat(BaseModel):
     hit_rate_pct: float | None = None
     avg_score_when_right: float | None = None
     avg_score_when_wrong: float | None = None
+    expectancy_pct: float | None = None
+    profit_factor: float | None = None
 
 
 class MultiAssetTrackRecord(BaseModel):

@@ -691,18 +691,29 @@ class CryptoRiskAgent(_HeuristicAgent):
         )
 
 
+from agents.multiasset.specialists import (
+    CryptoBreakoutSpecialist,
+    DeskDirectorAgent,
+    ForexMomentumSpecialist,
+    GoldTrendSpecialist,
+)
+
 AGENT_REGISTRY: dict[str, type[BaseAgent]] = {
+    "gold_trend_specialist": GoldTrendSpecialist,
     "gold_macro_agent": GoldMacroAgent,
     "gold_technical_agent": GoldTechnicalAgent,
     "gold_flow_agent": GoldFlowAgent,
+    "fx_momentum_specialist": ForexMomentumSpecialist,
     "fx_macro_agent": FxMacroAgent,
     "fx_technical_agent": FxTechnicalAgent,
     "fx_risk_agent": FxRiskAgent,
+    "crypto_breakout_specialist": CryptoBreakoutSpecialist,
     "crypto_chart_technical_agent": CryptoChartTechnicalAgent,
     "crypto_news_social_agent": CryptoNewsSocialAgent,
     "crypto_momentum_agent": CryptoMomentumAgent,
     "crypto_sentiment_agent": CryptoSentimentAgent,
     "crypto_risk_agent": CryptoRiskAgent,
+    "desk_director_agent": DeskDirectorAgent,
 }
 
 

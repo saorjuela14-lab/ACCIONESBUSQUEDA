@@ -75,6 +75,23 @@
     fillSymbolSelects(st.strategy || { symbols: [] });
     renderUniverse(st);
     renderBook(st);
+    try {
+      const board = await api(`${API}/beta/multiasset/board`);
+      if (gen !== loadGen) return;
+      $("#kpi-pnl").textContent = money(board.pnl_closed_usd);
+      $("#kpi-risk").textContent = money(board.risk_used_usd);
+      const kill = board.risk && board.risk.kill_switch;
+      $("#kpi-kill").textContent = kill && kill.active ? "ON" : "off";
+      const w = (board.director && board.director.weights) || {};
+      const notes = ((board.director && board.director.notes) || []).join(" · ");
+      $("#director-line").textContent =
+        `Director 1x · oro ${(w.gold * 100 || 0).toFixed(0)}% · fx ${(w.forex * 100 || 0).toFixed(0)}% · crypto ${(w.crypto * 100 || 0).toFixed(0)}%`
+        + (notes ? ` — ${notes}` : "")
+        + (board.last_cycle && board.last_cycle.at ? ` · último ciclo ${board.last_cycle.at}` : "");
+      window.__maBoard = board;
+    } catch (e) {
+      $("#director-line").textContent = e.message || "";
+    }
   }
 
   async function runBrief() {
@@ -129,6 +146,11 @@
       $("#st-win").textContent = pct(s.trades_win_rate_pct);
       $("#st-brief").textContent = pct(s.brief_hit_rate_pct);
       $("#st-pnl").textContent = money(s.trades_total_pnl_usd);
+      const board = window.__maBoard;
+      const w = board && board.director && board.director.weights
+        ? board.director.weights[desk]
+        : null;
+      if ($("#st-weight")) $("#st-weight").textContent = w != null ? `${(w * 100).toFixed(0)}%` : "—";
       $("#stats-disclaimer").textContent = s.disclaimer || "";
       const fb = $("#stats-feedback");
       fb.innerHTML = (s.feedback || []).map((t) => `<li>${t}</li>`).join("") || "<li class='ma-muted'>Sin feedback aún.</li>";

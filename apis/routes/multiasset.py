@@ -19,6 +19,61 @@ def _enabled() -> None:
         raise HTTPException(status_code=503, detail="Módulo multi-asset beta desactivado")
 
 
+@router.get("/beta/multiasset/board")
+async def desk_board(session: AsyncSession = Depends(get_session)):
+    """P&L, risk used, director weights and specialist stats — paper mesa only."""
+    _enabled()
+    from services.multiasset.allocator import allocate
+    from services.multiasset.risk_engine import FLAG_CYCLE, MultiAssetRiskDesk
+
+    svc = MultiAssetDeskService(session)
+    tracker = MultiAssetTradeTracker(session)
+    risk = MultiAssetRiskDesk(session)
+    records = {}
+    closed_pnl = 0.0
+    open_risk = 0.0
+    agents = []
+    for desk in ("gold", "forex", "crypto"):
+        tr = await tracker.track_record(desk=desk, window_days=90)
+        records[desk] = tr
+        closed_pnl += float(tr.trades_total_pnl_usd or 0)
+        for t in await tracker.list_open(desk=desk):
+            if t.entry_price and t.stop_hint and t.qty:
+                open_risk += max(0.0, (float(t.entry_price) - float(t.stop_hint)) * float(t.qty))
+        for a in tr.agents:
+            agents.append({"desk": desk, **a.model_dump(mode="json")})
+    plan = allocate(records=records)
+    status_gold = await svc.status("gold")
+    equity = float(status_gold.equity or 0)
+    snap = await risk.snapshot(equity=equity)
+    from database.repositories.ops_repository import OpsFlagRepository
+
+    last = await OpsFlagRepository(session).get_json(FLAG_CYCLE)
+    return {
+        "paper": True,
+        "live_untouched": True,
+        "leverage": 1.0,
+        "pnl_closed_usd": round(closed_pnl, 2),
+        "risk_used_usd": round(open_risk, 2),
+        "equity": equity,
+        "cash": status_gold.cash,
+        "director": plan,
+        "risk": snap,
+        "agents": agents,
+        "last_cycle": last,
+        "desks": {d: records[d].model_dump(mode="json") for d in records},
+    }
+
+
+@router.get("/beta/multiasset/last-cycle")
+async def last_multiasset_cycle(session: AsyncSession = Depends(get_session)):
+    _enabled()
+    from database.repositories.ops_repository import OpsFlagRepository
+    from services.multiasset.risk_engine import FLAG_CYCLE
+
+    return await OpsFlagRepository(session).get_json(FLAG_CYCLE)
+
+
 @router.get("/beta/multiasset/desks")
 async def list_desks():
     _enabled()

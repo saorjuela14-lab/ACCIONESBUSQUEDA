@@ -38,10 +38,12 @@ def test_desks_catalog_independent():
     assert len(get_desk("crypto").symbols) >= 10
     assert gold.agent_names != fx.agent_names != crypto.agent_names
     assert crypto.time_in_force == "gtc"
-    assert len(gold.agent_names) == 3
+    assert "gold_trend_specialist" in gold.agent_names
+    assert "fx_momentum_specialist" in fx.agent_names
+    assert "crypto_breakout_specialist" in crypto.agent_names
     assert "crypto_chart_technical_agent" in crypto.agent_names
-    assert "crypto_news_social_agent" in crypto.agent_names
-    assert len(crypto.agent_names) >= 4
+    assert len(gold.agent_names) >= 4
+    assert len(crypto.agent_names) >= 5
 
 
 def test_list_desks_payload():
@@ -303,11 +305,11 @@ async def test_autopilot_capital_aware_dry_cycle(session: AsyncSession, monkeypa
         target_hint=58000.0,
         votes=[
             AgentVote(
-                agent_name="crypto_momentum_agent",
-                label_es="m",
+                agent_name="crypto_breakout_specialist",
+                label_es="s",
                 score=30,
                 confidence=0.6,
-                summary="up",
+                summary="breakout",
             )
         ],
     )
@@ -337,6 +339,18 @@ async def test_autopilot_capital_aware_dry_cycle(session: AsyncSession, monkeypa
         patch("services.multiasset.autopilot.KillSwitchService.is_active", AsyncMock(return_value=False)),
         patch("services.multiasset.autopilot.is_market_open", return_value=False),
         patch.object(MultiAssetDeskService, "brief", fake_brief),
+        patch(
+            "agents.multiasset.specialists.CryptoBreakoutSpecialist.analyze",
+            AsyncMock(
+                return_value=AgentReport(
+                    agent_name="crypto_breakout_specialist",
+                    ticker="BTC/USD",
+                    score=30,
+                    confidence=0.6,
+                    summary="breakout",
+                )
+            ),
+        ),
         patch(
             "services.multiasset.desk_service.quote_symbol",
             AsyncMock(return_value={"symbol": "BTC/USD", "current_price": 50000.0}),

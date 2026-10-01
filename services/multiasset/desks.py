@@ -9,8 +9,8 @@ _GOLD = DeskStrategy(
     desk="gold",
     name="Mesa Oro · Paper",
     thesis=(
-        "Sesgo a oro físico vía ETFs (GLD/IAU): cobertura macro, dólar real, "
-        "aversión al riesgo y flujo de ETFs. Sin futuros GC."
+        "Especialista de tendencia (Donchian 20 + SMA50 + filtro DXY) en ETFs GLD/IAU/GLDM. "
+        "Riesgo 2.5%/trade, stop ATR 2.5× (1R), trail 3×. Paper 1x, sin futuros ni margen."
     ),
     horizon="swing 3–15 días",
     max_notional_usd=300.0,
@@ -23,7 +23,12 @@ _GOLD = DeskStrategy(
         DeskUniverseItem(symbol="IAU", label="iShares Gold Trust", asset_class="us_equity", notes="coste bajo"),
         DeskUniverseItem(symbol="GLDM", label="SPDR Gold MiniShares", asset_class="us_equity", notes="ticket menor"),
     ],
-    agent_names=["gold_macro_agent", "gold_technical_agent", "gold_flow_agent"],
+    agent_names=[
+        "gold_trend_specialist",
+        "gold_macro_agent",
+        "gold_technical_agent",
+        "gold_flow_agent",
+    ],
     disclaimer="Beta paper. Oro vía ETF; no opera futuros COMEX.",
 )
 
@@ -31,8 +36,8 @@ _FOREX = DeskStrategy(
     desk="forex",
     name="Mesa Forex · Paper (proxies ETF)",
     thesis=(
-        "Alpaca no opera CFD de FX. Esta mesa especializa agentes en diferenciales "
-        "de tipos/riesgo y opera proxies líquidos: UUP (USD), FXE (EUR), FXB (GBP), FXY (JPY)."
+        "Alpaca no opera FX spot ni CFD. Especialista TSMOM + ADX sobre proxies ETF "
+        "UUP/FXE/FXB/FXY. Riesgo 2.5%/trade, stop ATR 2.0×, trail 2.5×. Paper 1x."
     ),
     horizon="swing 2–10 días",
     max_notional_usd=250.0,
@@ -46,7 +51,12 @@ _FOREX = DeskStrategy(
         DeskUniverseItem(symbol="FXB", label="Invesco CurrencyShares Pound", asset_class="us_equity", notes="proxy GBP"),
         DeskUniverseItem(symbol="FXY", label="Invesco CurrencyShares Yen", asset_class="us_equity", notes="proxy JPY"),
     ],
-    agent_names=["fx_macro_agent", "fx_technical_agent", "fx_risk_agent"],
+    agent_names=[
+        "fx_momentum_specialist",
+        "fx_macro_agent",
+        "fx_technical_agent",
+        "fx_risk_agent",
+    ],
     disclaimer="Beta paper. Proxies ETF — no spot FX ni apalancamiento CFD.",
 )
 
@@ -54,8 +64,9 @@ _CRYPTO = DeskStrategy(
     desk="crypto",
     name="Mesa Crypto · Paper",
     thesis=(
-        "Universo amplio Alpaca USD (no solo BTC/ETH/SOL). Compra liderada por "
-        "técnico de gráfico + noticias/redes. Simulación paper 24/7."
+        "Especialista breakout Donchian 10 + EMA50. Crypto Alpaca USD 24/7: stop GTC "
+        "en el broker, pérdida diaria también el fin de semana, autopilot 24/7. "
+        "Riesgo 3%/trade, stop ATR 2.5×, trail 3×. Paper 1x, sin margen."
     ),
     horizon="intradía–swing 1–7 días",
     max_notional_usd=5_000.0,
@@ -65,6 +76,7 @@ _CRYPTO = DeskStrategy(
     time_in_force="gtc",
     symbols=default_crypto_universe(),
     agent_names=[
+        "crypto_breakout_specialist",
         "crypto_chart_technical_agent",
         "crypto_news_social_agent",
         "crypto_momentum_agent",
