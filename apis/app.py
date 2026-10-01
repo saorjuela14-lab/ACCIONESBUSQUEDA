@@ -143,6 +143,24 @@ def create_app() -> FastAPI:
                 _clear_session_cookies(resp)
             return resp
 
+        def _sw_kill_response():
+            return FileResponse(
+                dashboard_dir / "sw.js",
+                media_type="application/javascript",
+                headers={
+                    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                    "Service-Worker-Allowed": "/",
+                },
+            )
+
+        @app.get("/sw.js")
+        async def sw_root_kill():
+            return _sw_kill_response()
+
+        @app.get("/dashboard/sw.js")
+        async def sw_dashboard_kill():
+            return _sw_kill_response()
+
         @app.get("/logout")
         async def logout_page(request: Request):
             """Hard logout: clear cookies server-side and land on login (no JS required)."""

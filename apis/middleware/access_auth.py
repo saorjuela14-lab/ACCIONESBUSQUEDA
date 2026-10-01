@@ -18,6 +18,8 @@ PUBLIC_PREFIXES = (
     "/api/v1/auth/",
     "/dashboard/static/",
     "/logout",
+    "/sw.js",
+    "/dashboard/sw.js",
 )
 
 # Clients may only monitor. All mutating API calls (except auth deposit request)
@@ -58,6 +60,8 @@ CLIENT_FORBIDDEN_PREFIXES = (
 
 
 def _extract_token(request: Request) -> str | None:
+    from apis.session_cookie import decode_session_cookie
+
     auth = request.headers.get("authorization", "")
     if auth.lower().startswith("bearer "):
         return auth[7:].strip()
@@ -65,7 +69,7 @@ def _extract_token(request: Request) -> str | None:
         return request.headers.get("x-access-token")
     cookie = request.cookies.get("nexbuy_token") or request.cookies.get("monarch_token")
     if cookie:
-        return cookie
+        return decode_session_cookie(cookie)
     return request.query_params.get("token")
 
 

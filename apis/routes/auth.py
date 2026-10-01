@@ -74,19 +74,23 @@ class ClientErrorReport(BaseModel):
 
 
 def _extract_bearer(request: Request) -> str | None:
+    from apis.session_cookie import decode_session_cookie
+
     auth = request.headers.get("authorization", "")
     if auth.lower().startswith("bearer "):
         return auth[7:].strip()
-    return request.cookies.get("nexbuy_token") or request.cookies.get("monarch_token")
+    raw = request.cookies.get("nexbuy_token") or request.cookies.get("monarch_token")
+    return decode_session_cookie(raw)
 
 
-def _set_session_cookie(response: Response, token: str) -> None:
-    settings = get_settings()
+def _set_session_cookie(response: Response, token: str, request: Request | None = None) -> None:
+    from apis.session_cookie import cookie_should_be_secure, encode_session_cookie
+
     response.set_cookie(
         key="nexbuy_token",
-        value=token,
+        value=encode_session_cookie(token),
         httponly=True,
-        secure=settings.app_env == "production",
+        secure=cookie_should_be_secure(request),
         samesite="lax",
         max_age=14 * 24 * 3600,
         path="/",
@@ -95,11 +99,9 @@ def _set_session_cookie(response: Response, token: str) -> None:
 
 def _clear_session_cookies(response: Response) -> None:
     """Expire auth cookies with the same flags used when setting them."""
-    settings = get_settings()
-    secure = settings.app_env == "production"
     for key in ("nexbuy_token", "monarch_token"):
-        response.delete_cookie(key=key, path="/", secure=secure, samesite="lax")
-        # Fallback without secure (covers mismatched env / proxy quirks)
+        for secure in (True, False):
+            response.delete_cookie(key=key, path="/", secure=secure, samesite="lax")
         response.delete_cookie(key=key, path="/")
 
 
@@ -121,17 +123,18 @@ async def auth_status(session: AsyncSession = Depends(get_session)) -> dict:
 
 @router.post("/auth/login")
 async def login_desk(
-    request: DeskLoginRequest,
+    body: DeskLoginRequest,
+    request: Request,
     response: Response,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Compat: login con token de mesa (DASHBOARD_ACCESS_TOKEN)."""
     try:
-        result = await CompanyAuthService(session).login_desk_token(request.token)
+        result = await CompanyAuthService(session).login_desk_token(body.token)
     except ValueError as exc:
         metrics.inc("auth_failures")
         raise HTTPException(status_code=401, detail=str(exc)) from exc
-    _set_session_cookie(response, result["token"])
+    _set_session_cookie(response, result["token"], request)
     metrics.inc("auth_logins_desk")
     return result
 
@@ -139,6 +142,7 @@ async def login_desk(
 @router.post("/auth/company/login")
 async def login_company(
     body: CompanyLoginRequest,
+    request: Request,
     response: Response,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -147,7 +151,7 @@ async def login_company(
     except ValueError as exc:
         metrics.inc("auth_failures")
         raise HTTPException(status_code=401, detail=str(exc)) from exc
-    _set_session_cookie(response, result["token"])
+    _set_session_cookie(response, result["token"], request)
     metrics.inc("auth_logins_company")
     return result
 
@@ -677,6 +681,21 @@ async def auth_me(request: Request, session: AsyncSession = Depends(get_session)
     if not resolved:
         raise HTTPException(status_code=401, detail="No autenticado")
     return {"ok": True, **resolved}
+
+
+@router.post("/auth/session/cookie")
+async def mint_session_cookie(
+    request: Request,
+    response: Response,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Re-issue the httponly cookie from a valid Bearer (breaks login↔dashboard bounce)."""
+    token = _extract_bearer(request)
+    resolved = await CompanyAuthService(session).resolve_bearer(token) if token else None
+    if not resolved:
+        raise HTTPException(status_code=401, detail="No autenticado")
+    _set_session_cookie(response, token, request)
+    return {"ok": True}
 
 
 @router.post("/auth/logout")

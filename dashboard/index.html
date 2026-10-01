@@ -18,7 +18,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/styles.css?v=36-login-cookie" />
+  <link rel="stylesheet" href="/dashboard/static/styles.css?v=37-login-enter" />
   <!-- Heavy chart libs: defer so login/session UI is not blocked on cold start -->
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script defer src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -663,15 +663,18 @@
     </div>
   </div>
 
-  <script src="/dashboard/static/reliability.js?v=36-login-cookie"></script>
-  <script src="/dashboard/static/voice.js?v=36-login-cookie"></script>
-  <script src="/dashboard/static/app.js?v=36-login-cookie"></script>
+  <script src="/dashboard/static/reliability.js?v=37-login-enter"></script>
+  <script src="/dashboard/static/voice.js?v=37-login-enter"></script>
+  <script src="/dashboard/static/app.js?v=37-login-enter"></script>
   <script>
     // Permanently kill service workers — they were serving stale JS/CSS after deploy
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.getRegistrations().then(function (regs) {
         regs.forEach(function (r) { r.unregister(); });
       });
+      navigator.serviceWorker.register("/sw.js", { scope: "/" }).then(function (reg) {
+        return reg.unregister();
+      }).catch(function () {});
       if (window.caches && caches.keys) {
         caches.keys().then(function (keys) {
           keys.forEach(function (k) { caches.delete(k); });

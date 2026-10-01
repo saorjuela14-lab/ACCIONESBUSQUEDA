@@ -243,6 +243,14 @@ async function ensureAuth() {
         headers: { Authorization: `Bearer ${token}` },
         credentials: "same-origin",
       }, 12000);
+      if (me && me.ok) {
+        // Document navigations only send the httponly cookie. Re-mint it.
+        await fetchWithTimeout(`${API}/auth/session/cookie`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "same-origin",
+        }, 8000).catch(() => null);
+      }
     }
     // Cookie-only session (httponly) — recover without localStorage bounce loop
     if (!me || !me.ok) {

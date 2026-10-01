@@ -124,3 +124,81 @@ async def test_cookie_only_session_opens_dashboard_without_bearer():
         me = await client.get("/api/v1/auth/me")
         assert me.status_code == 200
         assert me.json().get("role") == "desk"
+
+
+@pytest.mark.asyncio
+async def test_login_cookie_is_encoded_and_secure_on_https():
+    await init_db()
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+        login = await client.post(
+            "/api/v1/auth/login",
+            json={"token": "desk-secret"},
+            headers={"x-forwarded-proto": "https"},
+        )
+        assert login.status_code == 200
+        sc = login.headers.get("set-cookie") or ""
+        assert "nexbuy_token=" in sc.lower()
+        assert "m1." in sc
+        assert "secure" in sc.lower()
+        assert "samesite=lax" in sc.lower()
+        pair = sc.split(";", 1)[0]
+        assert "@" not in pair
+        assert "desk-secret" not in pair
+
+
+@pytest.mark.asyncio
+async def test_legacy_raw_cookie_still_opens_dashboard():
+    await init_db()
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+        dash = await client.get("/dashboard", cookies={"nexbuy_token": "desk-secret"})
+        assert dash.status_code == 200
+        me = await client.get("/api/v1/auth/me", cookies={"nexbuy_token": "desk-secret"})
+        assert me.status_code == 200
+        assert me.json().get("role") == "desk"
+
+
+@pytest.mark.asyncio
+async def test_mint_session_cookie_from_bearer():
+    await init_db()
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+        minted = await client.post(
+            "/api/v1/auth/session/cookie",
+            headers={"Authorization": "Bearer desk-secret", "x-forwarded-proto": "https"},
+        )
+        assert minted.status_code == 200
+        sc = minted.headers.get("set-cookie") or ""
+        assert "m1." in sc
+        assert "secure" in sc.lower()
+
+
+@pytest.mark.asyncio
+async def test_sw_kill_switch_is_public():
+    await init_db()
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+        for path in ("/sw.js", "/dashboard/sw.js"):
+            r = await client.get(path)
+            assert r.status_code == 200, path
+            assert "unregister" in r.text
+            assert r.headers.get("service-worker-allowed") == "/"
+            assert "no-store" in (r.headers.get("cache-control") or "")
+
+
+@pytest.mark.asyncio
+async def test_login_html_requires_cookie_before_dashboard_redirect():
+    await init_db()
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=False) as client:
+        page = await client.get("/login")
+        assert page.status_code == 200
+        assert "enterDashboardIfCookie" in page.text
+        assert "/auth/session/cookie" in page.text
+        assert "monarch_login_hops" in page.text
