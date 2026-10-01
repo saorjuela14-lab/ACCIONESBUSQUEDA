@@ -1,8 +1,9 @@
 """Net deposited capital from Alpaca account activities (reporting base).
 
-Sums cash in minus cash out (CSD / CSW / JNLC / TRANS). Cached with TTL so a
-new deposit or withdrawal shows up without a deploy. If Alpaca fails, fall back
-to DEPOSITED_BASE_USD — never silently to the $20 trading stamp.
+Sums cash in minus cash out (CSD / CSW / JNLC / TRANS / OCT on-chain, plus
+ACATC/FOPT). Cached with TTL so a new deposit or withdrawal shows up without a
+deploy. If Alpaca fails, fall back to DEPOSITED_BASE_USD — never silently to
+the $20 trading stamp.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-TRANSFER_ACTIVITY_TYPES = ("CSD", "CSW", "JNLC", "TRANS")
+TRANSFER_ACTIVITY_TYPES = ("CSD", "CSW", "JNLC", "TRANS", "OCT", "ACATC", "FOPT")
 _SKIP_STATUS = frozenset({"canceled", "cancelled", "pending", "rejected", "queued", "failed"})
 _MAX_PAGES = 50
 

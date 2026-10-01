@@ -43,6 +43,15 @@ def test_net_transfers_jnlc_and_skip_canceled():
     assert counted == 1
 
 
+def test_oct_onchain_deposit_counts():
+    rows = [{"activity_type": "OCT", "net_amount": "21.74", "status": "executed"}]
+    net, deposits, withdrawals, counted = net_transfers_from_activities(rows)
+    assert net == 21.74
+    assert deposits == 21.74
+    assert withdrawals == 0.0
+    assert counted == 1
+
+
 def test_csw_negative_net_amount_not_double_flipped():
     rows = [{"activity_type": "CSW", "net_amount": "-2.50", "status": "executed"}]
     net, _dep, withdrawals, _n = net_transfers_from_activities(rows)
