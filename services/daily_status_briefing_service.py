@@ -74,6 +74,23 @@ class DailyStatusBriefingService:
                 f"Equity ${account.equity:,.2f} · Cash ${account.cash:,.2f} · "
                 f"Buying power ${account.buying_power:,.2f}"
             )
+            try:
+                from domain.firm_capital import pnl_usd_from_base, return_pct_from_base
+                from services.deposited_capital_service import get_deposited_base
+
+                snap = await get_deposited_base()
+                base = snap.amount if snap.amount and snap.amount > 0 else None
+                eq = float(account.equity or 0)
+                if base:
+                    pnl = pnl_usd_from_base(eq, base)
+                    ret = return_pct_from_base(eq, base)
+                    sign = "+" if (pnl or 0) >= 0 else ""
+                    lines.append(
+                        f"Depositado ${base:,.2f} · P&L {sign}{pnl:,.2f} "
+                        f"({sign}{ret:.2f}% vs depositado, fuente {snap.source})"
+                    )
+            except Exception:
+                pass
         except Exception as exc:
             lines.append(f"Cuenta: error ({exc})")
             account = None

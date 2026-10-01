@@ -32,9 +32,11 @@ class MonthReport(BaseModel):
 
     as_of: datetime = Field(default_factory=utc_now)
     window_days: int = 30
-    base_usd: float = 20.0
+    base_usd: float | None = None
     equity_usd: float | None = None
     equity_return_pct: float | None = None
+    pnl_usd: float | None = None
+    base_source: str = ""
     closed_pnl_usd: float | None = None
     closed_avg_pnl_pct: float | None = None
     trades_closed: int = 0

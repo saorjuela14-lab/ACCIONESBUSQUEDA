@@ -175,6 +175,29 @@ async def test_cancel_all_and_clock_provider():
 
 
 @pytest.mark.asyncio
+async def test_list_account_activities_types():
+    broker = AlpacaBrokerProvider(api_key="k", secret_key="s", paper=False)
+    mock_client = AsyncMock()
+    mock_client.request = AsyncMock(
+        return_value=_mock_response(
+            200,
+            [{"id": "act-1", "activity_type": "CSD", "net_amount": "21.74", "status": "executed"}],
+        )
+    )
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("providers.broker.alpaca_provider.httpx.AsyncClient", return_value=mock_client):
+        acts = await broker.list_account_activities(activity_types=["CSD", "CSW", "JNLC", "TRANS"])
+
+    assert acts[0]["net_amount"] == "21.74"
+    call = mock_client.request.call_args
+    assert call[0][0] == "GET"
+    assert call[0][1].endswith("/v2/account/activities")
+    assert "CSD" in call[1]["params"]["activity_types"]
+
+
+@pytest.mark.asyncio
 async def test_execute_blocks_when_cash_zero():
     broker = AlpacaBrokerProvider(api_key="k", secret_key="s", paper=False)
     svc = AlpacaOrderService(broker=broker)

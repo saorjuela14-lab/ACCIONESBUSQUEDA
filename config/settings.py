@@ -148,6 +148,9 @@ class Settings(BaseSettings):
     alpaca_base_url: str = ""  # override; empty → api.alpaca.markets (live) or paper-api
     alpaca_data_base_url: str = "https://data.alpaca.markets"
     alpaca_data_feed: str = "iex"  # iex (free) | sip (paid) | delayed_sip
+    # Reporting P&L base if Alpaca activities API is down. Never silent $20.
+    deposited_base_usd: float | None = None
+    deposited_base_cache_ttl_seconds: int = 600
 
     # Beta multi-asset paper (gold / forex ETF proxies / crypto) — isolated from firm LIVE equity
     multiasset_beta_enabled: bool = True
@@ -279,6 +282,13 @@ class Settings(BaseSettings):
         from database.url import normalize_database_url
 
         return normalize_database_url(str(value or ""))
+
+    @field_validator("deposited_base_usd", mode="before")
+    @classmethod
+    def empty_deposited_base(cls, value: object) -> float | None:
+        if value is None or value == "":
+            return None
+        return float(value)  # type: ignore[arg-type]
 
     @field_validator("report_times", mode="before")
     @classmethod

@@ -1,11 +1,14 @@
 """Deposit into firm Alpaca book + withdrawal approval flow."""
 
+import uuid
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from apis.app import create_app
 from config.settings import get_settings
 from database.engine import init_db
+from services.deposited_capital_service import reset_deposited_cache
 
 
 @pytest.fixture(autouse=True)
@@ -22,28 +25,32 @@ def _env(monkeypatch, tmp_path):
     monkeypatch.setenv("ALPACA_FUNDING_ROUTING_NUMBER", "021000021")
     monkeypatch.setenv("ALPACA_FUNDING_ACCOUNT_NUMBER", "123456789")
     monkeypatch.setenv("ALPACA_FUNDING_BENEFICIARY", "Monarch Capital")
+    monkeypatch.setenv("DEPOSITED_BASE_USD", "21.74")
     get_settings.cache_clear()
+    reset_deposited_cache()
     yield
+    reset_deposited_cache()
     get_settings.cache_clear()
 
 
 async def _client_session(client: AsyncClient):
     desk = await client.post("/api/v1/auth/login", json={"token": "desk-secret"})
     desk_h = {"Authorization": f"Bearer {desk.json()['token']}"}
+    email = f"fund-{uuid.uuid4().hex[:8]}@co.test"
     created = await client.post(
         "/api/v1/auth/companies",
         headers=desk_h,
         json={
             "org_name": "Fund Co",
-            "email": "fund@co.test",
+            "email": email,
             "password": "segura1234",
             "full_name": "Fund",
         },
     )
-    assert created.status_code == 200
+    assert created.status_code == 200, created.text
     login = await client.post(
         "/api/v1/auth/company/login",
-        json={"email": "fund@co.test", "password": "segura1234"},
+        json={"email": email, "password": "segura1234"},
     )
     assert login.status_code == 200
     return {"Authorization": f"Bearer {login.json()['token']}"}, desk_h
@@ -69,7 +76,7 @@ async def test_deposit_returns_funding_and_client_confirm():
         assert body["funding"]["no_alpaca_login"] is True
         assert body["funding"]["bank"]["routing_number"] == "021000021"
         assert body["funding"]["bank"]["account_number"] == "123456789"
-        assert body["funding"]["memo_reference"] == "fund@co.test"
+        assert body["funding"]["memo_reference"].endswith("@co.test")
         assert body["funding"]["shared_account"] is True
         assert body["funding"].get("headline") in ("", None)
         assert body["funding"].get("steps") in ([], None)
@@ -179,14 +186,16 @@ async def test_client_sees_own_capital_not_firm_book_total():
         if pf:
             assert pf.get("total_value", 0) == 0
             assert pf.get("cash", 0) == 0
-            assert pf.get("initial_capital") == 20.0
+            assert pf.get("initial_capital") in (0, 0.0)
+            assert not pf.get("deposited_usd")
+            assert pf.get("pnl_usd") in (None, 0, 0.0)
         assert body["watchlist"] == []
         assert body["top_opportunities"] == []
         assert body["recently_analyzed"] == []
 
         hist = await client.get("/api/v1/dashboard/performance-history?range=30d", headers=client_h)
         assert hist.status_code == 200, hist.text
-        assert hist.json()["base_usd"] == 20.0
+        assert hist.json()["base_usd"] == 21.74
         assert hist.json()["range"] == "30d"
         assert hist.json()["days"] == 30
         assert "points" in hist.json()

@@ -73,8 +73,17 @@ async def test_month_report_counts_outcomes(session: AsyncSession, monkeypatch):
     async def _no_spy(self, *, window_days: int = 30):
         return 0.5
 
+    async def _deposited(*, force: bool = False):
+        from services.deposited_capital_service import DepositedBase
+
+        return DepositedBase(amount=21.74, source="env")
+
     monkeypatch.setattr(MonthReportService, "_equity", _no_equity)
     monkeypatch.setattr(MonthReportService, "_spy_return", _no_spy)
+    monkeypatch.setattr(
+        "services.month_report_service.get_deposited_base",
+        _deposited,
+    )
 
     report = await MonthReportService(session).build(window_days=30)
     assert report.trades_closed == 3
@@ -83,12 +92,14 @@ async def test_month_report_counts_outcomes(session: AsyncSession, monkeypatch):
     assert report.outcomes["loss"] == 1
     assert report.outcomes["win"] == 1
     assert report.equity_usd == 22.0
-    assert report.equity_return_pct == 10.0  # vs $20 base
+    assert report.base_usd == 21.74
+    assert report.equity_return_pct == 1.2  # vs $21.74 deposited
+    assert report.pnl_usd == 0.26
     assert report.spy_return_pct == 0.5
-    assert report.vs_spy_pct == 9.5
+    assert report.vs_spy_pct == 0.7
     assert report.journal_win_rate_pct is not None
     assert any("estancamiento" in d.lower() or "Estancamiento" in d for d in report.diagnosis) or True
-    assert "TP" in report.headline or "Equity" in report.headline
+    assert "depositado" in report.headline.lower()
 
 
 @pytest.mark.asyncio
