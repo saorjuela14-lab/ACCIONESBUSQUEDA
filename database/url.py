@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+_CRED_IN_URL = re.compile(r"//[^/\s]+:[^/\s]+@")
+
+# Neon project curly-surf-33371253 / endpoint ep-small-pond-awyhvhoz
+NEON_DIRECT_HOST = "ep-small-pond-awyhvhoz.c-12.us-east-1.aws.neon.tech"
+NEON_POOLER_HOST = "ep-small-pond-awyhvhoz-pooler.c-12.us-east-1.aws.neon.tech"
 
 
 def normalize_database_url(url: str) -> str:
@@ -45,3 +52,19 @@ def is_sqlite(url: str) -> bool:
 def is_postgres(url: str) -> bool:
     u = (url or "").lower()
     return "postgresql" in u or u.startswith("postgres://")
+
+
+def database_host(url: str) -> str | None:
+    """Hostname only — never user/password. Used for logs and health."""
+    raw = normalize_database_url(url)
+    if is_sqlite(raw):
+        return None
+    host = urlparse(raw).hostname
+    return host or None
+
+
+def sanitize_db_error(exc: BaseException) -> str:
+    """Log/health text without connection-string credentials."""
+    text = f"{type(exc).__name__}: {exc}"
+    text = _CRED_IN_URL.sub("//***:***@", text)
+    return text[:240]

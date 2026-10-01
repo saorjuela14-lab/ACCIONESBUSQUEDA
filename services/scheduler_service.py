@@ -568,7 +568,7 @@ class SchedulerService:
 
 
 async def start_scheduler() -> SchedulerService:
-    await init_db()
+    await init_db(attempt_delays=(0,))
     scheduler = SchedulerService()
     scheduler.start()
     return scheduler

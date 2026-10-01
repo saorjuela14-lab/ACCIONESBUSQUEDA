@@ -6,8 +6,8 @@ from fastapi import APIRouter
 from sqlalchemy import text
 
 from config.settings import get_settings
-from database.engine import get_session
-from database.url import is_postgres, is_sqlite, normalize_database_url
+from database.engine import db_snapshot, get_session
+from database.url import is_postgres, is_sqlite, normalize_database_url, sanitize_db_error
 from utils.metrics import metrics
 
 router = APIRouter()
@@ -18,10 +18,19 @@ _CATCHUP_MIN_SECONDS = 300  # at most once per 5 minutes via /health
 
 @router.get("/health")
 async def health_check() -> dict:
-    """Liveness + throttled briefing catch-up (keeps cloud hosts from missing close)."""
-    out: dict = {"status": "healthy", "service": "monarch-capital"}
+    """Liveness — always 200 if the process is up (DB may be down / reconnecting)."""
+    snap = db_snapshot()
+    out: dict = {
+        "status": "healthy",
+        "service": "monarch-capital",
+        "db": "up" if snap["ready"] else "down",
+    }
+    if snap.get("host"):
+        out["db_host"] = snap["host"]
+    if not snap["ready"] and snap.get("error"):
+        out["db_error"] = snap["error"]
     settings = get_settings()
-    if not settings.whatsapp_briefing_enabled:
+    if not snap["ready"] or not settings.whatsapp_briefing_enabled:
         return out
 
     global _LAST_CATCHUP_MONO
@@ -46,7 +55,7 @@ async def health_check() -> dict:
                 out["briefing_catchup"] = delivered
             break
     except Exception as exc:
-        out["briefing_catchup_error"] = str(exc)[:120]
+        out["briefing_catchup_error"] = sanitize_db_error(exc)
     return out
 
 
@@ -71,7 +80,7 @@ async def readiness_check() -> dict:
             "database": "unavailable",
             "dialect": dialect,
             "persistent": dialect == "postgresql",
-            "error": str(exc)[:200],
+            "error": sanitize_db_error(exc),
         }
     return {
         "status": "not_ready",

@@ -1,5 +1,8 @@
 """Database engine and session management."""
 
+from __future__ import annotations
+
+import asyncio
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
@@ -8,13 +11,25 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from config.settings import get_settings
 from database.models import Base
-from database.url import is_sqlite, normalize_database_url
+from database.url import (
+    database_host,
+    is_sqlite,
+    normalize_database_url,
+    sanitize_db_error,
+)
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 _engine = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
+_db_ready = False
+_db_last_error: str | None = None
+_reconnect_task: asyncio.Task | None = None
+
+# 6 attempts, ~52s of sleeps + fast-fail DNS. Lifespan then continues degraded.
+STARTUP_ATTEMPT_DELAYS: tuple[float, ...] = (0, 2, 4, 8, 16, 20)
+BACKGROUND_RETRY_INTERVAL = 30.0
 
 _ORG_TABLES = ("portfolios", "watchlist", "alerts")
 
@@ -153,26 +168,134 @@ def _engine_kwargs(url: str) -> dict:
     return kwargs
 
 
-async def init_db() -> None:
-    global _engine, _session_factory
+def db_snapshot() -> dict:
+    """Process-safe DB status for /health. Host only — never credentials."""
     settings = get_settings()
     url = normalize_database_url(settings.database_url)
-    _ensure_data_dir(url)
-    logger.info(
-        "db.init",
-        dialect="sqlite" if is_sqlite(url) else "postgresql",
-        persistent=not is_sqlite(url),
-    )
-    _engine = create_async_engine(url, **_engine_kwargs(url))
-    _session_factory = async_sessionmaker(_engine, expire_on_commit=False)
+    return {
+        "ready": _db_ready,
+        "host": database_host(url),
+        "error": _db_last_error,
+        "dialect": "sqlite" if is_sqlite(url) else "postgresql",
+    }
+
+
+def reset_db_runtime() -> None:
+    """Test helper — drop in-process engine state."""
+    global _engine, _session_factory, _db_ready, _db_last_error, _reconnect_task
+    _engine = None
+    _session_factory = None
+    _db_ready = False
+    _db_last_error = None
+    _reconnect_task = None
+
+
+async def _dispose_engine() -> None:
+    global _engine, _session_factory
+    if _engine is not None:
+        try:
+            await _engine.dispose()
+        except Exception:
+            pass
+    _engine = None
+    _session_factory = None
+
+
+async def _open_schema(url: str) -> None:
+    global _engine, _session_factory
+    if _engine is None:
+        _engine = create_async_engine(url, **_engine_kwargs(url))
+        _session_factory = async_sessionmaker(_engine, expire_on_commit=False)
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await _migrate_schema(conn, url)
 
 
+async def init_db(*, attempt_delays: tuple[float, ...] | None = None) -> bool:
+    """Create engine and migrate. Retries DNS/connect; never raises on failure.
+
+    Returns True when the schema is reachable. False → degraded (process stays up).
+    """
+    global _db_ready, _db_last_error
+    if _db_ready and _session_factory is not None:
+        return True
+    settings = get_settings()
+    url = normalize_database_url(settings.database_url)
+    host = database_host(url)
+    _ensure_data_dir(url)
+    logger.info(
+        "db.init",
+        dialect="sqlite" if is_sqlite(url) else "postgresql",
+        persistent=not is_sqlite(url),
+        host=host,
+    )
+    delays = STARTUP_ATTEMPT_DELAYS if attempt_delays is None else attempt_delays
+    for i, delay in enumerate(delays, start=1):
+        if delay:
+            await asyncio.sleep(delay)
+        try:
+            await _open_schema(url)
+            _db_ready = True
+            _db_last_error = None
+            logger.info("db.ready", host=host, attempt=i)
+            return True
+        except Exception as exc:
+            _db_ready = False
+            _db_last_error = sanitize_db_error(exc)
+            logger.warning(
+                "db.connect_failed",
+                host=host,
+                attempt=i,
+                attempts=len(delays),
+                error=_db_last_error,
+            )
+            await _dispose_engine()
+    logger.error("db.degraded", host=host, error=_db_last_error)
+    return False
+
+
+async def reconnect_until_ready() -> None:
+    """Background retries after degraded startup (Neon wake / transient DNS)."""
+    while not _db_ready:
+        await asyncio.sleep(BACKGROUND_RETRY_INTERVAL)
+        try:
+            if await init_db(attempt_delays=(0,)):
+                return
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("db.reconnect_loop", error=sanitize_db_error(exc))
+
+
+def spawn_reconnect() -> asyncio.Task | None:
+    global _reconnect_task
+    if _db_ready:
+        return None
+    if _reconnect_task is not None and not _reconnect_task.done():
+        return _reconnect_task
+    try:
+        _reconnect_task = asyncio.create_task(reconnect_until_ready())
+    except RuntimeError:
+        _reconnect_task = None
+    return _reconnect_task
+
+
+async def shutdown_db() -> None:
+    global _reconnect_task
+    if _reconnect_task is not None and not _reconnect_task.done():
+        _reconnect_task.cancel()
+        try:
+            await _reconnect_task
+        except (asyncio.CancelledError, Exception):
+            pass
+    _reconnect_task = None
+    await _dispose_engine()
+
+
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    if _session_factory is None:
-        await init_db()
-    assert _session_factory is not None
+    if not _db_ready or _session_factory is None:
+        await init_db(attempt_delays=(0,))
+    if _session_factory is None or not _db_ready:
+        raise RuntimeError(_db_last_error or "database unavailable")
     async with _session_factory() as session:
         yield session

@@ -12,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apis.middleware.access_auth import AccessTokenMiddleware, _extract_token
 from apis.routes import alerts, allocation, analysis, auth, broker, correlations, dashboard, discovery, graph, health, market, multiasset, ops, portfolio, proposal, providers, recommendations, reports, risk, sentiment, voice, watchlist
 from config.settings import get_settings
-from database.engine import get_session, init_db
+from database.engine import get_session, init_db, shutdown_db, spawn_reconnect
+from database.url import sanitize_db_error
 from orchestration.container import Container, bootstrap
 from utils.logging import configure_logging, get_logger
 
@@ -23,7 +24,16 @@ container = Container()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging()
-    await init_db()
+    db_ok = False
+    try:
+        db_ok = await init_db()
+    except Exception as exc:
+        logger.error("app.startup.db_failed", error=sanitize_db_error(exc))
+        db_ok = False
+    if not db_ok:
+        spawn_reconnect()
+        logger.error("app.startup.degraded", detail="serving without database")
+
     settings = get_settings()
     logger.info(
         "app.startup",
@@ -31,35 +41,43 @@ async def lifespan(app: FastAPI):
         firm_autonomy=settings.firm_autonomy,
         auto_execute=settings.auto_execute_trades,
         autopilot_minutes=settings.effective_autopilot_interval_minutes,
+        db_ready=db_ok,
     )
 
-    if settings.firm_autonomy:
-        from services.firm_autonomy_bootstrap import ensure_firm_autonomy_flags
+    if db_ok and settings.firm_autonomy:
+        try:
+            from services.firm_autonomy_bootstrap import ensure_firm_autonomy_flags
 
-        async for session in get_session():
-            await ensure_firm_autonomy_flags(session, firm_autonomy=True)
-            break
+            async for session in get_session():
+                await ensure_firm_autonomy_flags(session, firm_autonomy=True)
+                break
+        except Exception as exc:
+            logger.warning("app.firm_autonomy_bootstrap_failed", error=str(exc)[:200])
 
     # Optional B2B bootstrap company (email/password) when DB has no users
-    try:
-        from services.company_auth_service import CompanyAuthService
+    if db_ok:
+        try:
+            from services.company_auth_service import CompanyAuthService
 
-        async for session in get_session():
-            boot = await CompanyAuthService(session).bootstrap_if_needed()
-            if boot:
-                logger.info("app.company_bootstrap", email=boot.get("email"))
-            break
-    except Exception as exc:
-        logger.warning("app.company_bootstrap_failed", error=str(exc))
+            async for session in get_session():
+                boot = await CompanyAuthService(session).bootstrap_if_needed()
+                if boot:
+                    logger.info("app.company_bootstrap", email=boot.get("email"))
+                break
+        except Exception as exc:
+            logger.warning("app.company_bootstrap_failed", error=str(exc))
 
     scheduler = None
     if settings.scheduler_enabled:
-        from services.scheduler_service import start_scheduler
-        scheduler = await start_scheduler()
-        logger.info("app.scheduler.started")
+        try:
+            from services.scheduler_service import start_scheduler
+            scheduler = await start_scheduler()
+            logger.info("app.scheduler.started")
+        except Exception as exc:
+            logger.warning("app.scheduler.start_failed", error=str(exc)[:200])
 
     # Wake path: cloud hosts may sleep through cron — catch up overdue slots once
-    if settings.whatsapp_briefing_enabled:
+    if db_ok and settings.whatsapp_briefing_enabled:
         try:
             from services.status_briefing_catchup_service import StatusBriefingCatchupService
 
@@ -75,7 +93,11 @@ async def lifespan(app: FastAPI):
     yield
 
     if scheduler:
-        scheduler.stop()
+        try:
+            scheduler.stop()
+        except Exception:
+            pass
+    await shutdown_db()
     logger.info("app.shutdown")
 
 
