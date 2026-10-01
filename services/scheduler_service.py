@@ -366,10 +366,6 @@ class SchedulerService:
         """Silent recovery only: sends a slot if cron was missed — never re-sends."""
         if not self._settings.whatsapp_briefing_enabled:
             return
-        from utils.market_hours import is_trading_day
-
-        if not is_trading_day():
-            return
         async for session in get_session():
             from services.status_briefing_catchup_service import StatusBriefingCatchupService
 

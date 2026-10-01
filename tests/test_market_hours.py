@@ -3,7 +3,12 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from utils.market_hours import is_market_open, is_trading_day, should_run_automation
+from utils.market_hours import (
+    is_market_open,
+    is_trading_day,
+    market_holiday_name,
+    should_run_automation,
+)
 
 ET = ZoneInfo("America/New_York")
 
@@ -27,3 +32,11 @@ def test_market_closed_after_hours():
     post_market = datetime(2026, 6, 29, 17, 0, tzinfo=ET)
     assert is_market_open(post_market) is False
     assert should_run_automation(post_market) is True  # post-market window
+
+
+def test_labor_day_2026_is_closed():
+    labor = datetime(2026, 9, 7, 12, 0, tzinfo=ET)
+    assert is_trading_day(labor) is False
+    assert should_run_automation(labor) is False
+    assert market_holiday_name(labor) == "Labor Day (Día del Trabajo)"
+    assert market_holiday_name(datetime(2026, 9, 5, 12, 0, tzinfo=ET)) is None  # Saturday

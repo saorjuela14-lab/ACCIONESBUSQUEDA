@@ -9,12 +9,20 @@ MARKET_CLOSE = time(16, 0)
 PRE_MARKET_START = time(8, 0)
 POST_MARKET_END = time(18, 0)
 
-# US market holidays 2026 (simplified set)
-US_HOLIDAYS_2026 = {
-    "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03",
-    "2026-05-25", "2026-06-19", "2026-07-03", "2026-09-07",
-    "2026-11-26", "2026-12-25",
+# US market holidays 2026 (NYSE observed) + Spanish labels for CEO briefings
+US_HOLIDAY_NAMES_2026: dict[str, str] = {
+    "2026-01-01": "Año Nuevo",
+    "2026-01-19": "Martin Luther King Jr. Day",
+    "2026-02-16": "Presidents' Day",
+    "2026-04-03": "Good Friday",
+    "2026-05-25": "Memorial Day",
+    "2026-06-19": "Juneteenth",
+    "2026-07-03": "Independence Day (observado)",
+    "2026-09-07": "Labor Day (Día del Trabajo)",
+    "2026-11-26": "Thanksgiving",
+    "2026-12-25": "Navidad",
 }
+US_HOLIDAYS_2026 = set(US_HOLIDAY_NAMES_2026)
 
 
 def now_et() -> datetime:
@@ -26,6 +34,14 @@ def is_trading_day(dt: datetime | None = None) -> bool:
     if dt.weekday() >= 5:
         return False
     return dt.strftime("%Y-%m-%d") not in US_HOLIDAYS_2026
+
+
+def market_holiday_name(dt: datetime | None = None) -> str | None:
+    """Weekday NYSE holiday name, or None on weekends / regular sessions."""
+    dt = dt or now_et()
+    if dt.weekday() >= 5:
+        return None
+    return US_HOLIDAY_NAMES_2026.get(dt.strftime("%Y-%m-%d"))
 
 
 def is_market_open(dt: datetime | None = None) -> bool:
