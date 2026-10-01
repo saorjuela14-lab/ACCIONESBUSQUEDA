@@ -704,17 +704,34 @@ class VoiceCommandService:
         svc = PortfolioService(PortfolioRepository(session), get_market_provider())
         try:
             p = await svc.refresh_prices(p.id)
-            ret = p.return_pct
         except Exception:
-            ret = 0
+            pass
 
         mode_val = getattr(p.mode, "value", p.mode) if hasattr(p, "mode") else "real"
         mode = "demo" if mode_val == "demo" else "real"
-        speech = (
-            f"Portafolio {p.name}, modo {mode}. "
-            f"Capital inicial ${p.initial_capital:,.0f}, valor actual ${p.total_value:,.0f}. "
-            f"Rendimiento {ret:+.1f} por ciento."
-        )
+        eq = float(p.total_value or 0)
+        from domain.firm_capital import pnl_usd_from_base, return_pct_from_base
+        from services.deposited_capital_service import get_deposited_base
+
+        ret = None
+        try:
+            snap = await get_deposited_base()
+            base = snap.amount if snap.amount and snap.amount > 0 else None
+        except Exception:
+            base = None
+        if base:
+            ret = return_pct_from_base(eq, base)
+            pnl = pnl_usd_from_base(eq, base) or 0.0
+            speech = (
+                f"Portafolio {p.name}, modo {mode}. "
+                f"Depositado {base:.2f} dólares, equity {eq:.2f}. "
+                f"Resultado {pnl:+.2f} dólares, {ret:+.1f} por ciento contra lo depositado."
+            )
+        else:
+            speech = (
+                f"Portafolio {p.name}, modo {mode}. "
+                f"Valor actual {eq:.2f} dólares. No pude leer el capital depositado en Alpaca."
+            )
         return VoiceCommandResult(
             intent="portfolio",
             speech=speech,

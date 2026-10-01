@@ -18,8 +18,9 @@ from domain.dashboard import (
     WatchlistMatrixRow,
 )
 from domain.enums import InvestmentRecommendation
-from domain.firm_capital import FIRM_RETURN_BASE_USD, return_pct_from_base
+from domain.firm_capital import FIRM_RETURN_BASE_USD, pnl_usd_from_base, return_pct_from_base
 from providers.market.factory import get_market_provider
+from services.deposited_capital_service import get_deposited_base
 from services.market_dashboard_service import MarketDashboardService
 from services.provider_diagnostics import get_providers_status
 from services.watchlist_matrix_service import WatchlistMatrixService
@@ -69,10 +70,13 @@ def _redact_for_client(dash: TerminalDashboard, client_view: ClientAccountView) 
             portfolio_id=None,
             name="Rendimiento Monarch",
             mode=src.mode,
-            initial_capital=FIRM_RETURN_BASE_USD,
+            initial_capital=0.0,
             cash=0.0,
             total_value=0.0,
             return_pct=src.return_pct,
+            deposited_usd=None,
+            pnl_usd=None,
+            base_source="",
             sharpe=None,
             sortino=None,
             max_drawdown=None,
@@ -116,6 +120,8 @@ async def get_terminal_dashboard(
 
     portfolio_slice = None
     bootstrap_note = None
+    deposited_snap = await get_deposited_base()
+    reporting_base = deposited_snap.amount if deposited_snap.amount and deposited_snap.amount > 0 else None
     from providers.market.factory import get_market_provider
     from services.portfolio_bootstrap_service import PortfolioBootstrapService
     from services.portfolio_service import PortfolioService
@@ -152,7 +158,7 @@ async def get_terminal_dashboard(
         source = "existing" if p else "none"
 
     if p:
-        # Lock return baseline to $20 (fixes legacy rows stamped with Alpaca equity ~21.68)
+        # Keep DB book stamp at $20 (sizing/reconcile). Reporting P&L uses Alpaca deposits.
         if abs(float(p.initial_capital or 0) - FIRM_RETURN_BASE_USD) > 0.001:
             try:
                 p = await svc.mirror_positions(
@@ -207,7 +213,9 @@ async def get_terminal_dashboard(
             if cash_pct > 0:
                 sector_w["Efectivo"] = cash_pct
                 country_w["Efectivo"] = cash_pct
-        ret = return_pct_from_base(total, FIRM_RETURN_BASE_USD)
+        ret = return_pct_from_base(total, reporting_base) if reporting_base else None
+        pnl = pnl_usd_from_base(total, reporting_base)
+        display_base = reporting_base if reporting_base is not None else 0.0
         unrealized = sum(
             ((pos.current_price or pos.average_cost) - pos.average_cost) * pos.shares
             for pos in p.positions
@@ -216,10 +224,13 @@ async def get_terminal_dashboard(
             portfolio_id=p.id,
             name=p.name,
             mode=p.mode.value,
-            initial_capital=FIRM_RETURN_BASE_USD,
+            initial_capital=display_base,
             cash=cash,
             total_value=total,
             return_pct=ret,
+            deposited_usd=reporting_base,
+            pnl_usd=pnl,
+            base_source=deposited_snap.source,
             sharpe=metrics.get("sharpe"),
             sortino=metrics.get("sortino"),
             max_drawdown=metrics.get("max_drawdown"),
@@ -232,7 +243,7 @@ async def get_terminal_dashboard(
         )
         try:
             await PortfolioSnapshotRepository(session).save(
-                p.id, total, ret, cash
+                p.id, total, float(ret or 0.0), cash
             )
         except Exception:
             pass
@@ -298,15 +309,25 @@ async def get_performance_history(
     range: str = "30d",  # noqa: A002 — query alias for clients (?range=7d|30d|90d|3m)
     limit: int = 500,
 ) -> dict:
-    """Return % history for the firm book (rebased to $20). Ranges: 7d | 30d | 90d/3m."""
+    """Return % history for the firm book (rebased to net Alpaca deposits). Ranges: 7d | 30d | 90d/3m."""
     from datetime import datetime, timedelta, timezone
 
+    snap = await get_deposited_base()
+    reporting_base = snap.amount if snap.amount and snap.amount > 0 else None
     key = (range or "30d").strip().lower()  # noqa: A002
     days = _PERF_RANGES.get(key, 30)
     book_org = scope.book_org_id()
+    empty = {
+        "ok": True,
+        "base_usd": reporting_base,
+        "base_source": snap.source,
+        "range": key if key in _PERF_RANGES else "30d",
+        "days": days,
+        "points": [],
+    }
     portfolios = await PortfolioRepository(session).list_all(org_id=book_org)
     if not portfolios:
-        return {"ok": True, "base_usd": FIRM_RETURN_BASE_USD, "range": key if key in _PERF_RANGES else "30d", "days": days, "points": []}
+        return empty
     p = sorted(portfolios, key=lambda x: x.updated_at, reverse=True)[0]
     hist = await PortfolioSnapshotRepository(session).list_for_portfolio(
         p.id, limit=max(1, min(limit, 500))
@@ -324,18 +345,19 @@ async def get_performance_history(
         points.append(
             {
                 "timestamp": ts.isoformat(),
-                "return_pct": return_pct_from_base(h.total_value, FIRM_RETURN_BASE_USD),
+                "return_pct": return_pct_from_base(h.total_value, reporting_base) if reporting_base else None,
             }
         )
     # Always append current mark so the chart is never empty when book exists
-    current_ret = return_pct_from_base(p.total_value, FIRM_RETURN_BASE_USD)
+    current_ret = return_pct_from_base(p.total_value, reporting_base) if reporting_base else None
     now_iso = datetime.now(timezone.utc).isoformat()
-    if not points or abs(points[-1]["return_pct"] - current_ret) > 0.01:
+    if current_ret is not None and (not points or abs((points[-1]["return_pct"] or 0) - current_ret) > 0.01):
         points.append({"timestamp": now_iso, "return_pct": current_ret})
     range_out = key if key in _PERF_RANGES else "30d"
     return {
         "ok": True,
-        "base_usd": FIRM_RETURN_BASE_USD,
+        "base_usd": reporting_base,
+        "base_source": snap.source,
         "range": range_out,
         "days": days,
         "points": points,

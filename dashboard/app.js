@@ -143,9 +143,9 @@ function applyRoleMode(principal, clientView) {
   document.body.classList.toggle("client-prospect", !desk && !invested);
   document.body.classList.toggle("client-investor", !desk && invested);
   const moneyLabel = document.getElementById("ceo-money-label");
-  if (moneyLabel) moneyLabel.textContent = desk ? "Tu dinero" : "Cuenta Monarch";
+  if (moneyLabel) moneyLabel.textContent = desk ? "Equity" : "Cuenta Monarch";
   const retLabel = document.getElementById("ceo-return-label");
-  if (retLabel) retLabel.textContent = desk ? "Ganancia / pérdida" : "Rendimiento de la cuenta";
+  if (retLabel) retLabel.textContent = desk ? "P&L vs depositado" : "Rendimiento de la cuenta";
   const accessPanel = document.getElementById("access-panel");
   if (accessPanel) accessPanel.classList.toggle("hidden", !desk);
   const clientBanner = document.getElementById("client-monitor-banner");
@@ -627,6 +627,11 @@ function renderHeatmap(sectors) {
   ).join("");
 }
 
+function fmtMoney2(n) {
+  if (n == null || Number.isNaN(Number(n))) return "—";
+  return `$${Number(n).toLocaleString(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 function renderCeoBar(d) {
   const p = d.portfolio;
   const cv = d.client_view || null;
@@ -638,13 +643,28 @@ function renderCeoBar(d) {
   const eqEl = document.getElementById("ceo-client-equity");
   const capWrap = document.querySelector(".ceo-kpi-client-capital");
   const eqWrap = document.querySelector(".ceo-kpi-client-equity");
+  const depEl = document.getElementById("ceo-deposited");
+  const pnlEl = document.getElementById("ceo-pnl");
 
   if (desk) {
-    $("#ceo-portfolio").textContent = p ? `$${p.total_value?.toFixed(0)}` : "—";
+    if (depEl) depEl.textContent = p && p.deposited_usd != null ? fmtMoney2(p.deposited_usd) : "—";
+    $("#ceo-portfolio").textContent = p ? fmtMoney2(p.total_value) : "—";
+    if (pnlEl) {
+      if (p && p.pnl_usd != null) {
+        const sign = p.pnl_usd >= 0 ? "+" : "";
+        pnlEl.textContent = `${sign}${fmtMoney2(p.pnl_usd)}`;
+        pnlEl.className = p.pnl_usd >= 0 ? "up" : "down";
+      } else {
+        pnlEl.textContent = "—";
+        pnlEl.className = "";
+      }
+    }
     if (capWrap) capWrap.classList.add("hidden");
     if (eqWrap) eqWrap.classList.add("hidden");
   } else {
     $("#ceo-portfolio").textContent = "—";
+    if (depEl) depEl.textContent = "—";
+    if (pnlEl) { pnlEl.textContent = "—"; pnlEl.className = ""; }
     if (capWrap) capWrap.classList.toggle("hidden", !(cv && cv.has_invested));
     if (eqWrap) eqWrap.classList.toggle("hidden", !(cv && cv.has_invested));
     if (capEl) {
@@ -662,7 +682,7 @@ function renderCeoBar(d) {
   const ret = (cv && cv.firm_return_pct != null) ? cv.firm_return_pct : p?.return_pct;
   const retEl = $("#ceo-return");
   retEl.textContent = ret != null ? fmtPct(ret) : "—";
-  retEl.className = ret >= 0 ? "up" : "down";
+  retEl.className = ret == null ? "" : (ret >= 0 ? "up" : "down");
   $("#ceo-alerts").textContent = desk ? (d.active_alerts || []).length : "—";
   $("#ceo-watchlist-count").textContent = desk ? (d.watchlist || []).length : "—";
   $("#ceo-updated").textContent = d.timestamp ? new Date(d.timestamp).toLocaleTimeString(LOCALE) : new Date().toLocaleTimeString(LOCALE);
@@ -946,7 +966,11 @@ async function loadMonthReport() {
       headline.textContent = r.headline || "Informe del mes";
     }
     const eq = r.equity_usd != null ? `$${Number(r.equity_usd).toFixed(2)}` : "—";
+    const dep = r.base_usd != null ? `$${Number(r.base_usd).toFixed(2)}` : "—";
     const ret = _fmtSignedPct(r.equity_return_pct);
+    const vsDep = r.pnl_usd != null
+      ? `${Number(r.pnl_usd) >= 0 ? "+" : ""}$${Number(r.pnl_usd).toFixed(2)}`
+      : "—";
     const pnl = r.closed_pnl_usd != null
       ? `$${Number(r.closed_pnl_usd).toFixed(2)}`
       : "—";
@@ -960,7 +984,9 @@ async function loadMonthReport() {
     sumEl.classList.remove("muted");
     sumEl.innerHTML =
       `<div class="track-kpis">` +
+      `<div><label>Depositado</label><strong>${escapeHtml(dep)}</strong></div>` +
       `<div><label>Equity</label><strong>${escapeHtml(eq)}</strong> <span class="muted">${escapeHtml(ret)}</span></div>` +
+      `<div><label>P&amp;L vs depositado</label><strong>${escapeHtml(vsDep)}</strong></div>` +
       `<div><label>PnL cerrado $</label><strong>${escapeHtml(pnl)}</strong></div>` +
       `<div><label>Tesis mesa</label><strong>${escapeHtml(thesis)}</strong></div>` +
       `<div><label>vs SPY</label><strong>${escapeHtml(vs)}</strong> <span class="muted">SPY ${escapeHtml(spy)}</span></div>` +
@@ -1836,7 +1862,10 @@ async function loadClientPerformanceHistory(range) {
     const data = await api(`${API}/dashboard/performance-history?range=${encodeURIComponent(selected)}`);
     const points = data.points || [];
     const hint = document.getElementById("client-return-base-hint");
-    if (hint) hint.textContent = `Base $${Number(data.base_usd || 20)}`;
+    if (hint) {
+      const base = data.base_usd != null ? Number(data.base_usd) : null;
+      hint.textContent = base != null ? `Base depositada $${base.toFixed(2)}` : "Base: capital depositado Alpaca";
+    }
     const tabs = document.getElementById("client-return-ranges");
     if (tabs) {
       tabs.querySelectorAll(".range-tab").forEach((b) => {
@@ -2044,10 +2073,10 @@ function renderDashboard(d) {
       : "";
   $("#portfolio-panel").innerHTML = p ? `
     <div><b>${p.name || "Portafolio"}</b>${modeBadge}</div>
-    <div>Capital inicial: $${p.initial_capital?.toFixed(2)}</div>
-    <div>Valor: $${p.total_value?.toFixed(2)}</div>
+    <div>Depositado: ${p.deposited_usd != null ? "$" + p.deposited_usd.toFixed(2) : "—"}</div>
+    <div>Equity: $${p.total_value?.toFixed(2)}</div>
+    <div>P&amp;L: ${p.pnl_usd != null ? "$" + p.pnl_usd.toFixed(2) : "—"} (${fmtPct(p.return_pct)})</div>
     <div>Efectivo: $${(p.cash ?? 0).toFixed(2)}</div>
-    <div>Rendimiento: ${fmtPct(p.return_pct)}</div>
     <div>Sharpe: ${p.sharpe?.toFixed(2) ?? "—"}</div>
     <div>Drawdown: ${p.max_drawdown?.toFixed(2) ?? "—"}%</div>
     <div>P&amp;L no realizado: $${p.unrealized_pnl?.toFixed(2)}</div>

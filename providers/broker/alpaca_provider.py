@@ -181,3 +181,32 @@ class AlpacaBrokerProvider(BrokerProvider):
 
     async def get_clock(self) -> dict[str, Any]:
         return await self._request("GET", "/v2/clock")
+
+    async def list_account_activities(
+        self,
+        *,
+        activity_types: str | list[str] | None = None,
+        page_size: int = 100,
+        page_token: str | None = None,
+        direction: str = "desc",
+    ) -> list[dict[str, Any]]:
+        """GET /v2/account/activities — cash transfers, journals, fills, etc."""
+        params: dict[str, Any] = {
+            "page_size": max(1, min(int(page_size), 100)),
+            "direction": direction or "desc",
+        }
+        if activity_types:
+            if isinstance(activity_types, (list, tuple)):
+                params["activity_types"] = ",".join(str(t).strip() for t in activity_types if t)
+            else:
+                params["activity_types"] = str(activity_types).strip()
+        if page_token:
+            params["page_token"] = str(page_token)
+        data = await self._request("GET", "/v2/account/activities", params=params)
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            inner = data.get("activities") or data.get("data") or []
+            return inner if isinstance(inner, list) else []
+        return []
+

@@ -10,8 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config.settings import get_settings
 from database.repositories.trade_journal_repository import TradeJournalRepository
 from database.url import is_sqlite, normalize_database_url
-from domain.firm_capital import FIRM_RETURN_BASE_USD, return_pct_from_base
+from domain.firm_capital import pnl_usd_from_base, return_pct_from_base
 from domain.month_report import MonthReport, OpenPositionRow, SymbolPnlRow
+from services.deposited_capital_service import get_deposited_base
 from services.agent_effectiveness_service import AgentEffectivenessService
 from services.desk_learning_service import DeskLearningService
 from services.trade_close_review_service import classify_operation
@@ -154,7 +155,10 @@ class MonthReportService:
             )
 
         equity = await self._equity()
-        ret = return_pct_from_base(equity, FIRM_RETURN_BASE_USD) if equity is not None else None
+        deposited = await get_deposited_base()
+        base = deposited.amount if deposited.amount and deposited.amount > 0 else None
+        ret = return_pct_from_base(equity, base) if equity is not None and base else None
+        pnl_vs_dep = pnl_usd_from_base(equity, base) if equity is not None else None
         spy = await self._spy_return(window_days=window_days)
         vs_spy = round(ret - spy, 2) if ret is not None and spy is not None else None
 
@@ -185,21 +189,27 @@ class MonthReportService:
         if not durable:
             diagnosis.append("SQLite efímero: lecciones/briefs se pierden al redeploy — usa Neon.")
 
+        base_label = f"${base:.2f}" if base else "depositado"
         if ret is not None and spy is not None:
             if vs_spy is not None and vs_spy >= 0:
-                headline = f"Equity {ret:+.1f}% vs base $20 · SPY {spy:+.1f}% · mesa {vs_spy:+.1f} pp"
+                headline = f"Equity {ret:+.1f}% vs depositado {base_label} · SPY {spy:+.1f}% · mesa {vs_spy:+.1f} pp"
             else:
-                headline = f"Equity {ret:+.1f}% vs base $20 · SPY {spy:+.1f}% · rezago {vs_spy:.1f} pp"
+                headline = f"Equity {ret:+.1f}% vs depositado {base_label} · SPY {spy:+.1f}% · rezago {vs_spy:.1f} pp"
         elif ret is not None:
-            headline = f"Equity {ret:+.1f}% vs base $20 · {n_closed} cierres · TP {true_tp} / stop {true_stop}"
+            headline = (
+                f"Equity {ret:+.1f}% vs depositado {base_label} · {n_closed} cierres · "
+                f"TP {true_tp} / stop {true_stop}"
+            )
         else:
             headline = f"{n_closed} cierres · TP {true_tp} · stop {true_stop} · estanc. {outcomes['stagnation']}"
 
         return MonthReport(
             window_days=window_days,
-            base_usd=FIRM_RETURN_BASE_USD,
+            base_usd=base,
             equity_usd=round(equity, 2) if equity is not None else None,
             equity_return_pct=ret,
+            pnl_usd=pnl_vs_dep,
+            base_source=deposited.source,
             closed_pnl_usd=closed_pnl,
             closed_avg_pnl_pct=round(avg_pnl, 2) if avg_pnl is not None else None,
             trades_closed=n_closed,
@@ -227,6 +237,6 @@ class MonthReportService:
             durable_db=durable,
             meta={
                 "as_of": datetime.now(timezone.utc).isoformat(),
-                "method": "classify_operation + member_review + firm base $20",
+                "method": "classify_operation + member_review + Alpaca net deposits",
             },
         )

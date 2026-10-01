@@ -58,6 +58,10 @@ async def test_build_briefing_includes_positions_and_orders():
          patch(
              "services.daily_status_briefing_service.load_lesson_briefing_lines",
              new=AsyncMock(return_value=["Lecciones 24h (no repetir): BBAI (false_long)"]),
+         ), \
+         patch(
+             "services.deposited_capital_service.get_deposited_base",
+             new=AsyncMock(return_value=MagicMock(amount=21.74, source="alpaca")),
          ):
         s = MagicMock()
         s.firm_autonomy = True
@@ -76,6 +80,8 @@ async def test_build_briefing_includes_positions_and_orders():
     assert "SOUN" in body
     assert "ÓRDENES CERRADAS HOY" in body
     assert "BBAI" in body
+    assert "Depositado $21.74" in body
+    assert "vs depositado" in body
 
 
 @pytest.mark.asyncio

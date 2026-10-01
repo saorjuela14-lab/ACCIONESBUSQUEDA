@@ -168,7 +168,10 @@ class PortfolioDashboardSlice(BaseModel):
     initial_capital: float = 0.0
     cash: float = 0.0
     total_value: float = 0.0
-    return_pct: float = 0.0
+    return_pct: float | None = None
+    deposited_usd: float | None = None
+    pnl_usd: float | None = None
+    base_source: str = ""
     sharpe: float | None = None
     sortino: float | None = None
     max_drawdown: float | None = None
