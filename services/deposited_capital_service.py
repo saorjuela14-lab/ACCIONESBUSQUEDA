@@ -56,7 +56,10 @@ def _f(value: Any, default: float = 0.0) -> float:
 def activity_signed_amount(row: dict[str, Any]) -> float:
     """Signed cash flow: deposits positive, withdrawals negative."""
     typ = str(row.get("activity_type") or row.get("type") or "").upper()
-    amt = _f(row.get("net_amount"))
+    raw = row.get("net_amount")
+    if raw in (None, ""):
+        raw = row.get("amount")
+    amt = _f(raw)
     if typ == "CSW" and amt > 0:
         return -amt
     return amt
@@ -101,12 +104,12 @@ def _env_fallback() -> DepositedBase | None:
     return DepositedBase(amount=round(amount, 2), source="env")
 
 
-async def _fetch_all_transfer_activities(broker: Any) -> list[dict[str, Any]]:
+async def _paginate(broker: Any, *, activity_types: str | list[str] | None) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     token: str | None = None
     for _ in range(_MAX_PAGES):
         page = await broker.list_account_activities(
-            activity_types=list(TRANSFER_ACTIVITY_TYPES),
+            activity_types=activity_types,
             page_size=100,
             page_token=token,
         )
@@ -119,6 +122,46 @@ async def _fetch_all_transfer_activities(broker: Any) -> list[dict[str, Any]]:
         if not token:
             break
     return out
+
+
+async def _fetch_all_transfer_activities(broker: Any) -> list[dict[str, Any]]:
+    """Prefer per-type paths (CSD/CSW/JNLC/TRANS); fall back to unfiltered list."""
+    collected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    errors: list[str] = []
+
+    for typ in TRANSFER_ACTIVITY_TYPES:
+        try:
+            page = await _paginate(broker, activity_types=typ)
+        except Exception as exc:
+            errors.append(f"{typ}:{exc}")
+            logger.warning("deposited_capital.type_failed", activity_type=typ, error=str(exc))
+            continue
+        for row in page:
+            rid = str((row or {}).get("id") or "")
+            if rid and rid in seen:
+                continue
+            if rid:
+                seen.add(rid)
+            collected.append(row)
+
+    if collected:
+        return collected
+
+    try:
+        unfiltered = await _paginate(broker, activity_types=None)
+    except Exception as exc:
+        errors.append(f"all:{exc}")
+        logger.warning("deposited_capital.unfiltered_failed", error=str(exc))
+        if errors:
+            raise RuntimeError("; ".join(errors[:4])) from exc
+        raise
+    kinds: dict[str, int] = {}
+    for row in unfiltered:
+        typ = str((row or {}).get("activity_type") or (row or {}).get("type") or "?")
+        kinds[typ] = kinds.get(typ, 0) + 1
+    logger.info("deposited_capital.unfiltered_types", types=kinds, n=len(unfiltered))
+    return unfiltered
 
 
 async def _from_alpaca() -> DepositedBase | None:
