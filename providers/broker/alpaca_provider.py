@@ -190,19 +190,24 @@ class AlpacaBrokerProvider(BrokerProvider):
         page_token: str | None = None,
         direction: str = "desc",
     ) -> list[dict[str, Any]]:
-        """GET /v2/account/activities — cash transfers, journals, fills, etc."""
+        """GET /v2/account/activities or /v2/account/activities/{type}."""
         params: dict[str, Any] = {
             "page_size": max(1, min(int(page_size), 100)),
             "direction": direction or "desc",
         }
+        path = "/v2/account/activities"
         if activity_types:
             if isinstance(activity_types, (list, tuple)):
-                params["activity_types"] = ",".join(str(t).strip() for t in activity_types if t)
+                types = [str(t).strip().upper() for t in activity_types if t]
             else:
-                params["activity_types"] = str(activity_types).strip()
+                types = [t.strip().upper() for t in str(activity_types).split(",") if t.strip()]
+            if len(types) == 1:
+                path = f"/v2/account/activities/{types[0]}"
+            elif types:
+                params["activity_types"] = ",".join(types)
         if page_token:
             params["page_token"] = str(page_token)
-        data = await self._request("GET", "/v2/account/activities", params=params)
+        data = await self._request("GET", path, params=params)
         if isinstance(data, list):
             return data
         if isinstance(data, dict):

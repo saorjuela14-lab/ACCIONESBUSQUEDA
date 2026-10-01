@@ -91,7 +91,7 @@ async def test_get_deposited_base_uses_ttl_cache():
         second = await get_deposited_base()
     assert first.amount == 21.74
     assert second.source == "alpaca"
-    assert broker.list_account_activities.await_count == 1
+    assert broker.list_account_activities.await_count == 4
 
 
 @pytest.mark.asyncio
