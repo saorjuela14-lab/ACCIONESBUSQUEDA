@@ -1,16 +1,16 @@
-"""Firm-book capital constants.
+"""Firm-book capital helpers.
 
-`FIRM_RETURN_BASE_USD` ($20) is the **trading book stamp** used by bootstrap,
-reconcile, and Alpaca sync so sizing/risk keep a stable micro denominator.
+Trading / risk / sizing / DB `initial_capital` use the **deposited** Alpaca
+base (`services.deposited_capital_service.resolve_trading_base`) — never a
+silent $20.
 
-Performance / P&L % (panel, briefings, Viernes, month report) MUST use the
-real deposited base from Alpaca account activities via
-`services.deposited_capital_service.get_deposited_base` — never this $20 figure
-as a silent reporting fallback.
+`FIRM_RETURN_BASE_USD` is a legacy micro-book stamp kept only so the unrelated
+price-band copy ("presupuesto bajo $20", discovery under $20) stays stable.
 """
 
 from __future__ import annotations
 
+# Legacy micro-book stamp — NOT the risk/sizing denominator.
 FIRM_RETURN_BASE_USD = 20.0
 
 
@@ -31,3 +31,32 @@ def pnl_usd_from_base(total_value: float | None, base: float | None) -> float | 
     if b <= 0:
         return None
     return round(float(total_value) - b, 2)
+
+
+def drawdown_pct_from_base(total_value: float | None, base: float | None) -> float | None:
+    """Underwater % vs deposited base (0 if flat/green). None if base unknown."""
+    if total_value is None or base is None:
+        return None
+    b = float(base)
+    if b <= 0:
+        return None
+    ret = ((float(total_value) - b) / b) * 100.0
+    return round(min(0.0, ret), 2)
+
+
+def loss_pct_vs_base(
+    equity: float | None,
+    base: float | None,
+    *,
+    last_equity: float | None = None,
+) -> float | None:
+    """P&L as % of deposited base. Prefers session change when last_equity is known."""
+    if base is None:
+        return None
+    b = float(base)
+    if b <= 0:
+        return None
+    eq = float(equity or 0.0)
+    if last_equity is not None and float(last_equity) > 0:
+        return round((eq - float(last_equity)) / b * 100.0, 2)
+    return return_pct_from_base(eq, b)

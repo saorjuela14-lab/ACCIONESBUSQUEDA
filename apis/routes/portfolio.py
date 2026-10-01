@@ -69,14 +69,12 @@ async def create_default_portfolio(
             org_id=org,
         )
     scope.require_desk()
-    return await service.create(
-        name="Portafolio CEO",
-        strategy=StrategyType.GROWTH,
-        initial_capital=20.0,
-        cash=20.0,
-        mode=PortfolioMode.REAL,
-        org_id=org,
-    )
+    from services.alpaca_order_service import AlpacaOrderService
+    from services.portfolio_bootstrap_service import PortfolioBootstrapService
+
+    boot = PortfolioBootstrapService(service, AlpacaOrderService())
+    p, _source = await boot.ensure_portfolio(org_id=org, allow_alpaca=True)
+    return p
 
 
 @router.post("/portfolios/sync-alpaca", response_model=Portfolio)
@@ -101,10 +99,12 @@ async def sync_portfolio_from_alpaca(
         account = await alpaca.get_account()
         broker_positions = await alpaca.get_positions()
         from domain.entities import PortfolioPosition
-
-        from domain.firm_capital import FIRM_RETURN_BASE_USD
+        from services.deposited_capital_service import resolve_trading_base
 
         cash = float(account.cash or 0)
+        equity = float(account.equity or account.portfolio_value or cash or 0)
+        snap = await resolve_trading_base(equity=equity)
+        initial = snap.amount if snap.amount and snap.amount > 0 else None
         positions = []
         for pos in broker_positions:
             qty = float(pos.qty or 0)
@@ -126,8 +126,8 @@ async def sync_portfolio_from_alpaca(
             p.id,
             positions=positions,
             cash=round(cash, 2),
-            # Keep $20 return base — do not overwrite with live Alpaca equity
-            initial_capital=FIRM_RETURN_BASE_USD,
+            # Deposited Alpaca base — never silent $20; None keeps stored value
+            initial_capital=initial,
             org_id=scope.write_org_id(),
         )
     synced = await boot.sync_from_alpaca(org_id=scope.write_org_id())

@@ -28,12 +28,7 @@ async def risk_status() -> RiskDeskStatus:
         try:
             account = await broker.get_account()
             positions = await broker.get_positions()
-            portfolio = risk.portfolio_from_broker(
-                equity=account.equity or account.portfolio_value or 0.0,
-                cash=account.cash,
-                buying_power=account.buying_power,
-                positions=positions,
-            )
+            portfolio = await risk.snapshot_from_account(account, positions)
         except Exception:
             portfolio = None
 

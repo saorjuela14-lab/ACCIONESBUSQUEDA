@@ -70,6 +70,8 @@ async def test_client_monitors_firm_book_without_fake_seed():
         default = await client.post("/api/v1/portfolios/default", headers=desk_h)
         assert default.status_code == 200
         assert default.json()["org_id"] == "monarch"
+        # Tests have no Alpaca/env deposited base — never invent a silent $20 book.
+        assert float(default.json().get("initial_capital") or 0) != 20.0
 
         created = await client.post(
             "/api/v1/auth/companies",
@@ -90,9 +92,9 @@ async def test_client_monitors_firm_book_without_fake_seed():
         tok = login.json()["token"]
         client_h = {"Authorization": f"Bearer {tok}"}
 
+        # Firm book API is desk-only; clients monitor the redacted dashboard.
         books = await client.get("/api/v1/portfolios", headers=client_h)
-        assert books.status_code == 200
-        assert any(p.get("org_id") == "monarch" for p in books.json())
+        assert books.status_code == 403
 
         denied = await client.post("/api/v1/portfolios/default", headers=client_h)
         assert denied.status_code == 403

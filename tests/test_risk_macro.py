@@ -118,6 +118,83 @@ def test_risk_daily_loss_kill_switch():
     assert any("diaria" in r.lower() or "kill" in r.lower() for r in verdict.reasons)
 
 
+def test_kill_switch_and_sizing_vs_deposited_2176():
+    from domain.firm_capital import return_pct_from_base
+
+    risk = RiskPolicyService()
+    policy = RiskPolicy(
+        max_daily_loss_pct=5.0,
+        max_position_pct=35.0,
+        cash_reserve_pct=10.0,
+        require_stop_loss=False,
+    )
+    base = 21.76
+    # 5% of $21.76 = $1.088 → equity 20.50 is −5.79% → block
+    underwater = PortfolioRiskSnapshot(
+        equity=20.50,
+        cash=15.0,
+        capital_base=base,
+        day_pl_pct=return_pct_from_base(20.50, base),
+        open_positions=0,
+    )
+    blocked = risk.evaluate_buy(
+        symbol="SNAP",
+        qty=1,
+        price=7.0,
+        stop_loss=6.44,
+        take_profit=8.12,
+        policy=policy,
+        macro_mode="neutral",
+        size_multiplier=1.0,
+        portfolio=underwater,
+    )
+    assert blocked.allowed is False
+    assert any("kill" in r.lower() or "depositado" in r.lower() for r in blocked.reasons)
+
+    # −3.49% vs deposits stays under 5% — allow (qty may still size vs 35% of 21.76 = $7.62)
+    ok_book = PortfolioRiskSnapshot(
+        equity=21.00,
+        cash=15.0,
+        capital_base=base,
+        day_pl_pct=return_pct_from_base(21.00, base),
+        open_positions=0,
+    )
+    allowed = risk.evaluate_buy(
+        symbol="SNAP",
+        qty=1,
+        price=7.0,
+        stop_loss=6.44,
+        take_profit=8.12,
+        policy=policy,
+        macro_mode="neutral",
+        size_multiplier=1.0,
+        portfolio=ok_book,
+    )
+    assert allowed.allowed is True
+    assert round(base * 0.35, 2) == 7.62
+    # 5% kill $ vs deposited: $1.088 (was $1.00 on the $20 stamp)
+    assert round(base * 0.05, 3) == 1.088
+
+
+def test_sizing_blocks_when_deposited_base_and_equity_missing():
+    risk = RiskPolicyService()
+    policy = RiskPolicy(require_stop_loss=False)
+    portfolio = PortfolioRiskSnapshot(equity=0, cash=0, capital_base=None)
+    verdict = risk.evaluate_buy(
+        symbol="SNAP",
+        qty=1,
+        price=7.0,
+        stop_loss=6.44,
+        take_profit=8.12,
+        policy=policy,
+        macro_mode="neutral",
+        size_multiplier=1.0,
+        portfolio=portfolio,
+    )
+    assert verdict.allowed is False
+    assert any("20" in r or "conservador" in r.lower() or "depositad" in r.lower() for r in verdict.reasons)
+
+
 def test_filter_picks_crisis_empties():
     risk = RiskPolicyService()
 

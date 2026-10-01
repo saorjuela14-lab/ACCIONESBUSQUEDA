@@ -178,3 +178,51 @@ async def test_stale_cache_beats_env_when_alpaca_fails(monkeypatch):
     get_settings.cache_clear()
     monkeypatch.delenv("DEPOSITED_BASE_USD", raising=False)
     get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_resolve_trading_base_conservative_equity_never_twenty(monkeypatch):
+    from config.settings import get_settings
+    from services.deposited_capital_service import resolve_trading_base
+
+    monkeypatch.delenv("DEPOSITED_BASE_USD", raising=False)
+    get_settings.cache_clear()
+    broker = MagicMock()
+    broker.is_configured.return_value = False
+    with patch(
+        "services.deposited_capital_service.get_broker_provider",
+        return_value=broker,
+    ):
+        snap = await resolve_trading_base(equity=21.01)
+    assert snap.amount == 21.01
+    assert snap.source.startswith("conservative")
+    assert snap.amount != 20.0
+    none = await resolve_trading_base(equity=0)
+    assert none.amount is None
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_resolve_trading_base_min_equity_and_last_known(monkeypatch):
+    from services.deposited_capital_service import DepositedBase, resolve_trading_base
+    import services.deposited_capital_service as dcs
+
+    monkeypatch.delenv("DEPOSITED_BASE_USD", raising=False)
+    from config.settings import get_settings
+
+    get_settings.cache_clear()
+    dcs._cache = DepositedBase(amount=21.76, source="alpaca", deposits=21.76)
+    with patch(
+        "services.deposited_capital_service.get_deposited_base",
+        AsyncMock(return_value=DepositedBase(amount=None, source="unavailable:alpaca_down")),
+    ):
+        snap = await resolve_trading_base(equity=15.0)
+    assert snap.amount == 15.0
+    assert snap.source.startswith("conservative")
+    with patch(
+        "services.deposited_capital_service.get_deposited_base",
+        AsyncMock(return_value=DepositedBase(amount=None, source="unavailable:alpaca_down")),
+    ):
+        bigger = await resolve_trading_base(equity=30.0)
+    assert bigger.amount == 21.76
+    get_settings.cache_clear()

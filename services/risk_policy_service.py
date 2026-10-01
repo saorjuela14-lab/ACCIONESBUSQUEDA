@@ -49,6 +49,7 @@ class RiskPolicyService:
         buying_power: float = 0.0,
         positions: Sequence[Any] | None = None,
         day_pl_pct: float | None = None,
+        capital_base: float | None = None,
     ) -> PortfolioRiskSnapshot:
         pos_views: list[PositionRiskView] = []
         invested = 0.0
@@ -90,6 +91,36 @@ class RiskPolicyService:
             positions=pos_views,
             day_pl_pct=day_pl_pct,
             concentration_top_pct=round(top, 2),
+            capital_base=capital_base if capital_base and capital_base > 0 else None,
+        )
+
+    async def snapshot_from_account(self, account: Any, positions: Sequence[Any] | None = None) -> PortfolioRiskSnapshot:
+        """Live Alpaca book + deposited capital base (never silent $20)."""
+        from domain.firm_capital import loss_pct_vs_base
+        from services.deposited_capital_service import resolve_trading_base
+
+        equity = float(getattr(account, "equity", 0) or getattr(account, "portfolio_value", 0) or 0)
+        cash = float(getattr(account, "cash", 0) or 0)
+        buying_power = float(getattr(account, "buying_power", 0) or 0)
+        last_eq = None
+        raw = getattr(account, "raw", None) or {}
+        try:
+            le = raw.get("last_equity") if isinstance(raw, dict) else None
+            last_eq = float(le) if le not in (None, "") else None
+            if last_eq is not None and last_eq <= 0:
+                last_eq = None
+        except (TypeError, ValueError):
+            last_eq = None
+        base_snap = await resolve_trading_base(equity=equity)
+        base = base_snap.amount if base_snap.amount and base_snap.amount > 0 else None
+        day_pct = loss_pct_vs_base(equity, base, last_equity=last_eq)
+        return self.portfolio_from_broker(
+            equity=equity,
+            cash=cash,
+            buying_power=buying_power,
+            positions=positions,
+            day_pl_pct=day_pct,
+            capital_base=base,
         )
 
     async def status(
@@ -160,8 +191,26 @@ class RiskPolicyService:
                     adjusted_qty=0,
                     size_multiplier=0,
                     reasons=[
-                        f"Pérdida diaria {portfolio.day_pl_pct:.1f}% ≥ límite "
-                        f"-{policy.max_daily_loss_pct:.1f}% — kill switch."
+                        f"Pérdida {portfolio.day_pl_pct:.1f}% vs capital depositado "
+                        f"≥ límite -{policy.max_daily_loss_pct:.1f}% — kill switch."
+                    ],
+                    macro_mode=macro_mode,  # type: ignore[arg-type]
+                )
+
+        denom = None
+        if portfolio:
+            if portfolio.capital_base and portfolio.capital_base > 0:
+                denom = float(portfolio.capital_base)
+            elif portfolio.equity > 0:
+                denom = float(portfolio.equity)
+            else:
+                return OrderRiskVerdict(
+                    allowed=False,
+                    adjusted_qty=0,
+                    size_multiplier=0,
+                    reasons=[
+                        "Base de capital depositada no disponible — sizing conservador "
+                        "(no se usa $20 silencioso)."
                     ],
                     macro_mode=macro_mode,  # type: ignore[arg-type]
                 )
@@ -181,11 +230,11 @@ class RiskPolicyService:
         px = float(price) if price and price > 0 else None
         notional = (adj_qty * px) if px else None
 
-        if portfolio and portfolio.equity > 0 and notional is not None:
-            # Cash reserve
+        if portfolio and denom and denom > 0 and notional is not None:
+            # Cash reserve vs deposited base (pct unchanged)
             max_spend = max(
                 0.0,
-                portfolio.cash - (portfolio.equity * policy.cash_reserve_pct / 100.0),
+                portfolio.cash - (denom * policy.cash_reserve_pct / 100.0),
             )
             if notional > max_spend + 1e-6:
                 if px and max_spend > 0:
@@ -220,9 +269,9 @@ class RiskPolicyService:
 
             # Max position concentration (existing + new)
             existing = next((p.market_value for p in portfolio.positions if p.symbol == sym), 0.0)
-            new_weight = ((existing + (notional or 0)) / portfolio.equity) * 100
+            new_weight = ((existing + (notional or 0)) / denom) * 100
             if new_weight > policy.max_position_pct + 0.01:
-                allowed_mv = portfolio.equity * policy.max_position_pct / 100.0 - existing
+                allowed_mv = denom * policy.max_position_pct / 100.0 - existing
                 if px and allowed_mv > 0:
                     new_qty = max(0.0, (allowed_mv / px) * mult)
                     if new_qty >= 1:
@@ -245,7 +294,7 @@ class RiskPolicyService:
 
             # Gross exposure
             projected_invested = portfolio.equity * portfolio.invested_pct / 100.0 + (notional or 0)
-            projected_pct = projected_invested / portfolio.equity * 100
+            projected_pct = projected_invested / denom * 100
             if projected_pct > policy.max_gross_exposure_pct + 0.5:
                 return OrderRiskVerdict(
                     allowed=False,

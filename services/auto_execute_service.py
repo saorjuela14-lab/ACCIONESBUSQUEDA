@@ -166,17 +166,23 @@ class AutoExecuteService:
         except Exception as exc:
             logger.warning("auto_execute.account_failed", error=str(exc))
 
-        # Concentration + Turtle-style risk budget at the stop
+        from services.deposited_capital_service import resolve_trading_base
+
+        base_snap = await resolve_trading_base(equity=equity if equity > 0 else None)
+        capital_base = base_snap.amount if base_snap.amount and base_snap.amount > 0 else None
+        if capital_base is None:
+            return {"skipped": True, "reason": "no_trading_base"}
+
+        # Concentration + Turtle-style risk budget at the stop — % unchanged, $ vs deposited
         pos_pct = float(self._settings.auto_execute_max_position_pct or 0.30)
         risk_pct = float(self._settings.auto_execute_max_risk_pct or 2.5)
-        if equity > 0 and equity <= 50:
+        if capital_base > 0 and capital_base <= 50:
             risk_pct = float(self._settings.auto_execute_micro_max_risk_pct or risk_pct)
         book_cap = max_n
         if cash > 0:
             book_cap = min(book_cap, cash * 0.80)
-        if equity > 0:
-            book_cap = min(book_cap, equity * pos_pct)
-        risk_budget = equity * (risk_pct / 100.0) if equity > 0 else book_cap * 0.05
+        book_cap = min(book_cap, capital_base * pos_pct)
+        risk_budget = capital_base * (risk_pct / 100.0)
         if book_cap < 1:
             return {"skipped": True, "reason": "insufficient_buying_power"}
 

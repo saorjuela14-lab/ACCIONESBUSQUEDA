@@ -108,20 +108,31 @@ class PortfolioService:
                 returns.append(ret)
 
         if not returns:
-            return {"sharpe": None, "sortino": None, "max_drawdown": None, "beta": None}
+            from domain.firm_capital import drawdown_pct_from_base
+
+            return {
+                "sharpe": None,
+                "sortino": None,
+                "max_drawdown": drawdown_pct_from_base(portfolio.total_value, portfolio.initial_capital),
+                "beta": None,
+            }
 
         import numpy as np
+
+        from domain.firm_capital import drawdown_pct_from_base
 
         arr = np.array(returns)
         mean_ret = float(arr.mean())
         std_ret = float(arr.std()) if arr.std() > 0 else 0.001
         downside = arr[arr < 0]
         downside_std = float(downside.std()) if len(downside) > 0 and downside.std() > 0 else 0.001
+        book_dd = drawdown_pct_from_base(portfolio.total_value, portfolio.initial_capital)
+        pos_dd = round(float(arr.min()) * 100, 2)
 
         return {
             "sharpe": round(mean_ret / std_ret * (252 ** 0.5), 2),
             "sortino": round(mean_ret / downside_std * (252 ** 0.5), 2),
-            "max_drawdown": round(float(arr.min()) * 100, 2),
+            "max_drawdown": book_dd if book_dd is not None else pos_dd,
             "beta": None,
             "return_pct": round(portfolio.return_pct, 2),
         }

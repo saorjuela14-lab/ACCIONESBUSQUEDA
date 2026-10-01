@@ -27,6 +27,7 @@ class PortfolioRiskMetricsService:
         *,
         equity: float,
         benchmark: str = "SPY",
+        capital_base: float | None = None,
     ) -> PortfolioRiskMetrics:
         warnings: list[str] = []
         if equity <= 0 or not positions:
@@ -87,7 +88,8 @@ class PortfolioRiskMetricsService:
                     w_arr = w_arr / w_arr.sum()
                     port_rets = aligned.values @ w_arr
                     var_pct = float(-np.percentile(port_rets, 5) * 100)  # 95% 1d VaR as positive %
-                    var_usd = round(equity * var_pct / 100.0, 2)
+                    notion = float(capital_base) if capital_base and capital_base > 0 else equity
+                    var_usd = round(notion * var_pct / 100.0, 2)
                     var_pct = round(var_pct, 2)
             except Exception as exc:
                 warnings.append(f"VaR calc falló: {exc}")

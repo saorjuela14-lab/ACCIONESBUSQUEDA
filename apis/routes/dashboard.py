@@ -18,7 +18,7 @@ from domain.dashboard import (
     WatchlistMatrixRow,
 )
 from domain.enums import InvestmentRecommendation
-from domain.firm_capital import FIRM_RETURN_BASE_USD, pnl_usd_from_base, return_pct_from_base
+from domain.firm_capital import pnl_usd_from_base, return_pct_from_base
 from providers.market.factory import get_market_provider
 from services.deposited_capital_service import get_deposited_base
 from services.market_dashboard_service import MarketDashboardService
@@ -135,7 +135,6 @@ async def get_terminal_dashboard(
                 org_id=book_org,
                 allow_alpaca=True,
                 default_name="Portafolio CEO",
-                default_cash=FIRM_RETURN_BASE_USD,
             )
             if source == "alpaca":
                 bootstrap_note = (
@@ -157,19 +156,15 @@ async def get_terminal_dashboard(
         p = sorted(portfolios, key=lambda x: x.updated_at, reverse=True)[0] if portfolios else None
         source = "existing" if p else "none"
 
+    if p and scope.is_desk:
+        from services.portfolio_bootstrap_service import stamp_initial_from_deposits
+
+        try:
+            p = await stamp_initial_from_deposits(svc, p, org_id=book_org)
+        except Exception:
+            if reporting_base:
+                p.initial_capital = reporting_base
     if p:
-        # Keep DB book stamp at $20 (sizing/reconcile). Reporting P&L uses Alpaca deposits.
-        if abs(float(p.initial_capital or 0) - FIRM_RETURN_BASE_USD) > 0.001:
-            try:
-                p = await svc.mirror_positions(
-                    p.id,
-                    positions=list(p.positions),
-                    cash=float(p.cash or 0),
-                    initial_capital=FIRM_RETURN_BASE_USD,
-                    org_id=book_org,
-                )
-            except Exception:
-                p.initial_capital = FIRM_RETURN_BASE_USD
         try:
             p = await svc.refresh_prices(p.id)
         except Exception:

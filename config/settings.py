@@ -148,7 +148,8 @@ class Settings(BaseSettings):
     alpaca_base_url: str = ""  # override; empty → api.alpaca.markets (live) or paper-api
     alpaca_data_base_url: str = "https://data.alpaca.markets"
     alpaca_data_feed: str = "iex"  # iex (free) | sip (paid) | delayed_sip
-    # Reporting P&L base if Alpaca activities API is down. Never silent $20.
+    # Deposited Alpaca base for P&L and trading/risk/sizing if activities API is down.
+    # Never silent $20.
     deposited_base_usd: float | None = None
     deposited_base_cache_ttl_seconds: int = 600
 
@@ -260,7 +261,7 @@ class Settings(BaseSettings):
     intraday_carry_max_loss_pct: float = 8.0  # still cut if worse than this overnight risk
 
     # Investor risk discipline (Turtle-style % risk + post-stop cooldown)
-    auto_execute_max_risk_pct: float = 2.5  # max loss at stop as % equity (≤2–3%)
+    auto_execute_max_risk_pct: float = 2.5  # max loss at stop as % of deposited base (≤2–3%)
     auto_execute_micro_max_risk_pct: float = 4.0  # tiny books: 1-lot may need slightly more
     auto_execute_post_stop_cooldown_minutes: int = 90  # no revenge rebuy after stop-out
     auto_execute_max_position_pct: float = 0.30  # concentration cap per name

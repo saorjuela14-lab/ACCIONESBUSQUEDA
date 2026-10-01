@@ -85,6 +85,7 @@ class PortfolioRiskSnapshot(BaseModel):
     positions: list[PositionRiskView] = Field(default_factory=list)
     day_pl_pct: float | None = None
     concentration_top_pct: float = 0.0
+    capital_base: float | None = None  # deposited Alpaca base for % risk/sizing
 
 
 class OrderRiskVerdict(BaseModel):

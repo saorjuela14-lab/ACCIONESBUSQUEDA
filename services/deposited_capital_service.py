@@ -1,9 +1,10 @@
-"""Net deposited capital from Alpaca account activities (reporting base).
+"""Net deposited capital from Alpaca account activities.
 
-Sums cash in minus cash out (CSD / CSW / JNLC / TRANS / OCT on-chain, plus
-ACATC/FOPT). Cached with TTL so a new deposit or withdrawal shows up without a
-deploy. If Alpaca fails, fall back to DEPOSITED_BASE_USD — never silently to
-the $20 trading stamp.
+Used as the reporting P&L base AND the trading/risk/sizing denominator
+(bootstrap, reconcile, sync-Alpaca, initial_capital lock, VaR $, kill-switch
+and drawdown %). Cached with TTL. If Alpaca fails, fall back to
+DEPOSITED_BASE_USD, then last cache, then conservative equity — never
+silently to $20.
 """
 
 from __future__ import annotations
@@ -324,3 +325,45 @@ async def get_deposited_base(*, force: bool = False) -> DepositedBase:
             return env
         logger.error("deposited_capital.unavailable", source=snap.source if snap else None)
         return snap if snap is not None else DepositedBase(amount=None, source="unavailable")
+
+
+async def resolve_trading_base(*, equity: float | None = None) -> DepositedBase:
+    """Denominator for sizing/risk/DB stamp.
+
+    alpaca → cache → env → min(equity, last known) → equity → unavailable.
+    Never invents $20.
+    """
+    snap = await get_deposited_base()
+    src = str(snap.source or "")
+    # Fresh Alpaca or explicit env override are the real deposited denominator.
+    if snap.amount and snap.amount > 0 and src in ("alpaca", "env", "cache"):
+        return snap
+    last = _cache
+    eq = float(equity or 0.0)
+    last_amt = float(last.amount) if last is not None and last.amount and last.amount > 0 else 0.0
+    if snap.amount and snap.amount > 0:
+        last_amt = max(last_amt, float(snap.amount))
+        last = snap
+    if last_amt > 0 and eq > 0:
+        amt = round(min(eq, last_amt), 2)
+        logger.warning("trading_base.conservative_min", amount=amt, equity=eq, last=last_amt)
+        return DepositedBase(
+            amount=amt,
+            source="conservative:min_equity_cache",
+            deposits=last.deposits if last else 0.0,
+            withdrawals=last.withdrawals if last else 0.0,
+            activity_count=last.activity_count if last else 0,
+        )
+    if last_amt > 0:
+        logger.warning("trading_base.conservative_cache", amount=last_amt)
+        return DepositedBase(
+            amount=round(last_amt, 2),
+            source="cache",
+            deposits=last.deposits if last else 0.0,
+            withdrawals=last.withdrawals if last else 0.0,
+            activity_count=last.activity_count if last else 0,
+        )
+    if eq > 0:
+        logger.warning("trading_base.conservative_equity", amount=round(eq, 2))
+        return DepositedBase(amount=round(eq, 2), source="conservative:equity")
+    return snap if snap is not None else DepositedBase(amount=None, source="unavailable")

@@ -353,12 +353,7 @@ class AlpacaOrderService:
         try:
             macro = await self._macro.assess()
             if account:
-                portfolio_snap = self._risk.portfolio_from_broker(
-                    equity=account.equity or account.portfolio_value or 0.0,
-                    cash=account.cash,
-                    buying_power=account.buying_power,
-                    positions=positions,
-                )
+                portfolio_snap = await self._risk.snapshot_from_account(account, positions)
             if macro.mode in ("risk_off", "crisis"):
                 warnings.append(macro.thesis)
             if not macro.trading_allowed:
@@ -396,9 +391,14 @@ class AlpacaOrderService:
                 from services.portfolio_risk_metrics_service import PortfolioRiskMetricsService
 
                 equity = float(account.equity or account.portfolio_value or 0.0)
+                from services.deposited_capital_service import resolve_trading_base
+
+                base_snap = await resolve_trading_base(equity=equity)
+                capital_base = base_snap.amount if base_snap.amount and base_snap.amount > 0 else None
                 risk_metrics = await PortfolioRiskMetricsService().compute(
                     positions,
                     equity=equity,
+                    capital_base=capital_base,
                 )
                 if risk_metrics.warnings:
                     warnings.extend(risk_metrics.warnings[:3])

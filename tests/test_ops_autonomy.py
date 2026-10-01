@@ -313,7 +313,11 @@ async def test_auto_execute_skips_picks_without_committee_consensus():
 
     with patch("services.auto_execute_service.get_settings") as gs, \
          patch("services.auto_execute_service.KillSwitchService") as KS, \
-         patch("services.risk_policy_service.RiskPolicyService") as RS:
+         patch("services.risk_policy_service.RiskPolicyService") as RS, \
+         patch(
+             "services.deposited_capital_service.resolve_trading_base",
+             AsyncMock(return_value=MagicMock(amount=21.76, source="alpaca")),
+         ):
         s = MagicMock()
         s.firm_autonomy = True
         s.auto_execute_trades = True
@@ -321,6 +325,10 @@ async def test_auto_execute_skips_picks_without_committee_consensus():
         s.auto_execute_live = True
         s.auto_execute_max_notional = 25
         s.auto_execute_require_market_open = True
+        s.auto_execute_max_position_pct = 0.30
+        s.auto_execute_max_risk_pct = 2.5
+        s.auto_execute_micro_max_risk_pct = 4.0
+        s.intraday_only_enabled = False
         gs.return_value = s
         KS.return_value.is_active = AsyncMock(return_value=False)
         RS.return_value.status = AsyncMock(
@@ -361,7 +369,11 @@ async def test_auto_execute_skips_second_line_on_micro_book():
 
     with patch("services.auto_execute_service.get_settings") as gs, \
          patch("services.auto_execute_service.KillSwitchService") as KS, \
-         patch("services.risk_policy_service.RiskPolicyService") as RS:
+         patch("services.risk_policy_service.RiskPolicyService") as RS, \
+         patch(
+             "services.deposited_capital_service.resolve_trading_base",
+             AsyncMock(return_value=MagicMock(amount=21.76, source="alpaca")),
+         ):
         s = MagicMock()
         s.firm_autonomy = True
         s.auto_execute_trades = True
@@ -395,4 +407,48 @@ async def test_auto_execute_skips_second_line_on_micro_book():
         result = await svc.run_from_picks([pick], actor="test")
         assert result["skipped"] is True
         assert "micro_max_open" in result["reason"]
+        broker.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_auto_execute_skips_when_trading_base_unavailable():
+    session = MagicMock()
+    broker = MagicMock()
+    broker.is_configured.return_value = True
+    broker.paper = True
+    broker.get_clock = AsyncMock(return_value=MagicMock(is_open=True))
+    broker.get_account = AsyncMock(
+        return_value=MagicMock(cash=0, equity=0, buying_power=0)
+    )
+    broker.execute = AsyncMock()
+
+    with patch("services.auto_execute_service.get_settings") as gs, \
+         patch("services.auto_execute_service.KillSwitchService") as KS, \
+         patch("services.risk_policy_service.RiskPolicyService") as RS, \
+         patch(
+             "services.deposited_capital_service.resolve_trading_base",
+             AsyncMock(return_value=MagicMock(amount=None, source="unavailable")),
+         ):
+        s = MagicMock()
+        s.firm_autonomy = True
+        s.auto_execute_trades = True
+        s.auto_execute_paper_first = False
+        s.auto_execute_live = True
+        s.auto_execute_max_notional = 25
+        s.auto_execute_require_market_open = True
+        s.auto_execute_max_position_pct = 0.30
+        s.auto_execute_max_risk_pct = 2.5
+        s.auto_execute_micro_max_risk_pct = 4.0
+        s.intraday_only_enabled = False
+        gs.return_value = s
+        KS.return_value.is_active = AsyncMock(return_value=False)
+        RS.return_value.status = AsyncMock(
+            return_value=MagicMock(
+                macro=MagicMock(trading_allowed=True, mode="neutral", block_reason=None)
+            )
+        )
+        svc = AutoExecuteService(session, broker)
+        result = await svc.run_from_picks([], actor="test")
+        assert result["skipped"] is True
+        assert result["reason"] == "no_trading_base"
         broker.execute.assert_not_awaited()
