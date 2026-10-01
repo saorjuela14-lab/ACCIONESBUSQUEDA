@@ -523,7 +523,20 @@ def test_size_min_of_vol_risk_adv_btc_and_skip_min_lot():
         vol_30d=0.25,
     )
     assert n2 == 0.0 and info2["reason"] == "too_small"
-    assert float(info2.get("sized") or 0) < 10
+    assert float(info2.get("sized") or 0) < 50
+    # After caps, ticket < $50 is skipped (never enlarged).
+    n50, info50 = size_crypto_order(
+        symbol="BTC/USD",
+        equity=eq,
+        entry=100.0,
+        stop=92.0,
+        book=_empty_book(eq),
+        n_trades=20,
+        s_signal=1.0,
+        vol_30d=0.25,
+        median_adv_usd=4_000.0,  # 1% = $40 < $50
+    )
+    assert n50 == 0.0 and info50["reason"] == "too_small"
     # Min qty would require enlarging the ticket → skip.
     n3, info3 = size_crypto_order(
         symbol="ETH/USD",
@@ -695,3 +708,101 @@ async def test_eligibility_endpoint_desk_only(monkeypatch, tmp_path):
         assert {r["symbol"] for r in body["approved"]} == {"BTC/USD", "ETH/USD"}
         assert body["runtime_must_not_recompute"] is True
     get_settings.cache_clear()
+
+
+def _daily_adv_bars(n: int, *, close0: float = 100.0, vol: float = 1_000.0, drift: float = 0.0) -> pd.DataFrame:
+    idx = pd.date_range("2026-01-01", periods=n, freq="D", tz="UTC")
+    close = close0 + np.arange(n) * drift
+    return pd.DataFrame(
+        {
+            "Open": close,
+            "High": close + 1,
+            "Low": close - 1,
+            "Close": close,
+            "Volume": np.full(n, vol),
+        },
+        index=idx,
+    )
+
+
+def test_weekly_30d_alpaca_adv_corr_and_skip_short_history():
+    from services.multiasset.crypto_market_stats import (
+        adv_for_symbol,
+        alpaca_bars_to_daily,
+        build_weekly_snapshot_from_daily,
+        corr_pairs_from_snapshot,
+        extract_alpaca_symbol_bars,
+        median_adv_30d,
+    )
+
+    bars = [
+        {"t": f"2026-01-{i:02d}T00:00:00Z", "o": 10.0, "h": 11.0, "l": 9.0, "c": 10.0, "v": 50.0}
+        for i in range(1, 32)
+    ]
+    daily = alpaca_bars_to_daily(bars)
+    med, why = median_adv_30d(daily)
+    assert why == "ok"
+    assert med == pytest.approx(500.0)  # 10 * 50
+
+    short = alpaca_bars_to_daily(bars[:10])
+    med_s, why_s = median_adv_30d(short)
+    assert med_s is None and why_s == "history_lt_30d"
+
+    btc = _daily_adv_bars(40, close0=100.0, vol=2_000.0, drift=0.5)
+    eth = _daily_adv_bars(40, close0=50.0, vol=800.0, drift=0.25)  # same direction → high corr
+    thin = _daily_adv_bars(12, close0=5.0, vol=10.0)
+    snap = build_weekly_snapshot_from_daily(
+        {"BTC/USD": btc, "ETH/USD": eth, "SOL/USD": thin},
+        week_key="2026-W40",
+        expected=["BTC/USD", "ETH/USD", "SOL/USD", "DOGE/USD"],
+    )
+    assert snap["source"] == "alpaca_crypto_1d_30d"
+    assert "BTC/USD" in snap["adv_usd"] and "ETH/USD" in snap["adv_usd"]
+    assert "SOL/USD" not in snap["adv_usd"]
+    reasons = {r["symbol"]: r["reason"] for r in snap["rejected"]}
+    assert reasons["SOL/USD"] == "history_lt_30d"
+    assert reasons["DOGE/USD"] == "history_lt_30d"
+    btc_adv, btc_why = adv_for_symbol(snap, "BTC/USD")
+    assert btc_why == "ok" and btc_adv and btc_adv > 0
+    none_adv, none_why = adv_for_symbol(snap, "SOL/USD")
+    assert none_adv is None and none_why == "history_lt_30d"
+    pairs = corr_pairs_from_snapshot(snap)
+    rho = pairs.get(("BTC/USD", "ETH/USD")) or pairs.get(("ETH/USD", "BTC/USD"))
+    assert rho is not None and rho >= 0.7
+    groups = cluster_symbols(pairs, ["BTC/USD", "ETH/USD"])
+    assert any({"BTC/USD", "ETH/USD"} <= g for g in groups)
+
+    payload = {"bars": {"BTC/USD": bars, "ETHUSD": bars[:5]}}
+    extracted = extract_alpaca_symbol_bars(payload)
+    assert "BTC/USD" in extracted and "ETH/USD" in extracted
+
+
+@pytest.mark.asyncio
+async def test_fetch_alpaca_crypto_daily_uses_data_api_not_trading():
+    from services.multiasset.crypto_market_stats import ALPACA_CRYPTO_BARS_PATH, fetch_alpaca_crypto_daily
+
+    seen: list[tuple[str, dict]] = []
+
+    async def fake_get(path: str, params: dict):
+        seen.append((path, params))
+        return {
+            "bars": {
+                "BTC/USD": [
+                    {
+                        "t": f"2026-02-{i:02d}T00:00:00Z",
+                        "o": 100,
+                        "h": 101,
+                        "l": 99,
+                        "c": 100,
+                        "v": 20,
+                    }
+                    for i in range(1, 29)
+                ]
+            }
+        }
+
+    frames = await fetch_alpaca_crypto_daily(["BTC/USD"], http_get=fake_get)
+    assert seen and seen[0][0] == ALPACA_CRYPTO_BARS_PATH
+    assert seen[0][1]["timeframe"] == "1Day"
+    assert "BTC/USD" in frames
+    assert len(frames["BTC/USD"]) == 28

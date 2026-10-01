@@ -634,7 +634,38 @@ class MultiAssetAutopilotService:
             name_notional[t.symbol] = name_notional.get(t.symbol, 0.0) + n
             name_risk[t.symbol] = name_risk.get(t.symbol, 0.0) + r
             open_risk += r
-        groups = cluster_symbols({}, list(open_by_sym.keys()) + approved)
+        from services.multiasset.crypto_market_stats import (
+            FLAG_WEEKLY,
+            adv_for_symbol,
+            build_weekly_snapshot_from_daily,
+            corr_pairs_from_snapshot,
+            fetch_alpaca_crypto_daily,
+        )
+
+        weekly = await flags.get_json(FLAG_WEEKLY)
+        if weekly.get("week_key") != week:
+            dailies = await fetch_alpaca_crypto_daily(approved, now=now)
+            weekly = build_weekly_snapshot_from_daily(
+                dailies, week_key=week, expected=approved
+            )
+            weekly["at"] = now.isoformat()
+            # Empty fetch (no keys / API fail) must not stamp the week — retry next cycle.
+            if dailies or not approved:
+                await flags.set_json(FLAG_WEEKLY, weekly)
+            else:
+                weekly["week_key"] = None
+                weekly["retry"] = True
+        out["weekly_market"] = {
+            "week_key": weekly.get("week_key"),
+            "source": weekly.get("source"),
+            "adv_symbols": list((weekly.get("adv_usd") or {}).keys()),
+            "rejected": weekly.get("rejected") or [],
+        }
+
+        groups = cluster_symbols(
+            corr_pairs_from_snapshot(weekly),
+            list(open_by_sym.keys()) + approved,
+        )
         group_notional: dict[str, float] = {}
         group_risk: dict[str, float] = {}
         membership: dict[str, str] = {}
@@ -714,6 +745,10 @@ class MultiAssetAutopilotService:
                     stop_px = float(st.get("stop_px") or sig.stop_px or 0)
                     if stop_px <= 0 or not stop_is_tradable(last, stop_px):
                         continue
+                    adv_rebal, why_rebal = adv_for_symbol(weekly, sym)
+                    if adv_rebal is None:
+                        out["scanned"].append({"symbol": sym, "skip": why_rebal or "history_lt_30d"})
+                        continue
                     n_trades = await self._tracker.count_symbol_trades(desk="crypto", symbol=sym)
                     add, info = size_crypto_order(
                         symbol=sym,
@@ -722,7 +757,7 @@ class MultiAssetAutopilotService:
                         stop=stop_px,
                         book=book,
                         n_trades=n_trades,
-                        median_adv_usd=None,
+                        median_adv_usd=adv_rebal,
                         groups=groups,
                         max_positions=max_pos + 1,
                         s_signal=sig.S,
@@ -790,11 +825,10 @@ class MultiAssetAutopilotService:
                 out["scanned"].append({"symbol": sym, "skip": "invalid_stop_round"})
                 continue
             n_trades = await self._tracker.count_symbol_trades(desk="crypto", symbol=sym)
-            adv = row.get("median_adv_usd")
-            try:
-                adv_f = float(adv) if adv is not None else None
-            except (TypeError, ValueError):
-                adv_f = None
+            adv_f, why_h = adv_for_symbol(weekly, sym)
+            if adv_f is None:
+                out["scanned"].append({"symbol": sym, "skip": why_h})
+                continue
             notional, info = size_crypto_order(
                 symbol=sym,
                 equity=eq,
