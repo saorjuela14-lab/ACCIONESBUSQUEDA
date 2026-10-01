@@ -171,6 +171,36 @@ class CryptoBreakoutSpecialist(_SpecBase):
         )
 
 
+class CryptoStrategyASpecialist(_SpecBase):
+    name = "crypto_strategy_a"
+    label_es = "Crypto · Estrategia A (Donchian 4h)"
+    objective_es = "Tendencia multi-horizonte 4h, solo compras; params fijos BTC/ETH; stops por software"
+
+    async def analyze(self, ticker: str, **kwargs) -> AgentReport:
+        from services.multiasset.strategy_a import ATR_STOP_MULT, signal_for_symbol
+
+        frames = kwargs.get("frames")
+        sig = await signal_for_symbol(ticker, frames=frames)
+        score = 28 if sig.side == "buy" else 0
+        return self._report(
+            ticker,
+            score,
+            0.58 if sig.side == "buy" else 0.35,
+            f"Estrategia A: {sig.reason}",
+            raw={
+                "specialist": True,
+                "strategy": "A",
+                "setup": sig.side,
+                "stop_px": sig.stop_px,
+                "atr": sig.atr_abs,
+                "stop_mult": ATR_STOP_MULT,
+                "software_stop": True,
+                "leverage": 1.0,
+                **sig.extras,
+            },
+        )
+
+
 class DeskDirectorAgent(_SpecBase):
     """Shown on the board; allocation itself is services.multiasset.allocator."""
 

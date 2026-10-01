@@ -195,6 +195,20 @@ class Settings(BaseSettings):
     multiasset_trail_arm_r: float = 1.0
     multiasset_allow_leverage: bool = False
     multiasset_crypto_specialist_prescreen: float = 12.0
+    # Crypto Strategy A (PAPER only) — Riesgo 2026-10-01
+    crypto_universe: str = Field(
+        default="auto",
+        validation_alias=AliasChoices("CRYPTO_UNIVERSE", "crypto_universe"),
+    )  # auto | list
+    crypto_universe_list: str = ""  # comma symbols when CRYPTO_UNIVERSE=list
+    crypto_strategy_a_enabled: bool = True
+    crypto_strategy_a_eligibility_path: str = ""
+    crypto_max_equity_pct: float = 25.0
+    crypto_max_open_risk_pct: float = 1.5
+    crypto_max_positions: int = 6
+    crypto_pause_daily_pct: float = 1.5
+    crypto_pause_weekly_pct: float = 3.0
+    crypto_kill_alloc_dd_pct: float = 10.0
 
     # Client bank transfer INTO the shared firm Alpaca / operating account.
     # Do NOT send clients to app.alpaca.markets login — they only need deposit destination details.

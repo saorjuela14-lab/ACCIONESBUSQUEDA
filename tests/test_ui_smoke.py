@@ -69,6 +69,7 @@ SAFE_GET_APIS = (
     "/api/v1/beta/multiasset/track-record?desk=gold&window_days=90",
     "/api/v1/beta/multiasset/board",
     "/api/v1/beta/multiasset/last-cycle",
+    "/api/v1/beta/multiasset/strategy-a/eligibility",
     "/api/v1/voice/tts/status",
     "/api/v1/voice/assistant/status",
     "/api/v1/providers/status",

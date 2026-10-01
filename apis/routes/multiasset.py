@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apis.deps import OrgScope, get_org_scope
 from config.settings import get_settings
 from database.engine import get_session
 from domain.multiasset import AssetDeskId, MultiAssetOrderRequest
@@ -72,6 +73,19 @@ async def last_multiasset_cycle(session: AsyncSession = Depends(get_session)):
     from services.multiasset.risk_engine import FLAG_CYCLE
 
     return await OpsFlagRepository(session).get_json(FLAG_CYCLE)
+
+
+@router.get("/beta/multiasset/strategy-a/eligibility")
+async def strategy_a_eligibility(scope: OrgScope = Depends(get_org_scope)):
+    """Read-only Strategy A gate file. Mesa only. Never recomputes the backtest."""
+    _enabled()
+    scope.require_desk()
+    from services.multiasset.crypto_eligibility import EligibilityClosed, public_payload
+
+    try:
+        return public_payload()
+    except EligibilityClosed as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/beta/multiasset/desks")

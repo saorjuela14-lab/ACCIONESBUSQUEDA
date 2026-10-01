@@ -1,0 +1,32 @@
+{
+  "version": "2026-10-01.v1-seed",
+  "strategy": "A",
+  "generated_by": "mesa-seed",
+  "runtime_must_not_recompute": true,
+  "note": "Lista inicial BTC/ETH mientras Estrategia entrega el archivo OOS. El código solo LEE esta lista; no recalcula el gate con jul2024–sep2026.",
+  "selection_period": {"start": "2024-07-01", "end": "2025-09-30"},
+  "validation_period": {"start": "2025-10-01", "end": "2026-09-30"},
+  "multiple_testing_correction": "bonferroni",
+  "survivorship_bias": "El universo de validación solo incluye pares que Alpaca cotiza hoy. No reconstruye delistados ni el libro completo de 2024–2026; eso infla expectancy de supervivientes y debe documentarse en el informe de Estrategia.",
+  "costs": {
+    "spread": "per_symbol_measured_or_estimated",
+    "fixed_slippage": false,
+    "comment": "Usar spread mediano por símbolo (medido o estimado). No slippage fijo. Costes taker Alpaca 0,15%/0,25% se documentan aparte."
+  },
+  "approved": [
+    {
+      "symbol": "BTC/USD",
+      "expectancy": null,
+      "n_trades": null,
+      "median_spread_bps": 8.0,
+      "status": "seed_pending_strategy_backtest"
+    },
+    {
+      "symbol": "ETH/USD",
+      "expectancy": null,
+      "n_trades": null,
+      "median_spread_bps": 8.0,
+      "status": "seed_pending_strategy_backtest"
+    }
+  ]
+}

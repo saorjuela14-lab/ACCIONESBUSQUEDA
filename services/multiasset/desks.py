@@ -64,11 +64,12 @@ _CRYPTO = DeskStrategy(
     desk="crypto",
     name="Mesa Crypto · Paper",
     thesis=(
-        "Especialista breakout Donchian 10 + EMA50. Crypto Alpaca USD 24/7: stop GTC "
-        "en el broker, pérdida diaria también el fin de semana, autopilot 24/7. "
-        "Riesgo 3%/trade, stop ATR 2.5×, trail 3×. Paper 1x, sin margen."
+        "Estrategia A: tendencia multi-horizonte Donchian 30–480 en velas 4h, solo compras. "
+        "Parámetros fijos (BTC/ETH). Filtro BTC > SMA200 diaria. Stops por software "
+        "(Alpaca crypto no tiene bracket). Gate = archivo de elegibilidad versionado; "
+        "no se recalcula el backtest en vivo. Paper 1x, sin margen."
     ),
-    horizon="intradía–swing 1–7 días",
+    horizon="swing 4h · Donchian 30–480",
     max_notional_usd=5_000.0,
     default_stop_pct=0.08,
     default_target_pct=0.16,
@@ -76,14 +77,9 @@ _CRYPTO = DeskStrategy(
     time_in_force="gtc",
     symbols=default_crypto_universe(),
     agent_names=[
-        "crypto_breakout_specialist",
-        "crypto_chart_technical_agent",
-        "crypto_news_social_agent",
-        "crypto_momentum_agent",
-        "crypto_sentiment_agent",
-        "crypto_risk_agent",
+        "crypto_strategy_a",
     ],
-    disclaimer="Beta paper. Universo crypto Alpaca USD; técnico gráfico lidera.",
+    disclaimer="Beta paper. Estrategia A + límites Riesgo. LIVE no se toca.",
 )
 
 DESKS: dict[AssetDeskId, DeskStrategy] = {

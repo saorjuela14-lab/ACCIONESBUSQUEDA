@@ -320,8 +320,8 @@ class MultiAssetDeskService:
         else:
             raise ValueError("Para equity ETF usa qty; crypto puede usar notional")
 
-        # Protective stop on the PAPER broker (GTC). 1x, no margin. Crypto 24/7.
-        if req.side == "buy" and not req.dry_run:
+        # Alpaca crypto has no bracket. Stops are software-only (evaluated each cycle).
+        if req.side == "buy" and not req.dry_run and not is_crypto:
             try:
                 qstop = await quote_symbol(sym)
                 px_s = float((qstop or {}).get("current_price") or 0)

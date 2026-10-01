@@ -347,6 +347,16 @@ class MultiAssetTradeTracker:
         rows = (await self._session.execute(q)).scalars().all()
         return [self._to_domain(r) for r in rows]
 
+    async def count_symbol_trades(self, *, desk: AssetDeskId, symbol: str) -> int:
+        from sqlalchemy import func
+
+        q = select(func.count()).select_from(MultiAssetTradeORM).where(
+            MultiAssetTradeORM.desk == desk,
+            MultiAssetTradeORM.symbol == symbol,
+        )
+        n = (await self._session.execute(q)).scalar()
+        return int(n or 0)
+
     async def track_record(
         self, *, desk: AssetDeskId | None = None, window_days: int = 90
     ) -> MultiAssetTrackRecord:
