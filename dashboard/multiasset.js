@@ -4,6 +4,7 @@
   let statusCache = null;
 
   function token() {
+    // Optional Bearer. Session is the httponly cookie (credentials: same-origin).
     return localStorage.getItem("nexbuy_token") || localStorage.getItem("monarch_token") || "";
   }
 
@@ -13,8 +14,11 @@
     if (t) headers.Authorization = `Bearer ${t}`;
     const res = await fetch(path, { ...opts, headers, credentials: "same-origin" });
     if (res.status === 401) {
-      location.href = "/login";
+      location.href = "/login?next=/beta/multiasset";
       throw new Error("Sesión expirada");
+    }
+    if (res.status === 403) {
+      throw new Error("Multi-asset es solo para la mesa Monarch.");
     }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || res.statusText || "Error");
@@ -258,10 +262,7 @@
   $("#order-form").onsubmit = submitOrder;
 
   (async () => {
-    if (!token()) {
-      location.href = "/login";
-      return;
-    }
+    // Cookie httponly is enough (same as /dashboard). Do NOT bounce on empty localStorage.
     try {
       await loadStatus();
       await loadHistory();

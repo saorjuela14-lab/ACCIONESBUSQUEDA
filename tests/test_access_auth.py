@@ -122,3 +122,83 @@ async def test_middleware_blocks_client_research_apis():
     req.cookies = {}
     resp = await mw.dispatch(req, call_next)
     assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_middleware_multiasset_page_unauth_keeps_next():
+    async def call_next(request):
+        return Response("ok")
+
+    mw = AccessTokenMiddleware(app=MagicMock())
+    mw._resolve = AsyncMock(return_value=None)
+
+    req = MagicMock()
+    req.url.path = "/beta/multiasset"
+    req.method = "GET"
+    req.headers = {}
+    req.query_params = {}
+    req.cookies = {}
+    resp = await mw.dispatch(req, call_next)
+    assert resp.status_code == 302
+    assert resp.headers.get("location", "") == "/login?next=/beta/multiasset"
+
+
+@pytest.mark.asyncio
+async def test_middleware_multiasset_page_client_goes_to_dashboard():
+    async def call_next(request):
+        return Response("ok")
+
+    mw = AccessTokenMiddleware(app=MagicMock())
+    mw._resolve = AsyncMock(
+        return_value={
+            "role": "company_admin",
+            "org_id": "org-1",
+            "user_id": "u-1",
+            "email": "c@test.com",
+            "auth_type": "session",
+        }
+    )
+
+    req = MagicMock()
+    req.url.path = "/beta/multiasset"
+    req.method = "GET"
+    req.headers = {"authorization": "Bearer client-session"}
+    req.query_params = {}
+    req.cookies = {}
+    resp = await mw.dispatch(req, call_next)
+    assert resp.status_code == 302
+    assert resp.headers.get("location", "") == "/dashboard"
+
+
+@pytest.mark.asyncio
+async def test_login_with_session_honors_safe_next():
+    async def call_next(request):
+        return Response("login")
+
+    mw = AccessTokenMiddleware(app=MagicMock())
+    mw._resolve = AsyncMock(
+        return_value={"role": "desk", "user_id": "desk", "auth_type": "desk"}
+    )
+
+    req = MagicMock()
+    req.url.path = "/login"
+    req.method = "GET"
+    req.headers = {}
+    req.query_params = {"next": "/beta/multiasset"}
+    req.cookies = {"nexbuy_token": "desk-secret"}
+    resp = await mw.dispatch(req, call_next)
+    assert resp.status_code == 302
+    assert resp.headers.get("location", "") == "/beta/multiasset"
+
+
+def test_safe_post_login_path_rejects_open_redirect():
+    from apis.middleware.access_auth import safe_post_login_path
+
+    req = MagicMock()
+    req.query_params = {"next": "https://evil.example/phish"}
+    assert safe_post_login_path(req) == "/dashboard"
+    req.query_params = {"next": "//evil.example"}
+    assert safe_post_login_path(req) == "/dashboard"
+    req.query_params = {"next": "/beta/multiasset"}
+    assert safe_post_login_path(req) == "/beta/multiasset"
+

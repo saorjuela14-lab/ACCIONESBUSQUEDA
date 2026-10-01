@@ -18,7 +18,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/dashboard/static/styles.css?v=38-deposited-base" />
+  <link rel="stylesheet" href="/dashboard/static/styles.css?v=40-multiasset-cookie" />
   <!-- Heavy chart libs: defer so login/session UI is not blocked on cold start -->
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script defer src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -91,7 +91,7 @@
         </a>
       </div>
       <div class="header-actions">
-        <a href="/beta/multiasset" class="btn desk-only" id="btn-multiasset-beta" title="Mesas paper: oro, forex y crypto">Beta multi-asset</a>
+        <a href="/beta/multiasset" class="btn primary desk-only" id="btn-multiasset-beta" title="Mesas paper: oro, forex y crypto">Multi-asset</a>
         <input id="global-ticker" type="text" placeholder="Ej. AAPL" maxlength="10" aria-label="Ticker" />
         <button id="btn-analyze" class="btn primary">Analizar</button>
         <button id="btn-scan" class="btn">Escanear</button>
@@ -618,6 +618,7 @@
       <button type="button" id="mob-tech" class="mob-nav-btn">Gráfico</button>
       <button type="button" id="mob-analyze" class="mob-nav-btn primary">Analizar</button>
       <button type="button" data-scroll="trade-recs-panel" class="mob-nav-btn">Ideas</button>
+      <a href="/beta/multiasset" class="mob-nav-btn desk-only" id="mob-multiasset">Multi</a>
       <button type="button" data-scroll="portfolio-panel" class="mob-nav-btn">Dinero</button>
     </nav>
   </div>
@@ -667,7 +668,7 @@
 
   <script src="/dashboard/static/reliability.js?v=37-login-enter"></script>
   <script src="/dashboard/static/voice.js?v=37-login-enter"></script>
-  <script src="/dashboard/static/app.js?v=38-deposited-base"></script>
+  <script src="/dashboard/static/app.js?v=40-multiasset-cookie"></script>
   <script>
     // Permanently kill service workers — they were serving stale JS/CSS after deploy
     if ("serviceWorker" in navigator) {

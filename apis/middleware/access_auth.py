@@ -59,6 +59,19 @@ CLIENT_FORBIDDEN_PREFIXES = (
 )
 
 
+def safe_post_login_path(request: Request) -> str:
+    """Allow returning to Multi-Asset after login; never open redirects."""
+    nxt = (request.query_params.get("next") or "").strip()
+    if not nxt.startswith("/") or nxt.startswith("//"):
+        return "/dashboard"
+    path = nxt.split("?", 1)[0].split("#", 1)[0]
+    if "\\" in path or "://" in path:
+        return "/dashboard"
+    if path.startswith("/beta/") or path in ("/dashboard", "/dashboard/"):
+        return path
+    return "/dashboard"
+
+
 def _extract_token(request: Request) -> str | None:
     from apis.session_cookie import decode_session_cookie
 
@@ -93,7 +106,7 @@ class AccessTokenMiddleware(BaseHTTPMiddleware):
                 token = _extract_token(request)
                 principal = await self._resolve(token) if token else None
                 if principal:
-                    return RedirectResponse(url="/dashboard", status_code=302)
+                    return RedirectResponse(url=safe_post_login_path(request), status_code=302)
             return await call_next(request)
 
         # Entry + terminal HTML: login first — never paint the desk without a session
@@ -118,12 +131,10 @@ class AccessTokenMiddleware(BaseHTTPMiddleware):
             token = _extract_token(request)
             principal = await self._resolve(token) if token else None
             if not principal:
-                return RedirectResponse(url="/login", status_code=302)
+                return RedirectResponse(url="/login?next=/beta/multiasset", status_code=302)
             if principal.get("role") != "desk":
-                return JSONResponse(
-                    status_code=403,
-                    content={"detail": "Módulo beta solo para la mesa"},
-                )
+                # HTML page — never dump JSON 403 in the browser tab
+                return RedirectResponse(url="/dashboard", status_code=302)
             request.state.principal = principal
             return await call_next(request)
 

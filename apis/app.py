@@ -144,7 +144,7 @@ def create_app() -> FastAPI:
         async def multiasset_beta_page(request: Request):
             """Paper desks for gold / forex proxies / crypto (isolated from equity LIVE)."""
             if not _extract_token(request):
-                return RedirectResponse(url="/login", status_code=302)
+                return RedirectResponse(url="/login?next=/beta/multiasset", status_code=302)
             if not get_settings().multiasset_beta_enabled:
                 raise HTTPException(status_code=503, detail="Multi-asset beta desactivado")
             return FileResponse(

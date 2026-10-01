@@ -191,15 +191,24 @@
       return r.ok;
     }
 
+    function nextPath() {
+      const n = new URLSearchParams(location.search).get("next") || "";
+      if (!n.startsWith("/") || n.startsWith("//")) return "/dashboard";
+      const path = n.split("?")[0].split("#")[0];
+      if (path.startsWith("/beta/") || path === "/dashboard") return path;
+      return "/dashboard";
+    }
+
     async function enterDashboardIfCookie(signal) {
       // Document GET /dashboard only sees the httponly cookie — never Bearer.
       // Redirecting on localStorage/Bearer alone 302-loops back to /login.
+      const dest = nextPath();
       if (await cookieMeOk(signal)) {
-        location.replace("/dashboard");
+        location.replace(dest);
         return true;
       }
       if (await mintCookieFromLocalToken(signal) && await cookieMeOk(signal)) {
-        location.replace("/dashboard");
+        location.replace(dest);
         return true;
       }
       return false;
