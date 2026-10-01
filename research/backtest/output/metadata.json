@@ -1,8 +1,9 @@
 {
+  "base": 21.74,
   "capital": 21.76,
   "cost_model": {
-    "description": "half-spread + slippage estimate for tiny market orders; commissions assumed zero",
-    "per_side_bps": {
+    "fixed_fees": "CAT $0.01 per day with fills + SEC $0.01 and FINRA TAF $0.01 per day with sales, rounded daily minimums; sequential trades approximate sharing by date.",
+    "spread_slippage_per_side_bps": {
       "price_1_to_5": 35,
       "price_5_to_10": 25,
       "price_gte_10": 15,
@@ -10,14 +11,11 @@
     }
   },
   "end": "2026-10-01",
-  "generated_at": "2026-10-01T16:58:05.074174+00:00",
-  "initial_max_line_usd": 7.616,
-  "kill_dd_pct": 5.0,
-  "kill_level_usd": 20.672,
-  "max_notional": 25.0,
-  "max_position_pct": 0.35,
-  "min_notional": 5.0,
-  "min_trade_price": 0.05,
+  "fractional_note": "Alpaca fractional orders are day-only and do not support bracket/OCO protection; not used.",
+  "generated_at": "2026-10-01T17:13:59.505371+00:00",
+  "prop_brake_note": "Proposed research brake at 95% of base; not the current LIVE session-loss gate.",
+  "proposed_accumulated_brake_usd": 20.653,
+  "sizing": "whole shares; max line = min(25%*min(equity, base), 0.5*cushion/stop_pct); cushion=equity-95%*base; no trade if qty<1 or notional<$3",
   "split_date": "2025-12-03",
   "start": "2024-01-01",
   "tickers_with_data": [
@@ -61,7 +59,6 @@
     "JOBY",
     "KEY",
     "KMI",
-    "LAZR",
     "LI",
     "LUNR",
     "MARA",
@@ -97,6 +94,7 @@
   ],
   "unavailable": {
     "BITF": "sin_barras_suficientes:0",
+    "LAZR": "sin_barras_suficientes:65",
     "MPW": "sin_barras_suficientes:0",
     "NKLA": "sin_barras_suficientes:0",
     "TWO": "sin_barras_suficientes:0",
@@ -184,64 +182,44 @@
   ],
   "variants": [
     {
-      "break_even_after_r": null,
-      "name": "actual_2R",
-      "require_adx": null,
-      "stagnation_days": 2,
-      "stagnation_min_pnl_pct": 1.5,
-      "stop_pct": 0.08,
-      "target_pct": 0.16,
-      "time_stop_days": 7,
-      "trail_arm_pct": 0.05,
-      "trailing_pct": 0.1
+      "cooldown_global_after_stop_sessions": 0,
+      "cooldown_same_symbol_sessions": 0,
+      "eod_green_harvest": true,
+      "name": "actual_eod",
+      "symmetric_overnight": false,
+      "trend_filter": false
     },
     {
-      "break_even_after_r": null,
-      "name": "tp_1_5R",
-      "require_adx": null,
-      "stagnation_days": 2,
-      "stagnation_min_pnl_pct": 1.5,
-      "stop_pct": 0.08,
-      "target_pct": 0.12,
-      "time_stop_days": 7,
-      "trail_arm_pct": 0.05,
-      "trailing_pct": 0.1
+      "cooldown_global_after_stop_sessions": 0,
+      "cooldown_same_symbol_sessions": 0,
+      "eod_green_harvest": false,
+      "name": "simetrica",
+      "symmetric_overnight": true,
+      "trend_filter": false
     },
     {
-      "break_even_after_r": 1.0,
-      "name": "be_tras_1R",
-      "require_adx": null,
-      "stagnation_days": 2,
-      "stagnation_min_pnl_pct": 1.5,
-      "stop_pct": 0.08,
-      "target_pct": 0.16,
-      "time_stop_days": 7,
-      "trail_arm_pct": 0.05,
-      "trailing_pct": 0.1
+      "cooldown_global_after_stop_sessions": 0,
+      "cooldown_same_symbol_sessions": 0,
+      "eod_green_harvest": false,
+      "name": "simetrica_trend",
+      "symmetric_overnight": true,
+      "trend_filter": true
     },
     {
-      "break_even_after_r": null,
-      "name": "adx25_2R",
-      "require_adx": 25.0,
-      "stagnation_days": 2,
-      "stagnation_min_pnl_pct": 1.5,
-      "stop_pct": 0.08,
-      "target_pct": 0.16,
-      "time_stop_days": 7,
-      "trail_arm_pct": 0.05,
-      "trailing_pct": 0.1
+      "cooldown_global_after_stop_sessions": 1,
+      "cooldown_same_symbol_sessions": 1,
+      "eod_green_harvest": false,
+      "name": "cooldown_1d",
+      "symmetric_overnight": true,
+      "trend_filter": true
     },
     {
-      "break_even_after_r": null,
-      "name": "stagnation_4d",
-      "require_adx": null,
-      "stagnation_days": 4,
-      "stagnation_min_pnl_pct": 1.5,
-      "stop_pct": 0.08,
-      "target_pct": 0.16,
-      "time_stop_days": 7,
-      "trail_arm_pct": 0.05,
-      "trailing_pct": 0.1
+      "cooldown_global_after_stop_sessions": 1,
+      "cooldown_same_symbol_sessions": 5,
+      "eod_green_harvest": false,
+      "name": "cooldown_5d",
+      "symmetric_overnight": true,
+      "trend_filter": true
     }
   ]
 }

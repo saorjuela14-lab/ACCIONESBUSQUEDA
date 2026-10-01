@@ -1,194 +1,189 @@
-# Informe 2R — salidas, estancamiento y validacion PAPER
+# Informe 2R revisado — PR #128
 
-Fecha de investigacion: 2026-10-01  
+Fecha de revision: 2026-10-01  
 Rama: `cursor/backtest-salidas-2r-898a`  
-Modo: investigacion/offline. No se consulto ni modifico LIVE.
+Alcance: solo `research/`. No se tocaron servicios LIVE, flags, deploy ni ordenes.
 
 ## 0. Resumen ejecutivo
 
-- No hubo acceso a `DATABASE_URL`, SQLite local ni credenciales Alpaca en el entorno de Cursor. Por tanto, no puedo listar con precision los 12 cierres reales desde el journal/broker. No invento esos trades.
-- El codigo operativo actual abre brackets con stop/TP fijos sobre entrada: stop -8% y TP +16% para micro-capital. Luego el stop efectivo puede diferir del journal por trailing, BE de variantes, sync de stop GTC y Smart EOD/carry.
-- Con datos publicos y una simulacion de cuenta real ($21.76, fraccionales $5-$25, max 35% por nombre, costos/spread), todas las variantes probadas disparan el kill-switch OOS de 5% ($20.67). La mejor por expectancy OOS fue `adx25_2R`, pero aun negativa: -0.050R/trade, PF 0.86, kill el 2026-09-23.
-- Evidencia principal: el objetivo 2R queda lejos para el horizonte: en OOS la variante actual tuvo MFE mediana 0.46R y TP mediano 2.84 ATR; solo 1/7 llego a TP antes del kill. Bajar a 1.5R no arreglo el problema.
-- Recomendacion: no pasar cambios a LIVE. En PAPER probar una variante nueva basada en `adx25_2R` + filtro anti-chase/extension + objetivo ATR-dinamico; aprobar solo si supera criterios cuantitativos abajo.
+Esta version incorpora la revision de Riesgo:
 
-## 1. Reglas actuales documentadas en codigo
+- La linea base ya no es "dejar correr a 2R" sino la regla real observada/codificada de EOD: cerrar cualquier verde al final del dia (`asegurar_ganancia`) y cargar rojas, salvo stop/TP/trailing.
+- Se corrigen gaps: si abre por debajo del stop, se sale al open; si abre por encima del TP, se sale al open.
+- Se agregan tarifas fijas estimadas de Alpaca: CAT minimo $0.01 por dia con fills y SEC+FINRA TAF minimo $0.02 por dia con ventas, ademas de spread/slippage.
+- Se abandona fraccional en el backtest base: Alpaca fractional trading es DAY-only y no soporta bracket/OCO, por lo que no deja stop GTC overnight. La simulacion usa acciones enteras.
+- Se usa la regla de sizing de Riesgo: linea maxima = `min(25% * min(equity, base), 0.5 * colchon / distancia_stop)`, con colchon = `equity - 95% * base`, base $21.74. No abre si qty entera < 1 o notional < $3.
+- El freno acumulado en $20.653 (= 95% de base $21.74) queda etiquetado como **freno propuesto de investigacion**, no vigente. El LIVE vigente tiene freno de perdida de sesion que bloquea compras, no un freno acumulado de cuenta.
 
-### 1.1 Universo, entradas y horizonte
+Conclusion: **ninguna variante cumple criterios para pasar a LIVE**. Con sizing entero de Riesgo, el OOS queda con muy pocas operaciones y expectancy neta negativa en todas las variantes. La mejor lectura no es "elegir otra salida" sino: no hay evidencia suficiente de edge, el sizing de Riesgo reduce drasticamente la operabilidad con el colchon actual, y antes de LIVE hay que validar en PAPER con fills/journal correctos.
 
-- La mesa micro usa semillas liquidas/penny en `services/micro_portfolio_manager_service.py:28-38`. El comentario excluye shells/deslistadas como NKLA/WISH/BBIG del seed vivo.
-- Para capital <= $30, `DailyTradeRecommendationService.generate` toma el fast path micro y delega en `MicroPortfolioManagerService.manage` (`services/daily_trade_recommendation_service.py:92-108`).
-- El tecnico multi-timeframe analiza 5m, 15m, 30m, 1H, 4H, 1D, 1W y 1M (`agents/technical_agent.py:29-37`), pero el scoring de candidatos diarios usa historico 3 meses / 1D (`services/daily_trade_recommendation_service.py:490-509`).
-- El clasificador de corto plazo compra si 1D > +2% con volumen >= 1.5x, o swing si 5D > +5%, con horizontes "1-3 dias", "1-2 semanas" o "3-7 dias" (`services/daily_trade_recommendation_service.py:630-641`).
-- La mesa tecnica micro aprueba por RSI/momentum/volumen cuando el comite completo no cabe en timeout (`services/micro_portfolio_manager_service.py:330-369`). Esto tiende a comprar momentum ya movido, no pullbacks.
+## 1. Reglas actuales y fuentes de codigo
 
-### 1.2 Stop, R y TP registrados al abrir
+### Entradas y universo
 
-- En micro manager, cada linea propuesta usa `stop = price * 0.92` y `target = price * 1.16` (`services/micro_portfolio_manager_service.py:241-244`), y el `TradePick` guarda esos niveles (`services/micro_portfolio_manager_service.py:270-279`).
-- Si un pick llega sin stop/TP, `AutoExecuteService` los reemplaza por stop -8% y TP +16% (`services/auto_execute_service.py:232-241`).
-- El sizing de auto-execute calcula riesgo por accion contra ese stop y limita por presupuesto de riesgo/notional (`services/auto_execute_service.py:169-179`, `services/auto_execute_service.py:244-260`).
-- La orden se manda como bracket GTC si es compra market con stop y TP (`services/alpaca_order_service.py:581-606`, payload bracket en `services/alpaca_order_service.py:790-797`).
-- Al registrar fill, `PositionLifecycleService.register_from_fill` recalcula defaults si faltan: stop `entry * (1 - stop_pct)` y TP `entry * (1 + target_pct)` (`services/position_lifecycle_service.py:100-109`).
-- Defaults de settings: stop 8%, TP 16%, micro time-stop 7d, stagnation 2d, trail micro 10%, arm +5%, Smart EOD 15:40 ET (`config/settings.py:223-260`).
+- La mesa micro usa seeds penny/liquidos en `services/micro_portfolio_manager_service.py:28-38`.
+- Para capital <= $30, `DailyTradeRecommendationService.generate` usa fast path micro (`services/daily_trade_recommendation_service.py:92-108`).
+- El scoring diario usa historico 3 meses / 1D (`services/daily_trade_recommendation_service.py:490-509`).
+- La accion/horizonte premia momentum de 1D/5D y volumen (`services/daily_trade_recommendation_service.py:630-641`).
+- La mesa tecnica micro aprueba por RSI/momentum/volumen cuando el comite completo no cabe en timeout (`services/micro_portfolio_manager_service.py:330-369`).
 
-**Definicion de R hoy:** `R = (entry_price - stop_loss) / entry_price`, normalmente 8%. TP 2R = +16% sobre entrada.
+### Stop, TP y lifecycle
 
-### 1.3 Stop efectivo despues de abrir: por que el journal puede quedar desfasado
+- Micro manager propone `stop = price * 0.92` y `target = price * 1.16` (`services/micro_portfolio_manager_service.py:241-244`).
+- AutoExecute rellena stop -8% y TP +16% si faltan (`services/auto_execute_service.py:232-241`).
+- El sizing live usa acciones enteras (`int(...)`) y riesgo contra stop (`services/auto_execute_service.py:244-260`).
+- Alpaca bracket se construye cuando compra market con stop+TP (`services/alpaca_order_service.py:581-606`, `services/alpaca_order_service.py:790-797`).
+- Lifecycle arma trailing tras +5% y usa el max(stop original, trail) (`services/position_lifecycle_service.py:229-242`).
+- TP se evalua antes de stops de calendario (`services/position_lifecycle_service.py:252-259`).
+- Smart EOD/carry esta en `services/intraday_flat_service.py:83-119`. La revision de Riesgo pide modelar como baseline lo observado en fills: verdes se cosechan a mercado al EOD y rojas se cargan.
 
-Operaciones reales:
+### Journal no es verdad final
 
-- El journal guarda `stop_loss` y `take_profit` de apertura (`database/models.py:320-329`) y calcula R multiple contra ese stop registrado al cerrar (`database/repositories/trade_journal_repository.py:110-130`).
-- El lifecycle puede subir el stop efectivo: arma trailing solo cuando el pico >= entrada +5%, y entonces calcula `trail_stop = peak * (1 - trailing_pct)`; usa el maximo entre stop registrado y trail (`services/position_lifecycle_service.py:229-242`).
-- El TP se evalua antes que stops de calendario (`services/position_lifecycle_service.py:252-259`).
-- Stop/trailing se ejecuta si precio <= stop efectivo (`services/position_lifecycle_service.py:261-267`).
-- Stagnation cierra solo verdes/flat: edad >= 2d y 0% <= PnL < 1.5%; rojos dentro del stop son "recuperacion", no stagnation (`services/position_lifecycle_service.py:277-299`).
-- Time-stop ultimo recurso cierra si edad >= 7d y precio <= entrada * 0.995 (`services/position_lifecycle_service.py:301-312`).
-- Smart EOD no cosecha verdes pequenos con `intraday_2r_hold_enabled`: carry de verdes hacia 2R y de rojos moderados; corta si perdida <= -8%, stop tocado, tesis invalidada o TP cercano/tocado (`services/intraday_flat_service.py:83-119`).
+El journal guarda stop/TP de apertura (`database/models.py:320-329`) y el R multiple se calcula contra ese stop registrado (`database/repositories/trade_journal_repository.py:110-130`). El stop efectivo pudo diferir por trailing, reemplazos de stop GTC, EOD/carry o fills reales de broker. Para los 21 cierres reales, el informe no commitea datos de cuenta; usa solo agregados provistos por Riesgo.
 
-Implicacion para los 12 cierres: si solo miro `trade_journal.stop_loss/take_profit`, puedo subestimar el stop efectivo de una salida `Stop/trailing tocado` o no ver que EOD decidio carry. Para reconstruir cada trade real se necesitan:
+## 2. Datos reales agregados provistos por Riesgo
 
-1. journal open/close,
-2. fills/activities de Alpaca,
-3. ordenes reemplazadas/canceladas de stop GTC,
-4. OHLC intradia durante la vida,
-5. audit events `trailing_update`, `protective_stop_sync`, `intraday_flat`, `lifecycle_exit`.
+No hay credenciales Alpaca ni `DATABASE_URL` en este entorno. Uso solo agregados de la revision:
 
-En este entorno no hay credenciales ni DB, asi que esa reconstruccion real queda bloqueada.
+- 21 trades reales reconstruidos desde fills.
+- Septiembre: 7 trades, P&L -$1.4774, 3 stops reales.
+- Fills reales muestran ganancias pequenas (+0.2% a +4%, mediana aprox. +0.8%) y perdidas cercanas a -8% en stops.
+- SNAP 23 sep fue stop -8.06% (-$0.48), no ganancia.
+- Tarifas estimadas desde tabla publica explican gran parte de la fuga de caja: aprox. $0.62 acumulado.
 
-## 2. Diagnostico de los 12 cierres reales
-
-### 2.1 Disponibilidad de datos
-
-Chequeo local:
-
-- `DATABASE_URL`: ausente.
-- `ALPACA_API_KEY` / `ALPACA_SECRET_KEY`: ausentes.
-- `data/*.db`: no existe en el checkout.
-
-Por tanto, no puedo producir la tabla por cada uno de los 12 cierres con entrada, stop, R, TP, MFE/MAE y motivo real. El unico dato real disponible aqui viene del documento adjunto:
-
-| Dato real disponible | Fuente |
-|---|---|
-| Equity 2026-09-30 aprox. $21.01 vs $21.74 depositados (-3.4%) | upload resumen, seccion 3 |
-| 30 dias: 12 cierres, 0 TP 2R, 12/12 stagnation o stop | upload resumen, seccion 3 |
-| PLUG 2026-09-10 stop aprox. -$0.54 | upload resumen, seccion 3 |
-| BBAI 2026-09-28 stop aprox. -$0.45 | upload resumen, seccion 3 |
-| SNAP seguia abierta al cierre del reporte | upload resumen, seccion 3 |
-
-### 2.2 Plantilla de reconstruccion real
-
-Cuando haya DB/Alpaca read-only, por cada trade se debe llenar:
-
-| Campo | Fuente primaria | Nota de reconstruccion |
-|---|---|---|
-| entrada/fill | Alpaca activities `FILL` | journal puede usar fallback si no hubo fill_avg_price |
-| stop/TP apertura | `trade_journal` / bracket order | no asumir que fue efectivo al cierre |
-| stop efectivo | ordenes stop reemplazadas + audit `trailing_update` | trail arma tras +5%; micro trail 10% |
-| MFE/MAE R | OHLC intradia entre fill open y fill close | usar stop efectivo por tramo si cambia |
-| salida | Alpaca fill + `exit_reason` journal/audit | clasificar TP/stop/trail/time/EOD/stagnation |
-| EOD/carry | audit `intraday_flat` + mandate thesis | Smart EOD puede mantener rojos/verdes |
-
-## 3. Backtest reproducible
+## 3. Backtest revisado
 
 Codigo: `research/backtest/run_2r_backtest.py`.
 
-### 3.1 Metodologia
+### Metodologia
 
-- Datos: `yfinance`, OHLCV diario ajustado por splits.
-- Universo: seed micro real del codigo + legacy solicitado para visibilidad. Tickers sin barras suficientes: BITF, MPW, NKLA, TWO, WISH.
-- Sin look-ahead: senal con barra diaria cerrada; entrada en la siguiente apertura.
-- Ejecucion: fraccional, notional dinamico `min($25, 35% equity)`, minimo $5, capital inicial $21.76.
-- Costos/spread por lado: 75 bps si precio < $1; 35 bps si $1-$5; 25 bps si $5-$10; 15 bps si >= $10. Incluye spread+slippage; comision cero.
-- Kill-switch Riesgo: 5% drawdown, umbral $20.672.
-- Split: `2025-12-03` OOS. Ademas se corrio una cuenta OOS reiniciada desde $21.76 y con kill-stop activo.
-- Limitacion: yfinance no garantiza supervivorship-free completo; delistados sin datos quedan marcados como no disponibles, no se imputan.
+- Datos publicos: yfinance 1D ajustado por splits.
+- Senales sin look-ahead: barra cerrada -> entrada siguiente open.
+- Ejecucion: acciones enteras, no fraccionales.
+- Base: $21.74; capital inicial de simulacion: $21.76.
+- Freno acumulado propuesto: 95% de base = $20.653. No es el freno LIVE vigente.
+- Sizing Riesgo: `min(25% * min(equity, base), 0.5 * colchon / 8%)`; no trade si qty < 1 o notional < $3.
+- Gaps: stop/TP al open si el open cruza el nivel.
+- Trailing conservador: no arma trailing con el high del mismo dia antes de evaluar el low; usa peak previo.
+- Costos: spread/slippage por lado (75/35/25/15 bps segun precio) + tarifas fijas estimadas.
+- Split: IS antes de 2025-12-03; OOS desde 2025-12-03. Cada tramo reinicia la cuenta en $21.76 para comparar.
 
-### 3.2 Variantes probadas
+Tickers sin barras suficientes: BITF, MPW, NKLA, TWO, WISH. Esto no elimina el sesgo de supervivencia de yfinance; solo lo hace explicito.
 
-| Variante | Cambio vs actual |
+### Variantes
+
+| Variante | Descripcion |
 |---|---|
-| `actual_2R` | stop 8%, TP 16%, trail 10% armado +5%, stagnation 2d |
-| `tp_1_5R` | TP 12% (1.5R) |
-| `be_tras_1R` | mover stop a break-even tras MFE >= 1R |
-| `adx25_2R` | exigir ADX >= 25 al entrar |
-| `stagnation_4d` | stagnation 4d en vez de 2d |
+| `actual_eod` | Baseline real: cosecha cualquier verde al EOD; rojas cargan salvo stop/TP/trailing/time-stop. |
+| `simetrica` | Sin cosecha de verdes; stop/TP/trailing; carga overnight solo si P&L >= -0.5R; si no, `eod_risk_cut`. |
+| `simetrica_trend` | `simetrica` + filtro ADX > 25 o precio sobre SMA50. |
+| `cooldown_1d` | `simetrica_trend` + no reentrar mismo simbolo 1 sesion tras stop; si stop >= 1R, 1 sesion sin nuevas entradas globales. |
+| `cooldown_5d` | Igual, pero 5 sesiones sin reentrar mismo simbolo tras stop. |
 
-### 3.3 Resultado OOS con cuenta real reiniciada
+Hipotesis no backtesteada: alineacion noticias/sentimiento. No hay historico de agentes para backtest honesto; queda solo como hipotesis PAPER.
 
-| Variante | Trades | Win % | Exp. R | Exp. %/trade | PF | Equity final | Retorno cuenta | Kill-switch OOS | Peor racha |
-|---|---:|---:|---:|---:|---:|---:|---:|---|---|
-| actual_2R | 7 | 42.86 | -0.2710 | -2.1680 | 0.5351 | $20.5693 | -5.4720% | si, 2026-01-13 | 2 trades / -$1.2311 / -5.6467% |
-| tp_1_5R | 7 | 42.86 | -0.3423 | -2.7386 | 0.4128 | $20.2969 | -6.7238% | si, 2026-01-13 | 2 trades / -$1.2147 / -5.6467% |
-| be_tras_1R | 4 | 0.00 | -0.6437 | -5.1499 | 0.0000 | $20.2273 | -7.0437% | si, 2025-12-30 | 4 trades / -$1.5326 / -7.0437% |
-| adx25_2R | 36 | 44.44 | -0.0504 | -0.4036 | 0.8566 | $20.4641 | -5.9554% | si, 2026-09-23 | 6 trades / -$1.8917 / -8.4614% |
-| stagnation_4d | 27 | 37.04 | -0.0903 | -0.7229 | 0.7798 | $20.1248 | -7.5147% | si, 2026-09-22 | 5 trades / -$1.2317 / -5.7678% |
+## 4. Resultados in-sample y out-of-sample
 
-Distribucion de salidas OOS:
+Metricas netas de tarifas.
 
-| Variante | Salidas |
-|---|---|
-| actual_2R | stop 4, stagnation 2, take_profit 1 |
-| tp_1_5R | stop 4, stagnation 2, take_profit 1 |
-| be_tras_1R | stop 2, stop_trailing 1, time_stop 1 |
-| adx25_2R | stop_trailing 15, stop 9, stagnation 7, take_profit 3, time_stop 2 |
-| stagnation_4d | stop 8, stop_trailing 7, stagnation 4, take_profit 4, time_stop 4 |
+| Tramo | Variante | Trades | Win % | Exp. R neta | PF neto | DD cuenta | Equity final | Freno prop. | Freno sesion | Stop gaps | Fees |
+|---|---|---:|---:|---:|---:|---:|---:|---|---|---:|---:|
+| IS | actual_eod | 36 | 52.78 | -0.0435 | 0.8339 | -8.0751% | $21.0463 | no | no | 2 | $1.23 |
+| OOS | actual_eod | 6 | 33.33 | -0.5080 | 0.1843 | -5.1397% | $20.8390 | no | no | 0 | $0.23 |
+| IS | simetrica | 19 | 31.58 | -0.1246 | 0.7752 | -8.6383% | $20.9602 | no | no | 0 | $0.71 |
+| OOS | simetrica | 2 | 0.00 | -1.0016 | 0.0000 | -3.1866% | $21.0666 | no | no | 1 | $0.08 |
+| IS | simetrica_trend | 14 | 28.57 | -0.1906 | 0.6772 | -6.2729% | $21.0633 | no | no | 0 | $0.53 |
+| OOS | simetrica_trend | 2 | 0.00 | -1.0016 | 0.0000 | -3.1866% | $21.0666 | no | no | 1 | $0.08 |
+| IS | cooldown_1d | 14 | 28.57 | -0.1906 | 0.6772 | -6.2729% | $21.0633 | no | no | 0 | $0.53 |
+| OOS | cooldown_1d | 2 | 0.00 | -1.0016 | 0.0000 | -3.1866% | $21.0666 | no | no | 1 | $0.08 |
+| IS | cooldown_5d | 14 | 28.57 | -0.1906 | 0.6772 | -6.2729% | $21.0633 | no | no | 0 | $0.53 |
+| OOS | cooldown_5d | 2 | 0.00 | -1.0016 | 0.0000 | -3.1866% | $21.0666 | no | no | 1 | $0.08 |
 
-### 3.4 Lectura de MFE/MAE, ATR y entrada tardia
+Notas:
 
-Medians OOS:
+- Con sizing entero de Riesgo, ninguna variante toca el freno acumulado propuesto en IS/OOS, pero esto ocurre porque el sizing reduce mucho la exposicion y filtra muchas entradas.
+- El freno LIVE de sesion aproximado tampoco se dispara en esta simulacion; se modela como perdida realizada de una sesion/trade <= -5% de equity. El codigo LIVE real bloquea compras por perdida de sesion y no necesariamente cierra posiciones.
+- `actual_eod` tiene mas trades porque cierra verdes rapidamente y libera capital; OOS sigue negativo.
+- Las variantes simetricas OOS solo tienen 2 trades bajo esta regla de sizing, por lo que su estadistica no es suficiente.
 
-| Variante | MFE mediana | MAE mediana | TP / ATR mediano | Extension vs SMA20 mediana |
-|---|---:|---:|---:|---:|
-| actual_2R | 0.46R | -1.04R | 2.84 ATR | +7.23% |
-| tp_1_5R | 0.46R | -1.04R | 2.13 ATR | +7.23% |
-| be_tras_1R | 0.68R | -0.93R | 2.34 ATR | +13.02% |
-| adx25_2R | 0.79R | -0.50R | 2.58 ATR | +7.40% |
-| stagnation_4d | 0.80R | -0.74R | 2.56 ATR | +6.97% |
+### Distribucion de salidas
 
-Interpretacion:
+| Tramo | Variante | Salidas |
+|---|---|---|
+| IS | actual_eod | asegurar_ganancia 24, stop 7, stop_trailing 2, stop_gap 1, stop_trailing_gap 1, take_profit 1 |
+| OOS | actual_eod | asegurar_ganancia 3, stop 3 |
+| IS | simetrica | stop_trailing 6, eod_risk_cut 5, take_profit 4, stop 4 |
+| OOS | simetrica | stop_trailing_gap 1, time_stop 1 |
+| IS | simetrica_trend / cooldowns | stop_trailing 5, eod_risk_cut 4, take_profit 2, stop 2, time_stop 1 |
+| OOS | simetrica_trend / cooldowns | stop_trailing_gap 1, time_stop 1 |
 
-- En la variante actual, el trade mediano ni siquiera alcanza 1R de MFE. Apuntar a +16% requiere ~2.84 ATR medianos; para horizontes de dias, eso es exigente.
-- Las entradas son momentum/extension: el propio codigo premia 1D/5D fuertes, volumen y precio sobre SMA20. La extension OOS mediana contra SMA20 fue ~7%. Eso apoya la hipotesis de entradas tardias.
-- El stop de 8% no es "estrecho"; para la cuenta si es grande. Una perdida completa de una posicion de 35% del libro pierde ~2.8% de equity antes de costos. Dos stops casi activan kill-switch.
-- Bajar TP a 1.5R no basta porque no corrige entradas ni rachas; empeoro expectancy OOS en esta muestra.
-- ADX25 mejora la seleccion y retrasa el kill hasta septiembre, pero no cruza el umbral de aprobacion.
+## 5. Estadistica e IC
 
-## 4. Recomendacion
+| Tramo | Variante | n | Exp. R neta | IC95 R | Cota inferior IC90 unilateral | n para distinguir +0.2R de 0 |
+|---|---|---:|---:|---|---:|---:|
+| IS | actual_eod | 36 | -0.0435 | [-0.2948, 0.2077] | -0.2078 | 25 |
+| OOS | actual_eod | 6 | -0.5080 | [-1.1266, 0.1107] | -0.9125 | 25 |
+| IS | simetrica | 19 | -0.1246 | [-0.6277, 0.3784] | -0.4536 | 52 |
+| OOS | simetrica | 2 | -1.0016 | [-1.0472, -0.9561] | -1.0314 | 1 |
+| IS | simetrica_trend | 14 | -0.1906 | [-0.6942, 0.3129] | -0.5199 | 38 |
+| OOS | simetrica_trend | 2 | -1.0016 | [-1.0472, -0.9561] | -1.0314 | 1 |
+| IS | cooldown_1d | 14 | -0.1906 | [-0.6942, 0.3129] | -0.5199 | 38 |
+| OOS | cooldown_1d | 2 | -1.0016 | [-1.0472, -0.9561] | -1.0314 | 1 |
+| IS | cooldown_5d | 14 | -0.1906 | [-0.6942, 0.3129] | -0.5199 | 38 |
+| OOS | cooldown_5d | 2 | -1.0016 | [-1.0472, -0.9561] | -1.0314 | 1 |
 
-### 4.1 No cambiar LIVE todavia
+Advertencia: con n=2, el IC es mecanico y no debe usarse para afirmar edge. Sirve solo para mostrar que el sizing entero deja poca muestra OOS. Para afirmar una expectativa de +0.2R se necesitan decenas de cierres incluso con desviacion estandar moderada; Riesgo propone minimo 40 cierres para revisar integridad/riesgo y >=100 cierres o 60 sesiones para afirmar edge.
 
-No recomiendo pasar ninguna de las variantes probadas a LIVE. Todas activan kill-switch OOS con la cuenta real simulada.
+## 6. Evaluacion contra gates de Riesgo
 
-### 4.2 Cambio candidato para PAPER
+Gates oficiales de la revision (G1-G8):
 
-Probar en PAPER una variante nueva (no implementada en LIVE):
+| Gate | Umbral | Resultado backtest |
+|---|---|---|
+| G1 Muestra | >=40 cierres y >=20 sesiones para revision; >=100 cierres o 60 sesiones para afirmar edge | Ninguna variante OOS cumple. IS solo `actual_eod` se acerca con 36, pero no llega a 40. |
+| G2 Expectancy neta | >= +0.10R y cota inferior IC90 > 0 | Ninguna cumple; todas las expectancies netas son negativas. |
+| G3 Profit factor neto | >= 1.15 | Ninguna cumple. Mejor IS `actual_eod` PF 0.8339; OOS `actual_eod` PF 0.1843. |
+| G4 DD max cuenta | <= 50% del colchon inicial (~$0.54, aprox. 2.5%) | Ninguna cumple de forma robusta; OOS simetricas tienen DD -3.19%, actual_eod -5.14%. |
+| G5 Peor racha | <=3 perdidas seguidas y <=3% equity | Varias muestras pequenas parecen cumplir por bajo n; no compensa fallos G1-G4. |
+| G6 Freno acumulado propuesto | Cero disparos | Cumplen en backtest revisado, por sizing pequeno; no significa edge. |
+| G7 Integridad journal-fills | 100% cierres con exit_price = fill, 0 fantasmas, diferencia P&L <= $0.05 | No evaluable con yfinance. Revision real indica que hoy NO se cumple en fills/journal reales. |
+| G8 Reconciliacion caja | Equity = base + realizado + no realizado - fees con residuo <= $0.05/semana | No evaluable con yfinance. Riesgo encontro fuga explicable por fees y residuo pequeno, pero requiere activities de Alpaca. |
 
-1. Filtro de tendencia: ADX >= 25 o estructura HTF confirmada.
-2. Filtro anti-chase: no entrar si `close > SMA20 * 1.07` o si 5D > +15% sin pullback intradia.
-3. Objetivo dinamico: TP = min(1.5R, 1.8 ATR) y salida parcial/sintetica a 1R con trailing del resto.
-4. Stop de riesgo: mantener stop maximo 8%, pero capear riesgo por trade a <= 1.5% del equity mientras el libro sea <$50.
-5. Stagnation: no cerrar al dia 2 si MFE >= 0.75R; cerrar rapido si MFE < 0.25R y vuelve bajo VWAP/SMA corta.
+Controles adicionales G9-G13 de la revision:
 
-Razon: el backtest sugiere que la mejora viene mas de filtrar entradas y normalizar por volatilidad que de mover solo el TP.
+- G9 proteccion broker: no evaluable aqui; debe verificarse con ordenes abiertas Alpaca.
+- G10 enfriamiento post-stop: se modelo en variantes cooldown, pero la muestra OOS es insuficiente.
+- G11 entry mandate = fill: no evaluable en backtest; Riesgo detecto bug operativo fuera de `research/`.
+- G12 calendario earnings: no modelado; falta fuente historica.
+- G13 diversidad de salidas: ninguna variante tiene evidencia suficiente; `actual_eod` IS esta dominada por `asegurar_ganancia`.
 
-### 4.3 Plan de validacion PAPER antes de LIVE
+**Dictamen:** ninguna variante pasa a LIVE. La candidata recomendada para PAPER no es una ganadora estadistica; es la familia `simetrica_trend + cooldown`, solo porque incorpora controles de riesgo mas sanos. Debe probarse forward con gates G1-G13.
 
-Criterios minimos:
+## 7. Cambios vs version anterior del PR
 
-- Minimo 40 cierres PAPER o 20 sesiones con mercado abierto, lo que ocurra despues.
-- Kill-switch simulado no activado.
-- Expectancy >= +0.10R/trade y PF >= 1.15.
-- Peor racha <= 3 perdidas consecutivas y perdida de racha <= 3% del equity.
-- Al menos 25% de salidas por TP/parcial/trailing positivo, no dominadas por stop/stagnation.
-- Comparar contra shadow actual_2R en paralelo; aprobar solo si supera actual_2R en expectancy y drawdown.
+| Tema | Antes | Ahora |
+|---|---|---|
+| Baseline | 2R hold teorico | `actual_eod`: cosecha verdes EOD y carga rojas, como pidio Riesgo |
+| Sizing | Fraccional, 35% equity, $5 minimo | Acciones enteras, regla de colchon de Riesgo, $3 minimo |
+| Freno | Kill-switch acumulado tratado como regla | Etiquetado como freno acumulado propuesto; se reporta freno de sesion aproximado |
+| Gaps | Stop/TP al nivel | Gap a open si open cruza stop/TP |
+| Trailing | Podia armar con high del mismo dia | Usa peak previo para evitar optimismo intrabarra |
+| Costos | Spread/slippage | Spread/slippage + fees fijos estimados Alpaca |
+| Estadistica | Sin IC | IC95, cota IC90 unilateral y n requerido para +0.2R |
+| Variantes | TP 1.5R, BE, ADX, stagnation | actual_eod, simetrica, simetrica_trend, cooldown 1/5 sesiones |
+| Gates | Criterios internos parciales | Gates G1-G8 evaluados y G9-G13 comentados |
 
-Si no cumple, mantener LIVE sin nuevos cambios de autonomia y volver a redisenar entradas/universo.
+## 8. Recomendacion
 
-## 5. Archivos generados
+1. No cambiar LIVE con base en este backtest.
+2. No usar fraccionales para esta mesa mientras se requiera stop GTC/bracket overnight.
+3. Si se prueba algo en PAPER, usar `simetrica_trend + cooldown` con acciones enteras y regla de sizing de Riesgo.
+4. Exigir gates G1-G13 antes de cualquier promocion.
+5. Antes de paper serio, corregir fuera de `research/` los problemas operativos detectados por Riesgo: integridad journal-fills, entrada de mandato = fill real, stops GTC nocturnos, enfriamiento post-stop y reconciliacion de fees.
+
+## 9. Archivos generados
 
 - `research/backtest/run_2r_backtest.py`
 - `research/backtest/output/trades.csv`
 - `research/backtest/output/metrics.csv`
-- `research/backtest/output/oos_account_trades.csv`
-- `research/backtest/output/oos_account_metrics.csv`
 - `research/backtest/output/metadata.json`
