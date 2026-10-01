@@ -116,6 +116,16 @@ class MultiAssetDeskService:
             for item in strategy.symbols:
                 quotes[item.symbol] = await quote_symbol(item.symbol)
 
+        if desk == "crypto" and self._session is not None:
+            try:
+                from database.repositories.ops_repository import OpsFlagRepository
+                from services.multiasset.crypto_obs import overlay_open_positions
+
+                state = await OpsFlagRepository(self._session).get_json("crypto_strategy_a_state")
+                positions = overlay_open_positions(positions, (state or {}).get("positions"))
+            except Exception as exc:
+                logger.warning("crypto.a.status_obs_failed", error=str(exc))
+
         return DeskStatus(
             desk=desk,
             strategy=strategy,
@@ -170,6 +180,7 @@ class MultiAssetDeskService:
                 "fx_risk_agent": 0.5,
             },
             "crypto": {
+                "crypto_strategy_a": 3.2,
                 "crypto_breakout_specialist": 3.0,
                 "crypto_chart_technical_agent": 1.4,
                 "crypto_news_social_agent": 1.0,
@@ -320,7 +331,7 @@ class MultiAssetDeskService:
         else:
             raise ValueError("Para equity ETF usa qty; crypto puede usar notional")
 
-        # Alpaca crypto has no bracket. Stops are software-only (evaluated each cycle).
+        # Alpaca crypto: never attach stop/bracket/OCO/trailing. Software chandelier only.
         if req.side == "buy" and not req.dry_run and not is_crypto:
             try:
                 qstop = await quote_symbol(sym)
@@ -334,6 +345,14 @@ class MultiAssetDeskService:
                 order["order_class"] = "oto"
                 order["stop_loss"] = {"stop_price": str(stop_px)}
                 order["time_in_force"] = "gtc"
+
+        if is_crypto:
+            from services.multiasset.crypto_orders import CryptoStopNotSupported, sanitize_crypto_order
+
+            try:
+                order = sanitize_crypto_order(order)
+            except CryptoStopNotSupported as exc:
+                raise ValueError(str(exc)) from exc
 
         if req.dry_run or not self._broker.is_configured():
             result = MultiAssetOrderResult(
@@ -356,16 +375,32 @@ class MultiAssetDeskService:
         try:
             raw = await self._broker.submit_order(order)
         except Exception as exc:
+            if is_crypto:
+                from services.multiasset.crypto_orders import is_stop_like, record_rejected_crypto_stop
+
+                if is_stop_like(order):
+                    await record_rejected_crypto_stop(
+                        self._session, symbol=sym, detail=str(exc), raw={"error": str(exc)}
+                    )
+                    raise ValueError(f"crypto stop rejected; broker_stop=none: {exc}") from exc
+                raise
             if "stop_loss" in order:
                 logger.warning("multiasset.oto_failed_retry_plain", error=str(exc), symbol=sym)
                 plain = {k: v for k, v in order.items() if k not in {"order_class", "stop_loss"}}
                 raw = await self._broker.submit_order(plain)
             else:
                 raise
-        if isinstance(raw, dict) and str(raw.get("status") or "") in {"rejected", "canceled"} and "stop_loss" in order:
-            logger.warning("multiasset.oto_rejected_retry_plain", symbol=sym)
-            plain = {k: v for k, v in order.items() if k not in {"order_class", "stop_loss"}}
-            raw = await self._broker.submit_order(plain)
+        if isinstance(raw, dict) and str(raw.get("status") or "") in {"rejected", "canceled"}:
+            if is_crypto:
+                from services.multiasset.crypto_orders import is_stop_like, record_rejected_crypto_stop
+
+                if is_stop_like(order):
+                    await record_rejected_crypto_stop(self._session, symbol=sym, detail="status_rejected", raw=raw)
+                    raise ValueError("crypto stop rejected; broker_stop=none")
+            elif "stop_loss" in order:
+                logger.warning("multiasset.oto_rejected_retry_plain", symbol=sym)
+                plain = {k: v for k, v in order.items() if k not in {"order_class", "stop_loss"}}
+                raw = await self._broker.submit_order(plain)
         result = MultiAssetOrderResult(
             ok=True,
             desk=req.desk,

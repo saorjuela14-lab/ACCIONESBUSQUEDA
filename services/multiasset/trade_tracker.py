@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -221,6 +222,7 @@ class MultiAssetTradeTracker:
         symbol: str,
         stop: float,
         peak: float | None = None,
+        extra_meta: dict[str, Any] | None = None,
     ) -> MultiAssetTrade | None:
         open_t = await self.get_open(desk, symbol)
         if not open_t:
@@ -236,6 +238,9 @@ class MultiAssetTradeTracker:
         if peak is not None:
             meta["peak"] = peak
         meta["trail_stop"] = float(stop)
+        meta["broker_stop"] = "none"
+        if extra_meta:
+            meta.update(extra_meta)
         row.meta_json = json.dumps(meta, default=str)
         await self._session.commit()
         return self._to_domain(row)

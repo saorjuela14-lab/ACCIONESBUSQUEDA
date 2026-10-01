@@ -64,12 +64,13 @@ _CRYPTO = DeskStrategy(
     desk="crypto",
     name="Mesa Crypto · Paper",
     thesis=(
-        "Estrategia A: tendencia multi-horizonte Donchian 30–480 en velas 4h, solo compras. "
-        "Parámetros fijos (BTC/ETH). Filtro BTC > SMA200 diaria. Stops por software "
-        "(Alpaca crypto no tiene bracket). Gate = archivo de elegibilidad versionado; "
-        "no se recalcula el backtest en vivo. Paper 1x, sin margen."
+        "Estrategia A combo #9: Donchian histéresis L=120/240/480 en velas 4h, S=promedio. "
+        "Régimen BTC close > SMA 1.200 velas 4h (200d) para todas las monedas. "
+        "Peso S×min(1, 25%/vol 30d)×tope. Chandelier 8×ATR14 al cierre; fill apertura "
+        "siguiente (software). Sin TP. Alpaca crypto no acepta stop/bracket; paper no "
+        "modela bien gaps. Gate = JSON de elegibilidad; no se recalcula OOS. Paper 1x."
     ),
-    horizon="swing 4h · Donchian 30–480",
+    horizon="swing 4h · Donchian 120/240/480",
     max_notional_usd=5_000.0,
     default_stop_pct=0.08,
     default_target_pct=0.16,

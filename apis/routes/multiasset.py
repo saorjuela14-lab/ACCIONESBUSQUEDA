@@ -50,6 +50,10 @@ async def desk_board(session: AsyncSession = Depends(get_session)):
     from database.repositories.ops_repository import OpsFlagRepository
 
     last = await OpsFlagRepository(session).get_json(FLAG_CYCLE)
+    from services.multiasset.crypto_obs import attach_last_cycle_obs
+
+    state = await OpsFlagRepository(session).get_json("crypto_strategy_a_state")
+    last = attach_last_cycle_obs(last, state)
     return {
         "paper": True,
         "live_untouched": True,
@@ -70,9 +74,12 @@ async def desk_board(session: AsyncSession = Depends(get_session)):
 async def last_multiasset_cycle(session: AsyncSession = Depends(get_session)):
     _enabled()
     from database.repositories.ops_repository import OpsFlagRepository
+    from services.multiasset.crypto_obs import attach_last_cycle_obs
     from services.multiasset.risk_engine import FLAG_CYCLE
 
-    return await OpsFlagRepository(session).get_json(FLAG_CYCLE)
+    last = await OpsFlagRepository(session).get_json(FLAG_CYCLE)
+    state = await OpsFlagRepository(session).get_json("crypto_strategy_a_state")
+    return attach_last_cycle_obs(last, state)
 
 
 @router.get("/beta/multiasset/strategy-a/eligibility")

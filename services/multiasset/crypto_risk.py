@@ -28,7 +28,7 @@ BTC_ETH_EQUITY_PCT = 10.0
 BTC_ETH_RISK_PCT = 0.5
 ALT_EQUITY_PCT = 5.0
 ALT_RISK_PCT = 0.25
-ALT_ADV_PCT = 1.0
+ADV_PCT = 1.0  # 1% median daily Alpaca volume — BTC/ETH included
 CORR_THRESHOLD = 0.7
 GROUP_RISK_PCT = 1.0
 GROUP_EQUITY_PCT = 15.0
@@ -36,6 +36,8 @@ RAMP_TRADES = 12
 KILL_ALLOC_DD_PCT = 10.0
 PAUSE_DAILY_PCT = 1.5
 PAUSE_WEEKLY_PCT = 3.0
+MIN_NOTIONAL_USD = 10.0
+VOL_TARGET = 0.25
 
 
 def _norm(symbol: str) -> str:
@@ -90,11 +92,12 @@ def universe_spread_ok(symbol: str, median_bps: float | None) -> tuple[bool, str
 
 
 def entry_spread_ok(symbol: str, *, live_bps: float | None, median_bps: float | None) -> tuple[bool, str]:
+    """Fail closed: no moment spread → reject the entry."""
     ok, why = universe_spread_ok(symbol, median_bps)
     if not ok:
         return False, why
     if live_bps is None:
-        return True, "live_spread_unknown_use_median"
+        return False, "live_spread_unknown"
     if float(live_bps) > SPREAD_REJECT_MULT * float(median_bps):
         return False, f"live_spread {live_bps:.1f}bp > {SPREAD_REJECT_MULT}× median {median_bps:.1f}"
     return True, "ok"
@@ -172,6 +175,22 @@ def group_id_for(symbol: str, groups: list[set[str]]) -> str:
     return f"solo:{s}"
 
 
+def min_lot_fits(
+    notional: float,
+    entry: float,
+    *,
+    min_notional: float = MIN_NOTIONAL_USD,
+    min_qty: float | None = None,
+) -> bool:
+    """True iff the sized ticket already covers the min lot. Never bump size up."""
+    if float(notional) < float(min_notional) - 1e-9:
+        return False
+    if min_qty is not None and float(min_qty) > 0 and float(entry) > 0:
+        if float(entry) * float(min_qty) > float(notional) + 1e-9:
+            return False
+    return True
+
+
 def size_crypto_order(
     *,
     symbol: str,
@@ -183,8 +202,17 @@ def size_crypto_order(
     median_adv_usd: float | None = None,
     groups: list[set[str]] | None = None,
     max_positions: int | None = None,
+    s_signal: float = 1.0,
+    vol_30d: float | None = None,
+    min_qty: float | None = None,
 ) -> tuple[float, dict[str, Any]]:
-    """Return notional (0 = reject) and diagnostics. Paper 1x."""
+    """Return notional (0 = reject) and diagnostics. Paper 1x.
+
+    Size = min of: vol weight (S × min(1, 25%/vol) × name cap); 0.5%/0.25% risk vs
+    8-ATR stop distance; 10%/5% equity; 1% median ADV (BTC/ETH included); correlated
+    group caps; 25% sleeve; 1.5% aggregate risk; then × ramp. If min lot does not
+    fit, skip — never enlarge.
+    """
     info: dict[str, Any] = {"symbol": _norm(symbol)}
     if entry <= 0 or stop <= 0 or stop >= entry:
         info["reason"] = "invalid_stop"
@@ -193,11 +221,20 @@ def size_crypto_order(
     if book.n_positions >= cap_n and _norm(symbol) not in book.name_notional:
         info["reason"] = "max_positions"
         return 0.0, info
+    s = max(0.0, min(1.0, float(s_signal)))
+    if s <= 1e-12:
+        info["reason"] = "S_zero"
+        return 0.0, info
+    if vol_30d is None or float(vol_30d) <= 0:
+        info["reason"] = "vol_unknown"
+        return 0.0, info
 
     risk_per_unit = entry - stop
     name_notional_cap, name_risk_cap = per_name_caps(symbol, equity)
-    risk_budget = name_risk_cap * ramp_mult(n_trades)
-    raw = risk_budget / risk_per_unit * entry if risk_per_unit > 0 else 0.0
+    scale = min(1.0, VOL_TARGET / float(vol_30d))
+    vol_notional = s * scale * name_notional_cap
+    # Risk vs chandelier distance (8 ATR at entry); ramp applied once at the end.
+    raw_risk = name_risk_cap / risk_per_unit * entry if risk_per_unit > 0 else 0.0
 
     sleeve_cap = equity * MAX_CRYPTO_EQUITY_PCT / 100.0
     sleeve_room = max(0.0, sleeve_cap - book.crypto_notional)
@@ -206,10 +243,10 @@ def size_crypto_order(
     agg_risk_room = max(0.0, agg_risk_cap - book.open_risk_usd)
     notional_from_agg_risk = agg_risk_room / risk_per_unit * entry if risk_per_unit > 0 else 0.0
 
-    notional = min(raw, sleeve_room, name_room, notional_from_agg_risk)
+    notional = min(vol_notional, raw_risk, sleeve_room, name_room, notional_from_agg_risk)
 
-    if not is_btc_eth(symbol) and median_adv_usd and median_adv_usd > 0:
-        adv_cap = median_adv_usd * ALT_ADV_PCT / 100.0
+    if median_adv_usd and median_adv_usd > 0:
+        adv_cap = float(median_adv_usd) * ADV_PCT / 100.0
         notional = min(notional, adv_cap)
         info["adv_cap"] = round(adv_cap, 2)
 
@@ -221,19 +258,24 @@ def size_crypto_order(
     g_not_from_risk = g_risk_room / risk_per_unit * entry if risk_per_unit > 0 else 0.0
     notional = min(notional, g_not_room, g_not_from_risk)
 
-    notional *= ramp_mult(n_trades)
-    if notional < 10:
-        info["reason"] = "too_small"
-        return 0.0, info
+    ramp = ramp_mult(n_trades)
+    notional *= ramp
     info.update(
         {
-            "reason": "ok",
-            "raw": round(raw, 2),
-            "ramp": ramp_mult(n_trades),
+            "vol_scale": round(scale, 6),
+            "vol_notional": round(vol_notional, 2),
+            "raw_risk": round(raw_risk, 2),
+            "S": s,
+            "ramp": ramp,
             "group": gid,
             "stop_pct": round(risk_per_unit / entry * 100.0, 4),
         }
     )
+    if not min_lot_fits(notional, entry, min_qty=min_qty):
+        info["reason"] = "too_small"
+        info["sized"] = round(notional, 4)
+        return 0.0, info
+    info["reason"] = "ok"
     return round(notional, 2), info
 
 

@@ -173,11 +173,11 @@ class CryptoBreakoutSpecialist(_SpecBase):
 
 class CryptoStrategyASpecialist(_SpecBase):
     name = "crypto_strategy_a"
-    label_es = "Crypto · Estrategia A (Donchian 4h)"
-    objective_es = "Tendencia multi-horizonte 4h, solo compras; params fijos BTC/ETH; stops por software"
+    label_es = "Crypto · Estrategia A combo #9 (Donchian 4h)"
+    objective_es = "Combo #9: Donchian 120/240/480, S, BTC SMA200 4h, chandelier 8×ATR; stops por software"
 
     async def analyze(self, ticker: str, **kwargs) -> AgentReport:
-        from services.multiasset.strategy_a import ATR_STOP_MULT, signal_for_symbol
+        from services.multiasset.strategy_a import CHANDELIER_ATR_MULT, signal_for_symbol
 
         frames = kwargs.get("frames")
         sig = await signal_for_symbol(ticker, frames=frames)
@@ -186,15 +186,19 @@ class CryptoStrategyASpecialist(_SpecBase):
             ticker,
             score,
             0.58 if sig.side == "buy" else 0.35,
-            f"Estrategia A: {sig.reason}",
+            f"Estrategia A combo#9: {sig.reason}",
             raw={
                 "specialist": True,
                 "strategy": "A",
+                "combo": 9,
                 "setup": sig.side,
+                "S": sig.S,
                 "stop_px": sig.stop_px,
                 "atr": sig.atr_abs,
-                "stop_mult": ATR_STOP_MULT,
+                "stop_mult": CHANDELIER_ATR_MULT,
+                "tp": None,
                 "software_stop": True,
+                "broker_stop": "none",
                 "leverage": 1.0,
                 **sig.extras,
             },
