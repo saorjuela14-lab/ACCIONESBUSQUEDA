@@ -5,9 +5,10 @@ Does not change Multi-Asset PAPER strategy or risk limits.
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime
-from typing import Any
+from typing import Any, Mapping
 
 from utils.market_hours import MARKET_CLOSE, US_EASTERN, is_market_open, now_et
 
@@ -298,3 +299,43 @@ async def arm_deposited_brake_if_needed(
         confirm=True,
     )
     return {"armed": True, "flatten": False, "reason": reason, "state": state.model_dump(mode="json")}
+
+
+ALPACA_MODE_ENV_VARS = ("ALPACA_PAPER", "ALPACA_LIVE_TRADE")
+
+
+def alpaca_mode_explicit_in_environ(environ: Mapping[str, str] | None = None) -> bool:
+    """True when paper vs LIVE was set in the process environment (not a code default)."""
+    env = os.environ if environ is None else environ
+    for key in ALPACA_MODE_ENV_VARS:
+        val = env.get(key)
+        if val is not None and str(val).strip() != "":
+            return True
+    return False
+
+
+def production_trading_unconfigured(
+    settings: Any | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> bool:
+    """APP_ENV=production without an explicit ALPACA_PAPER / ALPACA_LIVE_TRADE."""
+    if settings is None:
+        from config.settings import get_settings
+
+        settings = get_settings()
+    env_name = str(getattr(settings, "app_env", "") or "")
+    return env_name == "production" and not alpaca_mode_explicit_in_environ(environ)
+
+
+def trading_mode_label(
+    settings: Any | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> str:
+    """paper | live | unconfigured."""
+    if settings is None:
+        from config.settings import get_settings
+
+        settings = get_settings()
+    if production_trading_unconfigured(settings, environ):
+        return "unconfigured"
+    return "paper" if bool(settings.effective_alpaca_paper) else "live"

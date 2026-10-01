@@ -230,6 +230,12 @@ class IntradayFlatService:
                     except Exception as jexc:
                         logger.warning("trade_journal.close_failed", symbol=sym, error=str(jexc))
             except Exception as exc:
+                logger.warning(
+                    "intraday.close_position_failed_stop_intact",
+                    symbol=sym,
+                    error=str(exc),
+                    detail="DELETE /v2/positions rejected; we did not cancel the bracket stop",
+                )
                 errors.append(f"{sym}: {exc}")
 
         # Annotate carried mandates for next-session fishing

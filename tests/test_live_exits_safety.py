@@ -301,3 +301,79 @@ async def test_autopilot_kill_still_runs_lifecycle():
     assert out["kill_switch"] == "active_exits_only"
     assert out["auto_execute"]["reason"] == "exits_only_cycle"
     life.scan.assert_awaited()
+
+
+def test_production_without_alpaca_mode_env_is_unconfigured():
+    from services.live_safety import (
+        production_trading_unconfigured,
+        trading_mode_label,
+    )
+
+    s = Settings.model_validate({"app_env": "production", "alpaca_paper": True})
+    assert production_trading_unconfigured(s, environ={}) is True
+    assert trading_mode_label(s, environ={}) == "unconfigured"
+    assert production_trading_unconfigured(s, environ={"ALPACA_PAPER": "true"}) is False
+    assert trading_mode_label(s, environ={"ALPACA_PAPER": "true"}) == "paper"
+    live = Settings.model_validate(
+        {"app_env": "production", "alpaca_paper": False, "alpaca_live_trade": True}
+    )
+    assert trading_mode_label(live, environ={"ALPACA_LIVE_TRADE": "true"}) == "live"
+
+
+def test_factory_refuses_silent_paper_in_production(monkeypatch):
+    from config.settings import get_settings
+    from providers.broker.factory import get_broker_provider
+
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.delenv("ALPACA_PAPER", raising=False)
+    monkeypatch.delenv("ALPACA_LIVE_TRADE", raising=False)
+    monkeypatch.setenv("ALPACA_API_KEY", "CKXXXXLIVE")
+    monkeypatch.setenv("ALPACA_SECRET_KEY", "secret-live")
+    get_settings.cache_clear()
+    try:
+        broker = get_broker_provider()
+        assert broker.is_configured() is False
+        assert broker._api_key == ""
+        assert broker._secret_key == ""
+    finally:
+        get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_execute_blocked_when_trading_unconfigured():
+    from domain.broker import ExecuteLine, ExecuteOrdersRequest
+    from services.alpaca_order_service import AlpacaOrderService
+
+    inner = MagicMock()
+    inner.is_configured.return_value = True
+    inner.paper = False
+    inner.submit_order = AsyncMock(side_effect=AssertionError("no orders"))
+    svc = AlpacaOrderService(broker=inner)
+    with patch("services.live_safety.production_trading_unconfigured", return_value=True):
+        out = await svc.execute(
+            ExecuteOrdersRequest(
+                lines=[ExecuteLine(ticker="SNAP", shares=1, side="buy")],
+                dry_run=False,
+                confirm_live=True,
+            )
+        )
+    assert out.submitted == []
+    assert any("trading_mode_unconfigured" in w for w in out.warnings)
+    inner.submit_order.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_health_includes_trading_mode_unconfigured():
+    from apis.routes.health import health_check
+
+    s = MagicMock()
+    s.app_env = "production"
+    s.whatsapp_briefing_enabled = False
+    s.effective_alpaca_paper = True
+    with patch("apis.routes.health.db_snapshot", return_value={"ready": True, "host": None, "error": None}), \
+         patch("apis.routes.health.get_settings", return_value=s), \
+         patch("services.live_safety.trading_mode_label", return_value="unconfigured"):
+        out = await health_check()
+    assert out["trading_mode"] == "unconfigured"
+    assert out["trading_mode_unconfigured"] is True
+    assert out["status"] == "healthy"

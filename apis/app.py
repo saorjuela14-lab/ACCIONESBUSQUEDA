@@ -43,6 +43,20 @@ async def lifespan(app: FastAPI):
         autopilot_minutes=settings.effective_autopilot_interval_minutes,
         db_ready=db_ok,
     )
+    from services.live_safety import production_trading_unconfigured, trading_mode_label
+
+    mode = trading_mode_label(settings)
+    if production_trading_unconfigured(settings):
+        logger.error(
+            "app.startup.trading_mode_unconfigured",
+            detail=(
+                "APP_ENV=production without ALPACA_PAPER or ALPACA_LIVE_TRADE. "
+                "Read-only: refusing to connect Alpaca (would guess paper with LIVE keys). "
+                "Set ALPACA_PAPER=false and ALPACA_LIVE_TRADE=true for LIVE, "
+                "or ALPACA_PAPER=true for paper."
+            ),
+            trading_mode=mode,
+        )
 
     if db_ok and settings.firm_autonomy:
         try:

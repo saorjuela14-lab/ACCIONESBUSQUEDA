@@ -30,6 +30,12 @@ async def health_check() -> dict:
     if not snap["ready"] and snap.get("error"):
         out["db_error"] = snap["error"]
     settings = get_settings()
+    from services.live_safety import trading_mode_label
+
+    mode = trading_mode_label(settings)
+    out["trading_mode"] = mode
+    if mode == "unconfigured":
+        out["trading_mode_unconfigured"] = True
     if not snap["ready"] or not settings.whatsapp_briefing_enabled:
         return out
 

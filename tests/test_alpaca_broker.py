@@ -373,3 +373,125 @@ async def test_composite_prefers_alpaca():
     assert quote["source"] == "alpaca"
     polygon.get_history.assert_not_called()
     alpha.get_history.assert_not_called()
+
+
+def test_flatten_orders_includes_nested_stop_leg():
+    from providers.broker.alpaca_provider import flatten_orders_with_legs
+
+    parent = {
+        "id": "parent-1",
+        "symbol": "SNAP",
+        "side": "buy",
+        "type": "market",
+        "legs": [
+            {"id": "tp-1", "symbol": "SNAP", "side": "sell", "type": "limit"},
+            {"id": "stop-1", "symbol": "SNAP", "side": "sell", "type": "stop", "stop_price": "5.48"},
+        ],
+    }
+    flat = flatten_orders_with_legs([parent])
+    ids = [o["id"] for o in flat]
+    assert ids == ["parent-1", "tp-1", "stop-1"]
+
+
+@pytest.mark.asyncio
+async def test_replace_order_patches_stop_price():
+    broker = AlpacaBrokerProvider(api_key="key", secret_key="sec", paper=True)
+    patched = {
+        "id": "stop-1",
+        "symbol": "SNAP",
+        "qty": "1",
+        "side": "sell",
+        "type": "stop",
+        "status": "new",
+        "stop_price": "5.60",
+    }
+    mock_client = AsyncMock()
+    mock_client.request = AsyncMock(return_value=_mock_response(200, patched))
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("providers.broker.alpaca_provider.httpx.AsyncClient", return_value=mock_client):
+        data = await broker.replace_order("stop-1", stop_price=5.60)
+
+    assert data["id"] == "stop-1"
+    call = mock_client.request.call_args
+    assert call[0][0] == "PATCH"
+    assert call[0][1].endswith("/v2/orders/stop-1")
+    assert call[1]["json"] == {"stop_price": "5.6"}
+
+
+@pytest.mark.asyncio
+async def test_replace_protective_stop_patches_existing_leg_not_second_sell():
+    from domain.broker import BrokerOrderResult
+
+    inner = MagicMock()
+    inner.replace_order = AsyncMock(
+        return_value={
+            "id": "stop-1",
+            "symbol": "SNAP",
+            "qty": "1",
+            "side": "sell",
+            "type": "stop",
+            "status": "new",
+            "stop_price": "5.70",
+        }
+    )
+    inner.submit_order = AsyncMock(side_effect=AssertionError("must not submit a second sell"))
+    inner.cancel_order = AsyncMock(side_effect=AssertionError("must not cancel existing stop"))
+    inner.last_request_id = "req-1"
+    inner.paper = True
+
+    svc = AlpacaOrderService(broker=inner)
+    existing = BrokerOrderResult(
+        id="stop-1",
+        symbol="SNAP",
+        qty=1,
+        side="sell",
+        type="stop",
+        status="new",
+        raw={"stop_price": "5.48"},
+    )
+    with patch.object(svc, "list_orders", AsyncMock(return_value=[existing])), patch(
+        "utils.market_hours.eod_may_submit_orders", return_value=True
+    ), patch("services.live_safety.production_trading_unconfigured", return_value=False):
+        result = await svc.replace_protective_stop(symbol="SNAP", qty=1, stop_price=5.70)
+
+    assert result is not None
+    assert result.id == "stop-1"
+    inner.replace_order.assert_awaited_once()
+    assert inner.replace_order.await_args.kwargs["stop_price"] == 5.70
+    inner.submit_order.assert_not_called()
+    inner.cancel_order.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_replace_protective_stop_patch_fail_keeps_old_stop():
+    from domain.broker import BrokerOrderResult
+
+    inner = MagicMock()
+    inner.replace_order = AsyncMock(side_effect=RuntimeError("qty reserved"))
+    inner.submit_order = AsyncMock(side_effect=AssertionError("must not place second sell"))
+    inner.cancel_order = AsyncMock(side_effect=AssertionError("must not cancel"))
+    inner.last_request_id = None
+    inner.paper = True
+
+    svc = AlpacaOrderService(broker=inner)
+    existing = BrokerOrderResult(
+        id="stop-1",
+        symbol="SNAP",
+        qty=1,
+        side="sell",
+        type="stop",
+        status="held",
+        raw={"stop_price": "5.48"},
+    )
+    with patch.object(svc, "list_orders", AsyncMock(return_value=[existing])), patch(
+        "utils.market_hours.eod_may_submit_orders", return_value=True
+    ), patch("services.live_safety.production_trading_unconfigured", return_value=False):
+        result = await svc.replace_protective_stop(symbol="SNAP", qty=1, stop_price=5.70)
+
+    assert result is not None
+    assert result.status == "failed"
+    assert "patch_failed" in (result.error or "")
+    inner.submit_order.assert_not_called()
+    inner.cancel_order.assert_not_called()

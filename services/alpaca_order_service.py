@@ -74,6 +74,19 @@ class AlpacaOrderService:
         return self._broker.is_configured()
 
     async def status(self) -> BrokerStatus:
+        from services.live_safety import production_trading_unconfigured
+
+        if production_trading_unconfigured():
+            return BrokerStatus(
+                configured=False,
+                paper=True,
+                connected=False,
+                message=(
+                    "trading_mode_unconfigured: APP_ENV=production sin ALPACA_PAPER "
+                    "ni ALPACA_LIVE_TRADE. Solo lectura; no se conecta a Alpaca."
+                ),
+                base_url="",
+            )
         if not self._broker.is_configured():
             return BrokerStatus(
                 configured=False,
@@ -214,7 +227,19 @@ class AlpacaOrderService:
         return await self._broker.cancel_all_orders()
 
     async def close_position(self, symbol: str) -> dict[str, Any]:
-        return await self._broker.close_position(symbol)
+        from services.live_safety import production_trading_unconfigured
+
+        if production_trading_unconfigured():
+            raise RuntimeError("trading_mode_unconfigured")
+        try:
+            return await self._broker.close_position(symbol)
+        except Exception as exc:
+            logger.warning(
+                "broker.close_position_failed_stop_intact",
+                symbol=(symbol or "").upper(),
+                error=str(exc),
+            )
+            raise
 
     async def replace_protective_stop(
         self,
@@ -223,12 +248,23 @@ class AlpacaOrderService:
         qty: float,
         stop_price: float,
     ) -> BrokerOrderResult | None:
-        """Place a fresh GTC stop first; only then cancel the previous one (never naked)."""
+        """Tighten the existing GTC/bracket stop via PATCH. Never submit a second sell."""
+        from services.live_safety import production_trading_unconfigured
         from utils.market_hours import eod_may_submit_orders
 
         sym = symbol.upper().strip()
         if qty <= 0 or stop_price <= 0:
             return None
+        if production_trading_unconfigured():
+            logger.warning("broker.stop_replace_blocked", symbol=sym, reason="trading_mode_unconfigured")
+            return BrokerOrderResult(
+                symbol=sym,
+                qty=float(qty),
+                side="sell",
+                type="stop",
+                status="failed",
+                error="trading_mode_unconfigured",
+            )
         if not eod_may_submit_orders():
             logger.warning("broker.stop_replace_blocked_after_close", symbol=sym)
             return BrokerOrderResult(
@@ -243,43 +279,82 @@ class AlpacaOrderService:
             open_orders = await self.list_orders(status="open", limit=100)
         except Exception:
             open_orders = []
-        old_ids: list[str] = []
+        existing = None
         for od in open_orders:
             if (od.symbol or "").upper() != sym:
                 continue
             if (od.side or "").lower() != "sell":
                 continue
             otype = (od.type or "").lower()
-            if otype not in ("stop", "stop_limit"):
+            raw = od.raw if isinstance(getattr(od, "raw", None), dict) else {}
+            if otype not in ("stop", "stop_limit") and not raw.get("stop_price"):
                 continue
             if od.id:
-                old_ids.append(od.id)
+                existing = od
+                break
+        new_stop = round(float(stop_price), 2)
+        if existing and existing.id:
+            replace = getattr(self._broker, "replace_order", None)
+            if replace is None:
+                logger.warning(
+                    "broker.stop_patch_unavailable",
+                    symbol=sym,
+                    order_id=existing.id,
+                )
+                return BrokerOrderResult(
+                    id=existing.id,
+                    symbol=sym,
+                    qty=float(qty),
+                    side="sell",
+                    type=existing.type or "stop",
+                    status="failed",
+                    error="replace_order_unavailable",
+                    raw=existing.raw or {},
+                )
+            try:
+                raw = await replace(existing.id, stop_price=new_stop)
+                mapped = self._map_order(raw if isinstance(raw, dict) else {})
+                logger.info(
+                    "broker.stop_patched",
+                    symbol=sym,
+                    order_id=existing.id,
+                    stop=new_stop,
+                )
+                return mapped
+            except Exception as exc:
+                logger.warning(
+                    "broker.stop_patch_failed",
+                    symbol=sym,
+                    order_id=existing.id,
+                    error=str(exc),
+                )
+                return BrokerOrderResult(
+                    id=existing.id,
+                    symbol=sym,
+                    qty=float(existing.qty or qty),
+                    side="sell",
+                    type=existing.type or "stop",
+                    status="failed",
+                    error=f"patch_failed:{exc}",
+                    raw=existing.raw or {},
+                )
+        # No working stop — place a standalone GTC (do not cancel anything).
         settings = get_settings()
         allow_overnight_carry = bool(
             settings.intraday_only_enabled and settings.intraday_flat_winners_only
         )
         tif = "gtc" if (not settings.intraday_only_enabled or allow_overnight_carry) else "day"
-        placed = await self.submit_one(
+        return await self.submit_one(
             BrokerOrderRequest(
                 symbol=sym,
                 qty=float(qty),
                 side="sell",
                 order_type="stop",
                 time_in_force=tif,
-                stop_price=round(float(stop_price), 2),
+                stop_price=new_stop,
                 client_order_id=f"nexbuy-trail-{sym.lower()}-{uuid4().hex[:8]}",
             )
         )
-        if placed.error or placed.status == "failed":
-            # Keep the existing bracket; do not cancel.
-            return placed
-        for oid in old_ids:
-            if oid and oid != placed.id:
-                try:
-                    await self.cancel_order(oid)
-                except Exception:
-                    pass
-        return placed
 
     async def latest_filled_sell(self, symbol: str) -> BrokerOrderResult | None:
         """Most recent filled sell for journal/cooldown (broker stop or close)."""
@@ -321,6 +396,17 @@ class AlpacaOrderService:
 
     async def execute(self, request: ExecuteOrdersRequest) -> ExecuteOrdersResponse:
         warnings: list[str] = []
+        from services.live_safety import production_trading_unconfigured
+
+        if production_trading_unconfigured():
+            return ExecuteOrdersResponse(
+                paper=self._broker.paper,
+                dry_run=request.dry_run,
+                warnings=[
+                    "trading_mode_unconfigured: APP_ENV=production sin ALPACA_PAPER "
+                    "ni ALPACA_LIVE_TRADE. Trading en solo-lectura; no se elige paper/LIVE."
+                ],
+            )
         if not self._broker.is_configured():
             return ExecuteOrdersResponse(
                 paper=self._broker.paper,

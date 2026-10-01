@@ -12,8 +12,12 @@ if TYPE_CHECKING:
 
 def get_broker_provider() -> AlpacaBrokerProvider:
     from providers.broker.alpaca_provider import AlpacaBrokerProvider
+    from services.live_safety import production_trading_unconfigured
 
     settings = get_settings()
+    if production_trading_unconfigured(settings):
+        # Empty keys: no HTTP. Do not guess paper vs LIVE (LIVE keys on paper-api).
+        return AlpacaBrokerProvider(api_key="", secret_key="", paper=True)
     return AlpacaBrokerProvider(
         api_key=settings.alpaca_api_key,
         secret_key=settings.alpaca_secret_key,
