@@ -105,6 +105,39 @@ class AutoExecuteService:
             logger.info("auto_execute.skip", reason=reason)
             return {"skipped": True, "reason": reason}
 
+        from services.live_safety import (
+            FLAG_ENTRY_DAY,
+            FLAG_SUBMIT_FAILS,
+            entry_day_allowed,
+            live_buys_allowed,
+            submit_already_paused,
+        )
+
+        entries_ok, entries_why = live_buys_allowed(
+            paper=bool(self._broker.paper),
+            live_entries_enabled=bool(getattr(self._settings, "live_entries_enabled", False)),
+        )
+        if not entries_ok:
+            return {"skipped": True, "reason": entries_why}
+
+        flags = None
+        try:
+            from database.repositories.ops_repository import OpsFlagRepository
+
+            flags = OpsFlagRepository(self._session)
+            fail_flag = await flags.get_json(FLAG_SUBMIT_FAILS)
+            if submit_already_paused(fail_flag):
+                return {"skipped": True, "reason": "submit_fail_pause"}
+            day_flag = await flags.get_json(FLAG_ENTRY_DAY)
+            day_ok, day_why, day_flag = entry_day_allowed(
+                day_flag,
+                max_entries=int(getattr(self._settings, "live_max_entries_per_day", 1) or 1),
+            )
+            if not day_ok:
+                return {"skipped": True, "reason": day_why}
+        except Exception as exc:
+            logger.warning("auto_execute.entry_budget_failed", error=str(exc))
+
         # Risk desk OK
         if self.policy().require_risk_desk_ok:
             try:
@@ -287,6 +320,39 @@ class AutoExecuteService:
                 confirm_live=not self._broker.paper,
             )
         )
+        try:
+            from database.repositories.ops_repository import OpsFlagRepository
+            from services.live_safety import (
+                FLAG_ENTRY_DAY,
+                FLAG_SUBMIT_FAILS,
+                entry_day_allowed,
+                record_entry_day_fill,
+                submit_fail_pause,
+            )
+
+            flags = OpsFlagRepository(self._session)
+            if result.submitted:
+                day_flag = await flags.get_json(FLAG_ENTRY_DAY)
+                _, _, day_flag = entry_day_allowed(
+                    day_flag,
+                    max_entries=int(getattr(self._settings, "live_max_entries_per_day", 1) or 1),
+                )
+                for od in result.submitted:
+                    day_flag = record_entry_day_fill(day_flag, od.symbol)
+                    break  # max 1 entry/day — count the batch as one
+                await flags.set_json(FLAG_ENTRY_DAY, day_flag)
+            fail_flag = await flags.get_json(FLAG_SUBMIT_FAILS)
+            paused, pause_why, fail_flag = submit_fail_pause(
+                fail_flag,
+                submitted=len(result.submitted),
+                failed=len(result.failed),
+                max_fails=int(getattr(self._settings, "live_submit_fail_pause", 3) or 3),
+            )
+            await flags.set_json(FLAG_SUBMIT_FAILS, fail_flag)
+            if paused:
+                logger.warning("auto_execute.submit_fail_pause", reason=pause_why)
+        except Exception as exc:
+            logger.warning("auto_execute.entry_budget_persist_failed", error=str(exc))
         await self._audit.record(
             "auto_execute",
             actor=actor,

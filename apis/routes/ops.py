@@ -19,6 +19,7 @@ from services.alpaca_order_service import AlpacaOrderService
 from services.audit_service import AuditService
 from services.auto_execute_service import AutoExecuteService
 from services.kill_switch_service import KillSwitchService
+from services.live_safety import trading_mode_label
 from services.portfolio_risk_metrics_service import PortfolioRiskMetricsService
 from services.position_lifecycle_service import PositionLifecycleService
 from services.reconcile_service import ReconcileService
@@ -221,6 +222,12 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
         "intraday_flat_min_pnl_pct": settings.intraday_flat_min_pnl_pct,
         "intraday_2r_hold_enabled": settings.intraday_2r_hold_enabled,
         "intraday_carry_max_loss_pct": settings.intraday_carry_max_loss_pct,
+        "live_entries_enabled": bool(settings.live_entries_enabled),
+        "live_max_entries_per_day": settings.live_max_entries_per_day,
+        "live_submit_fail_pause": settings.live_submit_fail_pause,
+        "deposited_brake_pct": settings.deposited_brake_pct,
+        "app_env": settings.app_env,
+        "trading_mode": trading_mode_label(settings),
         "risk_discipline": {
             "max_risk_pct": settings.auto_execute_max_risk_pct,
             "micro_max_risk_pct": settings.auto_execute_micro_max_risk_pct,

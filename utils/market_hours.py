@@ -70,6 +70,11 @@ def should_run_automation(dt: datetime | None = None) -> bool:
     return PRE_MARKET_START <= t < POST_MARKET_END
 
 
+def eod_may_submit_orders(dt: datetime | None = None) -> bool:
+    """True only during the regular session (09:30 ≤ t < 16:00 ET). No orders after the close."""
+    return is_market_open(dt)
+
+
 def minutes_to_regular_close(dt: datetime | None = None) -> float | None:
     """Minutes until 16:00 ET on a trading day; None if not a session day."""
     dt = dt or now_et()

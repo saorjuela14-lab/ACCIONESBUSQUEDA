@@ -173,25 +173,52 @@ class PositionLifecycleService:
         existing = {m.symbol: m for m in await self._mandates.list_open()}
 
         # Close mandates no longer held
+        from services.live_safety import (
+            filled_exit_price_from_order,
+            order_looks_like_stop,
+            skip_reopen_after_hours_close,
+        )
+
         for sym, m in existing.items():
             if sym not in open_syms:
+                fill_od = None
+                fill_px = None
+                try:
+                    fill_od = await self._broker.latest_filled_sell(sym)
+                    fill_px = filled_exit_price_from_order(fill_od)
+                except Exception:
+                    fill_od = None
+                    fill_px = None
                 m.status = "closed"
                 m.closed_at = utc_now()
-                m.exit_reason = m.exit_reason or "posición ausente en Alpaca"
+                if fill_px:
+                    m.exit_reason = m.exit_reason or (
+                        f"broker fill @{fill_px:.4f}"
+                        + (" (stop)" if order_looks_like_stop(fill_od) else "")
+                    )
+                else:
+                    m.exit_reason = m.exit_reason or "posición ausente en Alpaca (sin fill)"
                 await self._mandates.save(m)
-                try:
-                    from services.trade_journal_service import TradeJournalService
+                if fill_px and fill_px > 0:
+                    try:
+                        from services.trade_journal_service import TradeJournalService
 
-                    px = float(m.peak_price or m.entry_price or 0)
-                    if px > 0:
                         await TradeJournalService(self._session).record_close(
                             symbol=sym,
-                            exit_price=px,
+                            exit_price=fill_px,
                             exit_reason=m.exit_reason,
                             closed_at=m.closed_at,
                         )
-                except Exception as exc:
-                    logger.warning("trade_journal.close_failed", symbol=sym, error=str(exc))
+                    except Exception as exc:
+                        logger.warning("trade_journal.close_failed", symbol=sym, error=str(exc))
+                    if order_looks_like_stop(fill_od) or "stop" in (m.exit_reason or "").lower():
+                        await self._record_stop_cooldown(sym, m.exit_reason or "broker_stop", fill_px)
+                else:
+                    logger.info(
+                        "lifecycle.absent_no_fill",
+                        symbol=sym,
+                        reason="skip journal P&L 0 without real fill",
+                    )
 
         out: list[PositionMandate] = []
         params = await self._exit_params()
@@ -212,6 +239,14 @@ class PositionLifecycleService:
                 await self._mandates.save(m)
                 out.append(m)
             else:
+                latest = None
+                try:
+                    latest = await self._mandates.get_latest(sym)
+                except Exception:
+                    latest = None
+                if latest and latest.status == "closed" and skip_reopen_after_hours_close(latest.closed_at):
+                    logger.info("lifecycle.skip_reopen_after_hours", symbol=sym)
+                    continue
                 out.append(
                     await self.register_from_fill(
                         symbol=sym,

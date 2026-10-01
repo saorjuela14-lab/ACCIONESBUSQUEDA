@@ -124,9 +124,45 @@ class AlpacaBrokerProvider(BrokerProvider):
         data = await self._request(
             "GET",
             "/v2/orders",
-            params={"status": status, "limit": limit, "direction": "desc"},
+            params={
+                "status": status,
+                "limit": limit,
+                "direction": "desc",
+                "nested": "true",
+            },
         )
-        return data if isinstance(data, list) else []
+        rows = data if isinstance(data, list) else []
+        return flatten_orders_with_legs(rows)
+
+    async def replace_order(
+        self,
+        order_id: str,
+        *,
+        stop_price: float | None = None,
+        qty: float | None = None,
+        time_in_force: str | None = None,
+        limit_price: float | None = None,
+    ) -> dict[str, Any]:
+        """PATCH /v2/orders/{id} — mutate an existing working order (bracket stop leg)."""
+        oid = (order_id or "").strip()
+        if not oid:
+            raise ValueError("order_id requerido para replace")
+        body: dict[str, Any] = {}
+        if stop_price is not None:
+            body["stop_price"] = str(stop_price)
+        if qty is not None:
+            body["qty"] = str(qty)
+        if time_in_force:
+            body["time_in_force"] = time_in_force
+        if limit_price is not None:
+            body["limit_price"] = str(limit_price)
+        if not body:
+            raise ValueError("replace_order requiere al menos un campo")
+        logger.info("alpaca.replace_order", order_id=oid, fields=list(body.keys()), paper=self._paper)
+        result = await self._request("PATCH", f"/v2/orders/{oid}", json_body=body)
+        if isinstance(result, dict):
+            return result
+        return {"raw": result, "_request_id": self.last_request_id}
 
     async def submit_order(self, order: dict[str, Any]) -> dict[str, Any]:
         logger.info(
@@ -153,7 +189,11 @@ class AlpacaBrokerProvider(BrokerProvider):
         return [data] if data else []
 
     async def close_position(self, symbol: str) -> dict[str, Any]:
-        """DELETE /v2/positions/{symbol} — liquidate one position."""
+        """DELETE /v2/positions/{symbol} — liquidate one position.
+
+        Alpaca cancels open orders tied to that symbol as part of the close.
+        If this call fails, we do not cancel brackets ourselves (stop stays).
+        """
         return await self._request("DELETE", f"/v2/positions/{symbol.upper()}")
 
     async def close_all_positions(self, *, cancel_orders: bool = True) -> list[dict[str, Any]]:
@@ -217,4 +257,29 @@ class AlpacaBrokerProvider(BrokerProvider):
             inner = data.get("activities") or data.get("data") or []
             return inner if isinstance(inner, list) else []
         return []
+
+
+def flatten_orders_with_legs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Expand nested bracket/OTO legs so stop legs are visible as orders."""
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in rows or []:
+        if not isinstance(raw, dict):
+            continue
+        oid = str(raw.get("id") or "")
+        if oid and oid in seen:
+            continue
+        if oid:
+            seen.add(oid)
+        out.append(raw)
+        for leg in raw.get("legs") or []:
+            if not isinstance(leg, dict):
+                continue
+            lid = str(leg.get("id") or "")
+            if lid and lid in seen:
+                continue
+            if lid:
+                seen.add(lid)
+            out.append(leg)
+    return out
 

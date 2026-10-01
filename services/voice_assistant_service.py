@@ -354,12 +354,20 @@ Si no estás segura, pregunta una sola cosa. Sé proactiva y útil."""
                 "type": "function",
                 "function": {
                     "name": "set_kill_switch",
-                    "description": "Activa o desactiva el kill switch (frena compras)",
+                    "description": (
+                        "Activa el kill switch (frena compras, NO aplana el libro). "
+                        "DESACTIVAR solo con confirm=true y si el jefe dijo explícitamente "
+                        "'confirma desactivar kill switch'. Sin esa frase, no apagues."
+                    ),
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "enabled": {"type": "boolean"},
                             "reason": {"type": "string"},
+                            "confirm": {
+                                "type": "boolean",
+                                "description": "Obligatorio true para desactivar. El jefe debe confirmar en voz.",
+                            },
                         },
                         "required": ["enabled"],
                     },
@@ -547,7 +555,7 @@ Si no estás segura, pregunta una sola cosa. Sé proactiva y útil."""
                             args = {}
                         tools_used.append(fname)
                         result, extra = await self._dispatch_tool(
-                            fname, args, db, portfolio_id=portfolio_id
+                            fname, args, db, portfolio_id=portfolio_id, user_text=text
                         )
                         if extra.get("ui_action"):
                             ui_actions.append(extra["ui_action"])
@@ -617,6 +625,7 @@ Si no estás segura, pregunta una sola cosa. Sé proactiva y útil."""
         db: AsyncSession,
         *,
         portfolio_id: str | None,
+        user_text: str = "",
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         extra: dict[str, Any] = {}
         try:
@@ -656,6 +665,7 @@ Si no estás segura, pregunta una sola cosa. Sé proactiva y útil."""
                 status = {
                     "kill_switch": ks.model_dump(mode="json"),
                     "firm_autonomy": settings.firm_autonomy,
+                    "live_entries_enabled": bool(getattr(settings, "live_entries_enabled", False)),
                     "autopilot_interval_minutes": settings.effective_autopilot_interval_minutes,
                     "auto_execute_allowed": ok,
                     "auto_execute_reason": reason,
@@ -681,6 +691,7 @@ Si no estás segura, pregunta una sola cosa. Sé proactiva y útil."""
 
             if name == "set_kill_switch":
                 from services.kill_switch_service import KillSwitchService
+                from services.live_safety import voice_kill_off_confirmed
 
                 enabled = bool(args.get("enabled"))
                 reason = str(args.get("reason") or "Solicitado por voz")
@@ -693,8 +704,18 @@ Si no estás segura, pregunta una sola cosa. Sé proactiva y útil."""
                         flatten=False,
                         confirm=True,
                     )
-                else:
-                    state = await svc.deactivate(actor="voice_viernes", confirm=True)
+                    payload = state.model_dump(mode="json")
+                    return {"ok": True, "kill_switch": payload}, extra
+                if not voice_kill_off_confirmed(args, user_text):
+                    return {
+                        "ok": False,
+                        "requires_confirm": True,
+                        "error": (
+                            "El kill-switch solo lo apaga Sergio con confirmación explícita. "
+                            "Di: confirma desactivar kill switch."
+                        ),
+                    }, extra
+                state = await svc.deactivate(actor="voice_viernes", confirm=True)
                 payload = state.model_dump(mode="json")
                 return {"ok": True, "kill_switch": payload}, extra
 

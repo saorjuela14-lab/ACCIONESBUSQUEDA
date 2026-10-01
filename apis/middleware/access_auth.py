@@ -12,9 +12,9 @@ from config.settings import get_settings
 from utils.metrics import metrics
 
 # Entire static tree is public (JS/CSS must load without Bearer).
+# /metrics is authenticated — never public in production.
 PUBLIC_PREFIXES = (
     "/health",
-    "/metrics",
     "/api/v1/auth/",
     "/dashboard/static/",
     "/logout",
@@ -98,6 +98,8 @@ class AccessTokenMiddleware(BaseHTTPMiddleware):
 
         if any(path.startswith(p) for p in PUBLIC_PREFIXES):
             return await call_next(request)
+
+        # /metrics: desk/session only (was public). Health stays the wake-path.
 
         # Login page: public. After explicit logout (?logged_out=1) never bounce back.
         if path == "/login" and method == "GET":

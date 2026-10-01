@@ -4,7 +4,7 @@ from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from utils.market_hours import US_EASTERN, in_eod_flat_window, minutes_to_regular_close
+from utils.market_hours import US_EASTERN, eod_may_submit_orders, in_eod_flat_window, minutes_to_regular_close
 
 
 def test_eod_flat_window_around_close():
@@ -21,6 +21,11 @@ def test_eod_flat_window_around_close():
 
     dt4 = datetime(2026, 8, 5, 12, 0, tzinfo=US_EASTERN)
     assert in_eod_flat_window(20, dt4) is False
+
+    after = datetime(2026, 8, 5, 16, 5, tzinfo=US_EASTERN)
+    assert in_eod_flat_window(20, after) is True  # still blocks new buys
+    assert eod_may_submit_orders(after) is False
+    assert eod_may_submit_orders(dt3) is True
 
 
 def test_smart_flat_classifies_green_vs_red():

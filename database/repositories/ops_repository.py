@@ -129,6 +129,16 @@ class PositionMandateRepository:
         ).scalars().all()
         return [self._to_domain(r) for r in rows]
 
+    async def get_latest(self, symbol: str) -> PositionMandate | None:
+        row = (
+            await self._session.execute(
+                select(PositionMandateORM)
+                .where(PositionMandateORM.symbol == symbol.upper())
+                .order_by(PositionMandateORM.opened_at.desc())
+            )
+        ).scalars().first()
+        return self._to_domain(row) if row else None
+
     async def get_open(self, symbol: str) -> PositionMandate | None:
         row = (
             await self._session.execute(

@@ -89,17 +89,20 @@ async def test_company_register_login_and_me():
 
 
 @pytest.mark.asyncio
-async def test_metrics_and_alerts_page():
+async def test_metrics_requires_auth():
     await init_db()
     app = create_app()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         m = await client.get("/metrics")
-        assert m.status_code == 200
-        assert "counters" in m.json()
+        assert m.status_code == 401
 
         desk = await client.post("/api/v1/auth/login", json={"token": "desk-secret"})
         token = desk.json()["token"]
+        ok = await client.get("/metrics", headers={"Authorization": f"Bearer {token}"})
+        assert ok.status_code == 200
+        assert "counters" in ok.json()
+
         alerts = await client.get(
             "/api/v1/alerts?limit=10&offset=0",
             headers={"Authorization": f"Bearer {token}"},

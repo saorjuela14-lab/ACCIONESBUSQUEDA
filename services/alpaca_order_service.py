@@ -74,6 +74,19 @@ class AlpacaOrderService:
         return self._broker.is_configured()
 
     async def status(self) -> BrokerStatus:
+        from services.live_safety import production_trading_unconfigured
+
+        if production_trading_unconfigured():
+            return BrokerStatus(
+                configured=False,
+                paper=True,
+                connected=False,
+                message=(
+                    "trading_mode_unconfigured: APP_ENV=production sin ALPACA_PAPER "
+                    "ni ALPACA_LIVE_TRADE. Solo lectura; no se conecta a Alpaca."
+                ),
+                base_url="",
+            )
         if not self._broker.is_configured():
             return BrokerStatus(
                 configured=False,
@@ -214,7 +227,19 @@ class AlpacaOrderService:
         return await self._broker.cancel_all_orders()
 
     async def close_position(self, symbol: str) -> dict[str, Any]:
-        return await self._broker.close_position(symbol)
+        from services.live_safety import production_trading_unconfigured
+
+        if production_trading_unconfigured():
+            raise RuntimeError("trading_mode_unconfigured")
+        try:
+            return await self._broker.close_position(symbol)
+        except Exception as exc:
+            logger.warning(
+                "broker.close_position_failed_stop_intact",
+                symbol=(symbol or "").upper(),
+                error=str(exc),
+            )
+            raise
 
     async def replace_protective_stop(
         self,
@@ -223,27 +248,97 @@ class AlpacaOrderService:
         qty: float,
         stop_price: float,
     ) -> BrokerOrderResult | None:
-        """Cancel open sell stops for symbol and place a fresh GTC stop (trailing sync)."""
+        """Tighten the existing GTC/bracket stop via PATCH. Never submit a second sell."""
+        from services.live_safety import production_trading_unconfigured
+        from utils.market_hours import eod_may_submit_orders
+
         sym = symbol.upper().strip()
         if qty <= 0 or stop_price <= 0:
             return None
+        if production_trading_unconfigured():
+            logger.warning("broker.stop_replace_blocked", symbol=sym, reason="trading_mode_unconfigured")
+            return BrokerOrderResult(
+                symbol=sym,
+                qty=float(qty),
+                side="sell",
+                type="stop",
+                status="failed",
+                error="trading_mode_unconfigured",
+            )
+        if not eod_may_submit_orders():
+            logger.warning("broker.stop_replace_blocked_after_close", symbol=sym)
+            return BrokerOrderResult(
+                symbol=sym,
+                qty=float(qty),
+                side="sell",
+                type="stop",
+                status="failed",
+                error="after_regular_close_no_orders",
+            )
         try:
             open_orders = await self.list_orders(status="open", limit=100)
         except Exception:
             open_orders = []
+        existing = None
         for od in open_orders:
-            if od.symbol.upper() != sym:
+            if (od.symbol or "").upper() != sym:
                 continue
             if (od.side or "").lower() != "sell":
                 continue
             otype = (od.type or "").lower()
-            if otype not in ("stop", "stop_limit"):
+            raw = od.raw if isinstance(getattr(od, "raw", None), dict) else {}
+            if otype not in ("stop", "stop_limit") and not raw.get("stop_price"):
                 continue
             if od.id:
-                try:
-                    await self.cancel_order(od.id)
-                except Exception:
-                    pass
+                existing = od
+                break
+        new_stop = round(float(stop_price), 2)
+        if existing and existing.id:
+            replace = getattr(self._broker, "replace_order", None)
+            if replace is None:
+                logger.warning(
+                    "broker.stop_patch_unavailable",
+                    symbol=sym,
+                    order_id=existing.id,
+                )
+                return BrokerOrderResult(
+                    id=existing.id,
+                    symbol=sym,
+                    qty=float(qty),
+                    side="sell",
+                    type=existing.type or "stop",
+                    status="failed",
+                    error="replace_order_unavailable",
+                    raw=existing.raw or {},
+                )
+            try:
+                raw = await replace(existing.id, stop_price=new_stop)
+                mapped = self._map_order(raw if isinstance(raw, dict) else {})
+                logger.info(
+                    "broker.stop_patched",
+                    symbol=sym,
+                    order_id=existing.id,
+                    stop=new_stop,
+                )
+                return mapped
+            except Exception as exc:
+                logger.warning(
+                    "broker.stop_patch_failed",
+                    symbol=sym,
+                    order_id=existing.id,
+                    error=str(exc),
+                )
+                return BrokerOrderResult(
+                    id=existing.id,
+                    symbol=sym,
+                    qty=float(existing.qty or qty),
+                    side="sell",
+                    type=existing.type or "stop",
+                    status="failed",
+                    error=f"patch_failed:{exc}",
+                    raw=existing.raw or {},
+                )
+        # No working stop — place a standalone GTC (do not cancel anything).
         settings = get_settings()
         allow_overnight_carry = bool(
             settings.intraday_only_enabled and settings.intraday_flat_winners_only
@@ -256,10 +351,28 @@ class AlpacaOrderService:
                 side="sell",
                 order_type="stop",
                 time_in_force=tif,
-                stop_price=round(float(stop_price), 2),
+                stop_price=new_stop,
                 client_order_id=f"nexbuy-trail-{sym.lower()}-{uuid4().hex[:8]}",
             )
         )
+
+    async def latest_filled_sell(self, symbol: str) -> BrokerOrderResult | None:
+        """Most recent filled sell for journal/cooldown (broker stop or close)."""
+        sym = (symbol or "").upper().strip()
+        try:
+            closed = await self.list_orders(status="closed", limit=50)
+        except Exception:
+            return None
+        for od in closed:
+            if (od.symbol or "").upper() != sym:
+                continue
+            if (od.side or "").lower() != "sell":
+                continue
+            from services.live_safety import filled_exit_price_from_order
+
+            if filled_exit_price_from_order(od):
+                return od
+        return None
 
     async def close_all_positions(self, *, cancel_orders: bool = True) -> list[dict[str, Any]]:
         return await self._broker.close_all_positions(cancel_orders=cancel_orders)
@@ -283,6 +396,17 @@ class AlpacaOrderService:
 
     async def execute(self, request: ExecuteOrdersRequest) -> ExecuteOrdersResponse:
         warnings: list[str] = []
+        from services.live_safety import production_trading_unconfigured
+
+        if production_trading_unconfigured():
+            return ExecuteOrdersResponse(
+                paper=self._broker.paper,
+                dry_run=request.dry_run,
+                warnings=[
+                    "trading_mode_unconfigured: APP_ENV=production sin ALPACA_PAPER "
+                    "ni ALPACA_LIVE_TRADE. Trading en solo-lectura; no se elige paper/LIVE."
+                ],
+            )
         if not self._broker.is_configured():
             return ExecuteOrdersResponse(
                 paper=self._broker.paper,
@@ -305,30 +429,35 @@ class AlpacaOrderService:
         if not self._broker.paper:
             warnings.append("ATENCIÓN: órdenes en cuenta LIVE con dinero real.")
 
-        # --- Kill switch (panic flat) ---
+        # --- Kill switch: block entries, allow exits (brackets stay). ---
+        kill_active = False
         try:
             from database.engine import get_session
             from services.kill_switch_service import KillSwitchService
 
             async for session in get_session():
-                if await KillSwitchService(session, self).is_active():
-                    return ExecuteOrdersResponse(
-                        paper=self._broker.paper,
-                        dry_run=request.dry_run,
-                        warnings=[
-                            "KILL SWITCH ACTIVO — nuevas órdenes bloqueadas. "
-                            "Desactiva en Ops / kill-switch o POST /api/v1/ops/kill-switch/off."
-                        ],
-                    )
+                kill_active = await KillSwitchService(session, self).is_active()
                 break
         except Exception as exc:
             warnings.append(f"Kill switch check falló ({exc})")
+        if kill_active:
+            warnings.append(
+                "KILL SWITCH ACTIVO — entradas bloqueadas; stops/TP/salidas permitidos."
+            )
 
         account = None
         positions: list[BrokerPosition] = []
         try:
             account = await self.get_account()
-            if account.cash <= 0 and account.buying_power <= 0 and not request.dry_run:
+            buy_only = any(ln.side == "buy" for ln in request.lines) and not any(
+                ln.side == "sell" for ln in request.lines
+            )
+            if (
+                buy_only
+                and account.cash <= 0
+                and account.buying_power <= 0
+                and not request.dry_run
+            ):
                 return ExecuteOrdersResponse(
                     paper=self._broker.paper,
                     dry_run=request.dry_run,
@@ -345,6 +474,37 @@ class AlpacaOrderService:
             positions = await self.get_positions()
         except Exception:
             positions = []
+
+        # Accumulated 5% vs deposited — arm kill without flatten; allow exits.
+        if account and not self._broker.paper and not request.dry_run:
+            try:
+                from services.deposited_capital_service import resolve_trading_base
+                from services.live_safety import arm_deposited_brake_if_needed
+
+                eq = float(account.equity or 0)
+                base_snap = await resolve_trading_base(equity=eq)
+                base = base_snap.amount if base_snap.amount and base_snap.amount > 0 else None
+                pct = float(getattr(get_settings(), "deposited_brake_pct", 5.0) or 5.0)
+                from database.engine import get_session as _gsess
+
+                async for session in _gsess():
+                    armed = await arm_deposited_brake_if_needed(
+                        session,
+                        self,
+                        equity=eq,
+                        base=base,
+                        pct=pct,
+                        actor="deposited_brake",
+                    )
+                    if armed:
+                        kill_active = True
+                        warnings.append(
+                            armed.get("reason")
+                            or "Freno 5% vs depositado — entradas bloqueadas, brackets intactos."
+                        )
+                    break
+            except Exception as exc:
+                warnings.append(f"deposited_brake check falló ({exc})")
 
         # --- Risk desk + macro gate ---
         policy = self._risk.policy_from_settings()
@@ -468,7 +628,52 @@ class AlpacaOrderService:
         failed: list[BrokerOrderResult] = []
         request_ids: list[str] = []
 
+        from services.live_safety import is_buy_side, live_buys_allowed
+        from utils.market_hours import eod_may_submit_orders
+
         for line in request.lines:
+            if is_buy_side(line.side) and not request.dry_run:
+                if not eod_may_submit_orders():
+                    failed.append(
+                        BrokerOrderResult(
+                            symbol=line.ticker.upper(),
+                            qty=line.shares,
+                            side=line.side,
+                            type=line.order_type,
+                            status="failed",
+                            error="after_regular_close_no_orders",
+                        )
+                    )
+                    continue
+                if kill_active:
+                    failed.append(
+                        BrokerOrderResult(
+                            symbol=line.ticker.upper(),
+                            qty=line.shares,
+                            side=line.side,
+                            type=line.order_type,
+                            status="failed",
+                            error="kill_switch_entries_blocked",
+                        )
+                    )
+                    continue
+                ok_buy, buy_why = live_buys_allowed(
+                    paper=self._broker.paper,
+                    live_entries_enabled=bool(getattr(settings, "live_entries_enabled", False)),
+                )
+                if not ok_buy:
+                    failed.append(
+                        BrokerOrderResult(
+                            symbol=line.ticker.upper(),
+                            qty=line.shares,
+                            side=line.side,
+                            type=line.order_type,
+                            status="failed",
+                            error=buy_why,
+                        )
+                    )
+                    continue
+
             if account and line.side == "buy":
                 if account.buying_power < 0.01 and account.cash < 0.01 and not request.dry_run:
                     failed.append(
@@ -674,14 +879,14 @@ class AlpacaOrderService:
                             },
                         )
                         if order_req.side == "buy":
-                            px = float(
-                                result.filled_avg_price
-                                or order_req.limit_price
-                                or order_req.stop_loss
-                                or 0
+                            from services.live_safety import entry_price_from_fill
+
+                            px = entry_price_from_fill(
+                                result.filled_avg_price,
+                                filled_qty=result.filled_qty,
+                                limit_price=order_req.limit_price,
+                                stop_loss=order_req.stop_loss,
                             )
-                            if px <= 0 and order_req.stop_loss and order_req.take_profit:
-                                px = (order_req.stop_loss + order_req.take_profit) / 2
                             thesis_txt = None
                             try:
                                 from database.repositories.investment_memory_repository import (
@@ -698,7 +903,7 @@ class AlpacaOrderService:
                                     )
                             except Exception:
                                 pass
-                            if px > 0:
+                            if px is not None and px > 0:
                                 await PositionLifecycleService(session, self).register_from_fill(
                                     symbol=order_req.symbol,
                                     qty=float(order_req.qty),

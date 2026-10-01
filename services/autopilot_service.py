@@ -88,29 +88,45 @@ class AutopilotService:
     ) -> dict[str, Any]:
         steps: dict[str, Any] = {"started_at": utc_now().isoformat(), "actor": actor}
         settings = self._settings
+        kill_on = False
+        try:
+            kill_on = await KillSwitchService(self._session, self._broker).is_active()
+        except Exception as exc:
+            steps["kill_switch_check"] = {"error": str(exc)}
+        if kill_on:
+            steps["kill_switch"] = "active_exits_only"
+            steps["buys_blocked"] = "kill_switch_active"
 
-        if await KillSwitchService(self._session, self._broker).is_active():
-            steps["aborted"] = "kill_switch_active"
-            await self._audit.record(
-                "auto_execute",
+        # Deposited 5% brake — arm kill WITHOUT flatten; keep SNAP brackets.
+        try:
+            from services.deposited_capital_service import resolve_trading_base
+            from services.live_safety import arm_deposited_brake_if_needed
+
+            eq = None
+            if self._broker.is_configured():
+                try:
+                    acct = await self._broker.get_account()
+                    eq = float(acct.equity or acct.cash or 0) or None
+                except Exception:
+                    eq = None
+            base_snap = await resolve_trading_base(equity=eq)
+            base = base_snap.amount if base_snap.amount and base_snap.amount > 0 else None
+            pct = float(getattr(settings, "deposited_brake_pct", 5.0) or 5.0)
+            armed = await arm_deposited_brake_if_needed(
+                self._session,
+                self._broker,
+                equity=eq,
+                base=base,
+                pct=pct,
                 actor=actor,
-                success=False,
-                message="Autopilot aborted: kill switch ON",
             )
-            try:
-                await OpsFlagRepository(self._session).set_json(
-                    "firm_autopilot_last_cycle",
-                    {
-                        "at": utc_now().isoformat(),
-                        "started_at": steps.get("started_at"),
-                        "actor": actor,
-                        "result": "aborted",
-                        "message": "kill_switch_active",
-                    },
-                )
-            except Exception:
-                pass
-            return steps
+            if armed:
+                steps["deposited_brake"] = armed
+                kill_on = True
+                steps["kill_switch"] = "active_exits_only"
+                steps["buys_blocked"] = armed.get("reason") or "deposited_brake"
+        except Exception as exc:
+            steps["deposited_brake"] = {"error": str(exc)}
 
         # 1) Reconcile books
         try:
@@ -185,75 +201,94 @@ class AutopilotService:
         except Exception as exc:
             steps["lifecycle"] = {"error": str(exc)}
 
-        # 4) Generate / refresh daily picks with capital from Alpaca
+        # 4) Generate / refresh daily picks — skipped on exits-only cycles
+        from services.live_safety import live_buys_allowed
+
+        entries_ok, entries_why = live_buys_allowed(
+            paper=bool(self._broker.paper) if self._broker.is_configured() else True,
+            live_entries_enabled=bool(getattr(settings, "live_entries_enabled", False)),
+        )
+        exits_only = (not entries_ok) or kill_on or bool(steps.get("buys_blocked"))
         capital = None
-        try:
-            if self._broker.is_configured():
-                account = await self._broker.get_account()
-                capital = float(account.equity or account.cash or 0) or None
-        except Exception:
-            capital = None
-
-        try:
-            market = get_market_provider()
-            from services.analysis_factory import build_analysis_service
-            from services.desk_learning_service import DeskLearningService
-
-            daily = DailyTradeRecommendationService(
-                market_provider=market,
-                discovery_service=CompanyDiscoveryService(market_provider=market),
-                trade_repo=DailyTradeRepository(self._session),
-                analysis_service=build_analysis_service(self._session),
-            )
-            exclude = await DeskLearningService(self._session).merge_excludes()
-            report = await daily.generate(
-                session=session_label,
-                persist=True,
-                capital=capital,
-                max_picks=4 if capital and capital <= 100 else 8,
-                exclude_tickers=exclude,
-            )
+        report = None
+        if exits_only:
             steps["recommendations"] = {
-                "picks": len(report.picks),
-                "macro_mode": report.macro_mode,
-                "tickers": [p.ticker for p in report.picks[:6]],
-                "summary": (report.summary or "")[:240],
+                "skipped": True,
+                "reason": "exits_only_cycle",
+                "entries": entries_why if not entries_ok else steps.get("buys_blocked"),
             }
-        except Exception as exc:
-            steps["recommendations"] = {"error": str(exc)}
-            report = None
-
-        # 5) Auto-execute (firm autonomy / paper-first policy)
-        if execute_trades is None:
-            do_exec = bool(settings.auto_execute_trades or settings.firm_autonomy)
+            steps["auto_execute"] = {
+                "skipped": True,
+                "reason": "exits_only_cycle",
+            }
         else:
-            do_exec = execute_trades
-        if do_exec and report and report.picks:
             try:
-                auto = AutoExecuteService(self._session, self._broker)
-                # Honor risk desk OK
-                if getattr(auto.policy(), "require_risk_desk_ok", True):
-                    mode = (steps.get("risk") or {}).get("macro_mode")
-                    if mode == "crisis" or steps.get("buys_blocked"):
-                        steps["auto_execute"] = {
-                            "skipped": True,
-                            "reason": "risk_desk_blocked",
-                        }
+                if self._broker.is_configured():
+                    account = await self._broker.get_account()
+                    capital = float(account.equity or account.cash or 0) or None
+            except Exception:
+                capital = None
+
+            try:
+                market = get_market_provider()
+                from services.analysis_factory import build_analysis_service
+                from services.desk_learning_service import DeskLearningService
+
+                daily = DailyTradeRecommendationService(
+                    market_provider=market,
+                    discovery_service=CompanyDiscoveryService(market_provider=market),
+                    trade_repo=DailyTradeRepository(self._session),
+                    analysis_service=build_analysis_service(self._session),
+                )
+                exclude = await DeskLearningService(self._session).merge_excludes()
+                report = await daily.generate(
+                    session=session_label,
+                    persist=True,
+                    capital=capital,
+                    max_picks=4 if capital and capital <= 100 else 8,
+                    exclude_tickers=exclude,
+                )
+                steps["recommendations"] = {
+                    "picks": len(report.picks),
+                    "macro_mode": report.macro_mode,
+                    "tickers": [p.ticker for p in report.picks[:6]],
+                    "summary": (report.summary or "")[:240],
+                }
+            except Exception as exc:
+                steps["recommendations"] = {"error": str(exc)}
+                report = None
+
+            # 5) Auto-execute (firm autonomy / paper-first policy)
+            if execute_trades is None:
+                do_exec = bool(settings.auto_execute_trades or settings.firm_autonomy)
+            else:
+                do_exec = execute_trades
+            if do_exec and report and report.picks:
+                try:
+                    auto = AutoExecuteService(self._session, self._broker)
+                    # Honor risk desk OK
+                    if getattr(auto.policy(), "require_risk_desk_ok", True):
+                        mode = (steps.get("risk") or {}).get("macro_mode")
+                        if mode == "crisis" or steps.get("buys_blocked"):
+                            steps["auto_execute"] = {
+                                "skipped": True,
+                                "reason": "risk_desk_blocked",
+                            }
+                        else:
+                            steps["auto_execute"] = await auto.run_from_picks(
+                                report.picks, actor=actor
+                            )
                     else:
                         steps["auto_execute"] = await auto.run_from_picks(
                             report.picks, actor=actor
                         )
-                else:
-                    steps["auto_execute"] = await auto.run_from_picks(
-                        report.picks, actor=actor
-                    )
-            except Exception as exc:
-                steps["auto_execute"] = {"error": str(exc)}
-        else:
-            steps["auto_execute"] = {
-                "skipped": True,
-                "reason": "execute_disabled_or_no_picks",
-            }
+                except Exception as exc:
+                    steps["auto_execute"] = {"error": str(exc)}
+            else:
+                steps["auto_execute"] = {
+                    "skipped": True,
+                    "reason": "execute_disabled_or_no_picks",
+                }
 
         # 6) Paper promotion snapshot
         try:

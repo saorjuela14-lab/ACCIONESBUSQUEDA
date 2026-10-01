@@ -183,12 +183,18 @@ async def test_confirm_without_pending():
 
 def test_multiasset_voice_symbol_helper():
     from services.voice_command_service import is_multiasset_voice_symbol
+    from services.live_safety import is_us_equity_live_symbol
 
     assert is_multiasset_voice_symbol("BTC/USD")
     assert is_multiasset_voice_symbol("BONK")
     assert is_multiasset_voice_symbol("SUSHI/USD")
     assert not is_multiasset_voice_symbol("AAPL")
     assert not is_multiasset_voice_symbol("GLD")
+    assert is_us_equity_live_symbol("AAPL")
+    assert is_us_equity_live_symbol("SNAP")
+    assert is_us_equity_live_symbol("BRK.B")
+    assert not is_us_equity_live_symbol("BONK")
+    assert not is_us_equity_live_symbol("BTC/USD")
 
 
 @pytest.mark.asyncio
