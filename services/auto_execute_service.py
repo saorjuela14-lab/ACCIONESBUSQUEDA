@@ -124,8 +124,8 @@ class AutoExecuteService:
         from services.live_safety import (
             FLAG_ENTRY_DAY,
             FLAG_SUBMIT_FAILS,
-            entry_day_allowed,
             live_buys_allowed,
+            remaining_entry_slots,
             submit_already_paused,
         )
 
@@ -136,6 +136,7 @@ class AutoExecuteService:
         if not entries_ok:
             return {"skipped": True, "reason": entries_why}
 
+        remaining = int(getattr(self._settings, "live_max_entries_per_day", 1) or 1)
         flags = None
         try:
             from database.repositories.ops_repository import OpsFlagRepository
@@ -145,12 +146,12 @@ class AutoExecuteService:
             if submit_already_paused(fail_flag):
                 return {"skipped": True, "reason": "submit_fail_pause"}
             day_flag = await flags.get_json(FLAG_ENTRY_DAY)
-            day_ok, day_why, day_flag = entry_day_allowed(
+            remaining = remaining_entry_slots(
                 day_flag,
                 max_entries=int(getattr(self._settings, "live_max_entries_per_day", 1) or 1),
             )
-            if not day_ok:
-                return {"skipped": True, "reason": day_why}
+            if remaining <= 0:
+                return {"skipped": True, "reason": "max_1_entry_per_day"}
         except Exception as exc:
             logger.warning("auto_execute.entry_budget_failed", error=str(exc))
 
@@ -194,11 +195,11 @@ class AutoExecuteService:
             until = float(cool.get("until") or 0)
             now_ts = time.time()
             if until and now_ts < until:
-                remaining = int((until - now_ts) / 60) + 1
+                mins_left = int((until - now_ts) / 60) + 1
                 return {
                     "skipped": True,
                     "reason": (
-                        f"post_stop_cooldown_{remaining}m"
+                        f"post_stop_cooldown_{mins_left}m"
                         f"(last={cool.get('symbol')})"
                     ),
                 }
@@ -328,7 +329,7 @@ class AutoExecuteService:
                     take_profit=tp,
                 )
             )
-            if len(lines) >= 2:
+            if len(lines) >= remaining:
                 break
         if not lines:
             if skipped_avoid and not skipped_no_committee and not skipped_risk:

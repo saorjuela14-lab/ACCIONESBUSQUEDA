@@ -244,6 +244,17 @@ def entry_day_allowed(flag: dict[str, Any] | None, *, max_entries: int = 1, toda
     return True, "ok", data
 
 
+def remaining_entry_slots(
+    flag: dict[str, Any] | None, *, max_entries: int = 1, today: str | None = None
+) -> int:
+    """How many new LIVE entries may still be submitted today. Never enlarge the cap."""
+    ok, _, data = entry_day_allowed(flag, max_entries=max_entries, today=today)
+    if not ok:
+        return 0
+    cap = max(1, int(max_entries or 1))
+    return max(0, cap - int(data.get("count") or 0))
+
+
 def record_entry_day_fill(flag: dict[str, Any], symbol: str) -> dict[str, Any]:
     data = dict(flag or {})
     data["count"] = int(data.get("count") or 0) + 1

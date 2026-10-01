@@ -21,6 +21,7 @@ from services.live_safety import (
     live_entry_blocked,
     next_et_session_date,
     order_looks_like_stop,
+    remaining_entry_slots,
     r_multiple_loss,
     record_entry_day_fill,
     record_stop_1r_block,
@@ -94,8 +95,11 @@ def test_voice_kill_off_requires_explicit_human():
         "Sergio confirma desactivar kill switch",
     ) is True
     assert voice_kill_off_confirmed({"confirm": True}, "") is False
-    # False positive: "skill" contains "kill"
+    # False positive: "skill" contains "kill"; "apag" is not a kill-switch phrase.
     assert voice_kill_off_confirmed({"confirm": True}, "Sergio confirma el skill de voz") is False
+    assert voice_kill_off_confirmed({"confirm": True}, "Sergio confirma apagar el skill") is False
+    assert voice_kill_off_confirmed({"confirm": True}, "apaga todo") is False
+    assert voice_kill_off_confirmed({"confirm": True}, "kill") is False
 
 
 def test_entry_price_never_uses_stop():
@@ -406,6 +410,11 @@ def test_entry_day_counts_each_fill_not_the_batch():
     ok, why, flag = entry_day_allowed(flag, max_entries=2, today="2026-10-01")
     assert ok is False
     assert why == "max_1_entry_per_day"
+    # A 2-buy batch with cap=1 has 1 remaining slot — never submit both then count as 1.
+    empty = {"et_date": "2026-10-01", "count": 0, "symbols": []}
+    assert remaining_entry_slots(empty, max_entries=1, today="2026-10-01") == 1
+    one = record_entry_day_fill(dict(empty), "AAA")
+    assert remaining_entry_slots(one, max_entries=1, today="2026-10-01") == 0
 
 
 def test_stop_1r_blocks_buy_thesis_next_session():
@@ -494,3 +503,65 @@ def test_source_tag_in_client_order_id():
         BrokerOrderRequest(symbol="AAPL", qty=1, side="buy", source_tag="voice")
     )
     assert payload["client_order_id"].startswith("voice-")
+
+
+@pytest.mark.asyncio
+async def test_ops_status_exits_only_allowed_false_for_entries():
+    from apis.routes.ops import ops_status
+
+    session = MagicMock()
+    ks_state = MagicMock()
+    ks_state.model_dump.return_value = {"active": False}
+    auto_policy = MagicMock()
+    auto_policy.model_dump.return_value = {}
+    s = SimpleNamespace(
+        firm_autonomy=True,
+        effective_autopilot_interval_minutes=10,
+        lifecycle_enabled=True,
+        lifecycle_auto_exit=True,
+        holdings_strategy_review_enabled=True,
+        intraday_only_enabled=False,
+        intraday_flat_minutes_before_close=20,
+        intraday_flat_cron="",
+        intraday_flat_winners_only=False,
+        intraday_flat_min_pnl_pct=0.0,
+        intraday_2r_hold_enabled=True,
+        intraday_carry_max_loss_pct=8.0,
+        live_entries_enabled=False,
+        live_max_entries_per_day=1,
+        live_submit_fail_pause=3,
+        deposited_brake_pct=5.0,
+        app_env="production",
+        auto_execute_max_risk_pct=2.5,
+        auto_execute_micro_max_risk_pct=2.5,
+        auto_execute_post_stop_cooldown_minutes=90,
+        auto_execute_max_position_pct=0.30,
+        lifecycle_trail_arm_profit_pct=0.05,
+        lifecycle_micro_default_stop_pct=0.08,
+        lifecycle_micro_default_target_pct=0.16,
+        lifecycle_micro_trailing_pct=0.10,
+        reconcile_auto_sync=False,
+        risk_max_var_pct=5.0,
+        risk_max_portfolio_beta=1.5,
+        risk_max_sector_pct=40.0,
+    )
+    auto = MagicMock()
+    auto.can_auto_trade_async = AsyncMock(return_value=(False, "live_entries_disabled"))
+    auto.policy.return_value = auto_policy
+    flags = MagicMock()
+    flags.get_json = AsyncMock(return_value={})
+    with (
+        patch("apis.routes.ops.get_settings", return_value=s),
+        patch("apis.routes.ops.KillSwitchService") as ks_cls,
+        patch("apis.routes.ops.AutoExecuteService", return_value=auto),
+        patch("apis.routes.ops.OpsFlagRepository", return_value=flags),
+        patch("apis.routes.ops.trading_mode_label", return_value="live"),
+    ):
+        ks_cls.return_value.status = AsyncMock(return_value=ks_state)
+        out = await ops_status(session)
+    ae = out["auto_execute"]
+    assert ae["allowed"] is False
+    assert ae["entries_allowed"] is False
+    assert ae["exits_only"] is True
+    assert ae["reason"] == "live_entries_disabled"
+    assert out["live_entries_enabled"] is False
