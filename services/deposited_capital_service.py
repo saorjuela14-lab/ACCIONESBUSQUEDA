@@ -104,7 +104,12 @@ def _env_fallback() -> DepositedBase | None:
     return DepositedBase(amount=round(amount, 2), source="env")
 
 
-async def _paginate(broker: Any, *, activity_types: str | list[str] | None) -> list[dict[str, Any]]:
+async def _paginate(
+    broker: Any,
+    *,
+    activity_types: str | list[str] | None,
+    category: str | None = None,
+) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     token: str | None = None
     for _ in range(_MAX_PAGES):
@@ -112,6 +117,7 @@ async def _paginate(broker: Any, *, activity_types: str | list[str] | None) -> l
             activity_types=activity_types,
             page_size=100,
             page_token=token,
+            category=category,
         )
         if not page:
             break
@@ -124,59 +130,89 @@ async def _paginate(broker: Any, *, activity_types: str | list[str] | None) -> l
     return out
 
 
+def _type_histogram(rows: list[dict[str, Any]]) -> str:
+    kinds: dict[str, int] = {}
+    for row in rows:
+        typ = str((row or {}).get("activity_type") or (row or {}).get("type") or "?")
+        kinds[typ] = kinds.get(typ, 0) + 1
+    if not kinds:
+        return "none"
+    return ",".join(f"{k}:{v}" for k, v in list(kinds.items())[:8])
+
+
 async def _fetch_all_transfer_activities(broker: Any) -> list[dict[str, Any]]:
-    """Prefer per-type paths (CSD/CSW/JNLC/TRANS); fall back to unfiltered list."""
+    """Per-type CSD/CSW/JNLC/TRANS (non_trade), then unfiltered ledger."""
     collected: list[dict[str, Any]] = []
     seen: set[str] = set()
     errors: list[str] = []
 
     for typ in TRANSFER_ACTIVITY_TYPES:
-        try:
-            page = await _paginate(broker, activity_types=typ)
-        except Exception as exc:
-            errors.append(f"{typ}:{exc}")
-            logger.warning("deposited_capital.type_failed", activity_type=typ, error=str(exc))
-            continue
-        for row in page:
-            rid = str((row or {}).get("id") or "")
-            if rid and rid in seen:
+        for category in ("non_trade", None):
+            try:
+                page = await _paginate(broker, activity_types=typ, category=category)
+            except Exception as exc:
+                errors.append(f"{typ}:{exc}")
+                logger.warning(
+                    "deposited_capital.type_failed",
+                    activity_type=typ,
+                    category=category,
+                    error=str(exc),
+                )
                 continue
-            if rid:
-                seen.add(rid)
-            collected.append(row)
+            for row in page:
+                rid = str((row or {}).get("id") or "")
+                if rid and rid in seen:
+                    continue
+                if rid:
+                    seen.add(rid)
+                collected.append(row)
+            if page:
+                break
 
     if collected:
         return collected
 
-    try:
-        unfiltered = await _paginate(broker, activity_types=None)
-    except Exception as exc:
-        errors.append(f"all:{exc}")
-        logger.warning("deposited_capital.unfiltered_failed", error=str(exc))
-        if errors:
-            raise RuntimeError("; ".join(errors[:4])) from exc
-        raise
-    kinds: dict[str, int] = {}
-    for row in unfiltered:
-        typ = str((row or {}).get("activity_type") or (row or {}).get("type") or "?")
-        kinds[typ] = kinds.get(typ, 0) + 1
-    logger.info("deposited_capital.unfiltered_types", types=kinds, n=len(unfiltered))
-    return unfiltered
+    for category in ("non_trade", None):
+        try:
+            unfiltered = await _paginate(broker, activity_types=None, category=category)
+        except Exception as exc:
+            errors.append(f"all:{exc}")
+            logger.warning("deposited_capital.unfiltered_failed", error=str(exc))
+            continue
+        logger.info(
+            "deposited_capital.unfiltered_types",
+            types=_type_histogram(unfiltered),
+            n=len(unfiltered),
+            category=category,
+        )
+        if unfiltered:
+            return unfiltered
+    if errors:
+        raise RuntimeError("; ".join(errors[:4]))
+    return []
 
 
-async def _from_alpaca() -> DepositedBase | None:
+async def _from_alpaca() -> DepositedBase:
     broker = get_broker_provider()
     if not broker.is_configured():
-        return None
+        return DepositedBase(amount=None, source="unavailable:alpaca_unconfigured")
     rows = await _fetch_all_transfer_activities(broker)
     net, deposits, withdrawals, counted = net_transfers_from_activities(rows)
     if counted <= 0 or net <= 0:
+        hint = _type_histogram(rows)
         logger.warning(
             "deposited_capital.empty_activities",
             counted=counted,
             net=net,
+            types=hint,
         )
-        return None
+        return DepositedBase(
+            amount=None,
+            source=f"unavailable:empty:{hint}"[:80],
+            deposits=deposits,
+            withdrawals=withdrawals,
+            activity_count=counted,
+        )
     return DepositedBase(
         amount=net,
         source="alpaca",
@@ -217,8 +253,8 @@ async def get_deposited_base(*, force: bool = False) -> DepositedBase:
             snap = await _from_alpaca()
         except Exception as exc:
             logger.warning("deposited_capital.alpaca_failed", error=str(exc))
-            snap = None
-        if snap is not None and snap.amount and snap.amount > 0:
+            snap = DepositedBase(amount=None, source=f"unavailable:{exc}"[:80])
+        if snap.amount and snap.amount > 0:
             _cache = snap
             _cache_at = time.monotonic()
             logger.info(
@@ -243,5 +279,5 @@ async def get_deposited_base(*, force: bool = False) -> DepositedBase:
         if env is not None:
             logger.warning("deposited_capital.env_fallback", amount=env.amount)
             return env
-        logger.error("deposited_capital.unavailable")
-        return DepositedBase(amount=None, source="unavailable")
+        logger.error("deposited_capital.unavailable", source=snap.source if snap else None)
+        return snap if snap is not None else DepositedBase(amount=None, source="unavailable")

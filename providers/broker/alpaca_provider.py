@@ -189,12 +189,15 @@ class AlpacaBrokerProvider(BrokerProvider):
         page_size: int = 100,
         page_token: str | None = None,
         direction: str = "desc",
+        category: str | None = None,
     ) -> list[dict[str, Any]]:
         """GET /v2/account/activities or /v2/account/activities/{type}."""
         params: dict[str, Any] = {
             "page_size": max(1, min(int(page_size), 100)),
             "direction": direction or "desc",
         }
+        if category:
+            params["category"] = category
         path = "/v2/account/activities"
         if activity_types:
             if isinstance(activity_types, (list, tuple)):

@@ -215,6 +215,7 @@ async def test_list_account_activities_single_type_path():
 
     assert acts[0]["net_amount"] == "21.74"
     assert mock_client.request.call_args[0][1].endswith("/v2/account/activities/CSD")
+    assert mock_client.request.call_args[1]["params"].get("category") != "trade"
 
 
 @pytest.mark.asyncio
