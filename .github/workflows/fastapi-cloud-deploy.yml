@@ -1,24 +1,38 @@
-# Deploy opcional vía token (si no usas la integración GitHub del dashboard).
-# Requiere secrets: FASTAPI_CLOUD_TOKEN, FASTAPI_CLOUD_APP_ID
-name: Deploy to FastAPI Cloud
+# Optional token deploy. Production deploys on `main` are done by the
+# fastapi-cloud[bot] GitHub integration — this workflow is a fallback.
+# GitHub forbids `secrets.*` in job-level `if:`; the guard lives in a step.
+name: Deploy to FastAPI Cloud (token fallback)
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
   deploy:
-    if: ${{ secrets.FASTAPI_CLOUD_TOKEN != '' && secrets.FASTAPI_CLOUD_APP_ID != '' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Skip unless FASTAPI_CLOUD_* secrets exist
+        id: guard
+        env:
+          TOKEN: ${{ secrets.FASTAPI_CLOUD_TOKEN }}
+          APP_ID: ${{ secrets.FASTAPI_CLOUD_APP_ID }}
+        run: |
+          if [ -z "${TOKEN}" ] || [ -z "${APP_ID}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No FASTAPI_CLOUD_TOKEN / APP_ID. Production uses fastapi-cloud[bot]."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.guard.outputs.skip != 'true'
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: astral-sh/setup-uv@v7
+      - if: steps.guard.outputs.skip != 'true'
+        uses: astral-sh/setup-uv@v7
 
       - name: Deploy to FastAPI Cloud
+        if: steps.guard.outputs.skip != 'true'
         run: uv run fastapi deploy --no-wait
         env:
           FASTAPI_CLOUD_TOKEN: ${{ secrets.FASTAPI_CLOUD_TOKEN }}

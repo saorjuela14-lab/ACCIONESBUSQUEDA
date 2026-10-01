@@ -108,7 +108,13 @@ GET  /api/v1/ops/status
 3. Variables: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
 
 **WhatsApp (status apertura/cierre del portafolio):**  
-Se envía **3 veces por día hábil** (hora NY): **09:35 apertura**, **12:30 almuerzo**, **16:05 cierre** — equity, posiciones, órdenes abiertas y cerradas del día. No es un mensaje cada pocos minutos. Si el host cloud dormía a la hora exacta, el arranque y `/health` recuperan los slots pendientes (máx. 1 por horario, hasta 23:59 ET). El workflow GitHub **Desk keepalive** pinea `/health` en horario de mercado para que el cron no se pierda.
+Se envía **3 veces por día hábil** (hora NY): **09:35 apertura**, **12:30 almuerzo**, **16:05 cierre** — equity, posiciones, órdenes abiertas y cerradas del día. No es un mensaje cada pocos minutos. Si el host cloud dormía a la hora exacta, el arranque y `/health` recuperan los slots pendientes (máx. 1 por horario, hasta 23:59 ET).
+
+**Keepalive real:** GitHub Actions **no garantiza** intervalos &lt;5 min (el workflow `desk-keepalive` corre cada **15 min** como respaldo y puede retrasarse o saltarse). Configura un ping externo (p. ej. [UptimeRobot](https://uptimerobot.com) HTTP(s) cada 5 min) a:
+
+`https://accionesbusqueda.fastapicloud.dev/health`
+
+El hosting de producción sigue en **FastAPI Cloud**. El ping a `/health` también dispara el catch-up de briefings.
 
 Opción más simple — [CallMeBot](https://www.callmebot.com/blog/free-api-whatsapp-messages/):
 1. Guarda en contactos el bot actual: **+34 644 78 33 97** (los números viejos dejan de tener WhatsApp)
@@ -254,8 +260,9 @@ Flujo recomendado: **GitHub como fuente única** — escribes los cambios en Cur
 
 [FastAPI Cloud](https://fastapicloud.com) es la plataforma oficial del equipo FastAPI. Plan **Hobby gratis**, sin tarjeta, hasta 3 apps. Integración directa con GitHub.
 
-> **Importante:** en Hobby el proceso **se apaga** si nadie lo visita. Por eso a veces fallan los WhatsApp de 09:35 / 12:30 / 16:05. Mitigación: workflow **Desk keepalive** (GitHub Actions cada 5 min).  
-> **Alternativa always-on (recomendada para la firma):** [Railway](#railway-always-on) — el proceso no hiberna.
+> **Importante:** en Hobby el proceso **se apaga** si nadie lo visita. Por eso a veces fallan los WhatsApp de 09:35 / 12:30 / 16:05.  
+> **Keepalive:** un monitor externo (UptimeRobot u otro) debe pegarle a `/health` cada 5 minutos. El workflow GitHub `desk-keepalive` es solo respaldo cada 15 min — GitHub no garantiza crons más frecuentes.  
+> Hosting de producción: **FastAPI Cloud** (la integración `fastapi-cloud[bot]` despliega `main`; el workflow de token es opcional).
 
 #### Paso 1 — Crear cuenta (1 min)
 
@@ -352,7 +359,7 @@ Si prefieres token en lugar de la app de GitHub:
 3. En GitHub → repo → **Settings → Secrets**:
    - `FASTAPI_CLOUD_TOKEN`
    - `FASTAPI_CLOUD_APP_ID`
-4. El workflow `.github/workflows/fastapi-cloud-deploy.yml` desplegará en cada push a `main`
+4. El deploy de producción lo hace la integración **fastapi-cloud[bot]** al pushear `main`. El workflow `.github/workflows/fastapi-cloud-deploy.yml` es un fallback opcional (token) y ya no se dispara en cada push.
 
 ### Railway always-on {#railway-always-on}
 
@@ -365,13 +372,11 @@ railway up -y
 railway domain         # genera URL pública https://….up.railway.app
 ```
 
-Copia **las mismas variables** del panel FastAPI Cloud (Alpaca, WhatsApp CallMeBot, Telegram, `DATABASE_URL` Postgres Neon, `FIRM_AUTONOMY`, etc.) a Railway → Variables. Luego:
+Copia **las mismas variables** del panel FastAPI Cloud (Alpaca, WhatsApp CallMeBot, Telegram, `DATABASE_URL` Postgres Neon, `FIRM_AUTONOMY`, etc.) a Railway → Variables.
 
-1. En GitHub → **Settings → Variables**: `RAILWAY_KEEPALIVE_URL` = tu URL Railway `/health`
-2. Opcional: apunta el dashboard a la URL Railway y deja FastAPI Cloud como respaldo
-3. El workflow **Desk keepalive** pinea ambas URLs
+El host de producción de esta firma sigue en **FastAPI Cloud**. El keepalive real es un ping externo (UptimeRobot) a `/health` cada 5 min; `desk-keepalive` es respaldo GitHub cada 15 min (no pinea Railway).
 
-Con Railway como primario, los 3 WhatsApp (apertura / almuerzo / cierre) salen a la hora aunque nadie abra el panel.
+Con un proceso always-on, los 3 WhatsApp (apertura / almuerzo / cierre) salen a la hora aunque nadie abra el panel.
 
 ### Otras plataformas (referencia)
 

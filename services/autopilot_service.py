@@ -97,6 +97,19 @@ class AutopilotService:
                 success=False,
                 message="Autopilot aborted: kill switch ON",
             )
+            try:
+                await OpsFlagRepository(self._session).set_json(
+                    "firm_autopilot_last_cycle",
+                    {
+                        "at": utc_now().isoformat(),
+                        "started_at": steps.get("started_at"),
+                        "actor": actor,
+                        "result": "aborted",
+                        "message": "kill_switch_active",
+                    },
+                )
+            except Exception:
+                pass
             return steps
 
         # 1) Reconcile books
@@ -273,6 +286,40 @@ class AutopilotService:
             payload={k: v for k, v in steps.items() if k != "started_at"},
         )
         steps["finished_at"] = utc_now().isoformat()
+        rec = (steps.get("recommendations") or {})
+        exe = steps.get("auto_execute") or {}
+        if steps.get("aborted"):
+            msg = f"abortado: {steps['aborted']}"
+        elif exe.get("error"):
+            msg = f"auto_execute error: {exe.get('error')}"
+        elif exe.get("skipped"):
+            msg = f"sin órdenes: {exe.get('reason') or 'skipped'}"
+        else:
+            msg = (
+                f"picks={rec.get('picks')} submitted={exe.get('submitted')} "
+                f"failed={exe.get('failed')} exits={(steps.get('lifecycle') or {}).get('exits')}"
+            )
+        steps["message"] = msg
+        try:
+            await OpsFlagRepository(self._session).set_json(
+                "firm_autopilot_last_cycle",
+                {
+                    "at": steps.get("finished_at") or steps.get("started_at"),
+                    "started_at": steps.get("started_at"),
+                    "actor": actor,
+                    "result": "aborted" if steps.get("aborted") else "ok",
+                    "message": msg,
+                    "picks": rec.get("picks"),
+                    "auto_execute": {
+                        k: exe.get(k)
+                        for k in ("skipped", "reason", "submitted", "failed")
+                        if k in exe
+                    },
+                    "lifecycle_exits": (steps.get("lifecycle") or {}).get("exits"),
+                },
+            )
+        except Exception as exc:
+            logger.warning("autopilot.last_cycle_persist_failed", error=str(exc))
         logger.info(
             "autopilot.done",
             picks=(steps.get("recommendations") or {}).get("picks"),

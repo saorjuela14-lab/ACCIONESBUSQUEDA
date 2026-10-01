@@ -240,6 +240,13 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
     }
 
 
+@router.get("/ops/autopilot/last")
+async def last_autopilot_cycle(session: AsyncSession = Depends(get_session)) -> dict:
+    """Read-only snapshot of the last firm Autopilot cycle (hora, resultado, mensaje)."""
+    data = await OpsFlagRepository(session).get_json("firm_autopilot_last_cycle")
+    return data or {"at": None, "result": None, "message": "sin ciclo registrado"}
+
+
 @router.post("/ops/autopilot/run")
 async def autopilot_run(
     body: AutopilotRunRequest | None = None,

@@ -390,6 +390,16 @@ class PositionLifecycleService:
                         "broker": broker_detail,
                     },
                 )
+                try:
+                    from services.trade_journal_service import TradeJournalService
+
+                    await TradeJournalService(self._session).record_stop_adjust(
+                        symbol=m.symbol,
+                        stop_loss=decision.new_stop,
+                        reason=decision.reason or "trailing",
+                    )
+                except Exception as exc:
+                    logger.warning("trade_journal.trail_failed", symbol=m.symbol, error=str(exc))
                 decision.executed = True
                 if broker_detail:
                     decision.detail = broker_detail
