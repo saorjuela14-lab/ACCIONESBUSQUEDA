@@ -43,6 +43,14 @@ def test_net_transfers_jnlc_and_skip_canceled():
     assert counted == 1
 
 
+def test_oct_qty_when_net_amount_missing():
+    rows = [{"activity_type": "OCT", "qty": "21.74", "symbol": "USDTUSD", "status": "executed"}]
+    net, deposits, withdrawals, counted = net_transfers_from_activities(rows)
+    assert net == 21.74
+    assert deposits == 21.74
+    assert counted == 1
+
+
 def test_oct_onchain_deposit_counts():
     rows = [{"activity_type": "OCT", "net_amount": "21.74", "status": "executed"}]
     net, deposits, withdrawals, counted = net_transfers_from_activities(rows)

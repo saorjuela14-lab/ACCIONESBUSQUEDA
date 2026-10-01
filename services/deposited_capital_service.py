@@ -61,7 +61,21 @@ def activity_signed_amount(row: dict[str, Any]) -> float:
     if raw in (None, ""):
         raw = row.get("amount")
     amt = _f(raw)
-    if typ == "CSW" and amt > 0:
+    if amt == 0:
+        qty = _f(row.get("qty"))
+        price = _f(row.get("price") or row.get("per_share_amount"))
+        if qty and price:
+            amt = qty * price
+        elif typ == "OCT" and qty:
+            # On-chain USDT/USDC often stores notional in qty with net_amount=0
+            amt = qty
+        else:
+            for key in ("usd_value", "notional", "cash"):
+                extra = _f(row.get(key))
+                if extra:
+                    amt = extra
+                    break
+    if typ in {"CSW"} and amt > 0:
         return -amt
     return amt
 
@@ -129,6 +143,31 @@ async def _paginate(
         if not token:
             break
     return out
+
+
+def _row_sample(rows: list[dict[str, Any]]) -> str:
+    for row in rows:
+        typ = str((row or {}).get("activity_type") or (row or {}).get("type") or "").upper()
+        if typ in TRANSFER_ACTIVITY_TYPES:
+            bits = []
+            for key in (
+                "activity_type",
+                "net_amount",
+                "amount",
+                "qty",
+                "price",
+                "symbol",
+                "description",
+                "status",
+            ):
+                val = row.get(key)
+                if val not in (None, ""):
+                    bits.append(f"{key}={val}")
+            bits.append("keys=" + ",".join(sorted(str(k) for k in row)[:12]))
+            return " ".join(bits)[:140]
+    if rows:
+        return "keys=" + ",".join(sorted(str(k) for k in rows[0])[:12])
+    return ""
 
 
 def _type_histogram(rows: list[dict[str, Any]]) -> str:
@@ -201,15 +240,18 @@ async def _from_alpaca() -> DepositedBase:
     net, deposits, withdrawals, counted = net_transfers_from_activities(rows)
     if counted <= 0 or net <= 0:
         hint = _type_histogram(rows)
+        sample = _row_sample(rows)
         logger.warning(
             "deposited_capital.empty_activities",
             counted=counted,
             net=net,
             types=hint,
+            sample=sample,
         )
+        suffix = f"{hint} {sample}".strip()
         return DepositedBase(
             amount=None,
-            source=f"unavailable:empty:{hint}"[:80],
+            source=f"unavailable:empty:{suffix}"[:160],
             deposits=deposits,
             withdrawals=withdrawals,
             activity_count=counted,
