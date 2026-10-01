@@ -1,11 +1,14 @@
 """Ops desk API — kill switch, audit, reconcile, lifecycle, auto-execute policy."""
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config.settings import get_settings
 from database.engine import get_session
+from apis.deps import OrgScope, get_org_scope
 from domain.ops import (
     AuditEvent,
     AutoExecutePolicy,
@@ -254,6 +257,37 @@ async def last_autopilot_cycle(session: AsyncSession = Depends(get_session)) -> 
     """Read-only snapshot of the last firm Autopilot cycle (hora, resultado, mensaje)."""
     data = await OpsFlagRepository(session).get_json("firm_autopilot_last_cycle")
     return data or {"at": None, "result": None, "message": "sin ciclo registrado"}
+
+
+@router.get("/ops/multiasset/activities")
+async def paper_multiasset_activities(
+    types: str = Query(default="FILL,CFEE", description="Alpaca activity types, comma-separated"),
+    after: str | None = Query(default=None, description="YYYY-MM-DD inclusive lower bound"),
+    page_size: int = Query(default=100, ge=1, le=100),
+    scope: OrgScope = Depends(get_org_scope),
+) -> dict:
+    """Read-only FILL/CFEE from the Multi-Asset PAPER account. Mesa session required."""
+    scope.require_desk()
+    if after:
+        try:
+            datetime.strptime(after[:10], "%Y-%m-%d")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="after debe ser YYYY-MM-DD") from exc
+    from services.multiasset.paper_broker import MultiAssetNotPaperError, get_beta_broker_provider
+    from services.multiasset.paper_ops import list_paper_activities
+
+    try:
+        broker = get_beta_broker_provider()
+    except MultiAssetNotPaperError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    try:
+        return await list_paper_activities(
+            broker, types=types, after=after, page_size=page_size
+        )
+    except MultiAssetNotPaperError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/ops/autopilot/run")

@@ -219,6 +219,33 @@ async def test_list_account_activities_single_type_path():
 
 
 @pytest.mark.asyncio
+async def test_list_account_activities_after_until_params():
+    broker = AlpacaBrokerProvider(api_key="k", secret_key="s", paper=True)
+    mock_client = AsyncMock()
+    mock_client.request = AsyncMock(
+        return_value=_mock_response(
+            200,
+            [{"id": "f1", "activity_type": "FILL", "symbol": "WIF/USD"}],
+        )
+    )
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("providers.broker.alpaca_provider.httpx.AsyncClient", return_value=mock_client):
+        acts = await broker.list_account_activities(
+            activity_types="FILL,CFEE",
+            after="2026-08-01",
+            until="2026-10-01",
+        )
+
+    assert acts[0]["activity_type"] == "FILL"
+    params = mock_client.request.call_args[1]["params"]
+    assert params["after"] == "2026-08-01"
+    assert params["until"] == "2026-10-01"
+    assert params["activity_types"] == "FILL,CFEE"
+
+
+@pytest.mark.asyncio
 async def test_execute_blocks_when_cash_zero():
     broker = AlpacaBrokerProvider(api_key="k", secret_key="s", paper=False)
     svc = AlpacaOrderService(broker=broker)

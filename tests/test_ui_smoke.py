@@ -53,6 +53,7 @@ SAFE_GET_APIS = (
     "/api/v1/ops/journal?limit=10&status=all&days=30",
     "/api/v1/ops/audit?limit=5&offset=0",
     "/api/v1/ops/autopilot/last",
+    "/api/v1/ops/multiasset/activities?types=FILL,CFEE",
     "/api/v1/broker/positions",
     "/api/v1/broker/orders?status=open&limit=5",
     "/api/v1/broker/doctor",
