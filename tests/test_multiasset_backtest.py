@@ -9,6 +9,7 @@ import pytest
 from services.multiasset.backtest import compare_desk, run_symbol_backtest
 from services.multiasset.risk_engine import size_notional_1x, trail_stop
 from services.multiasset.signals import (
+    TradeSignal,
     legacy_gold_signal,
     new_crypto_signal,
     new_gold_signal,
@@ -85,6 +86,8 @@ def test_backtest_legacy_vs_new_has_required_fields():
         assert "kill_switch_fired" in r
         assert r["cost_bps_roundtrip"] > 0
         assert r["oos_start"]
+        assert "buy_hold_oos_return_pct" in r
+        assert "oos_expectancy_pct" in r
     # kill-switch metadata present even if it did not fire
     assert out["new"]["kill_switch_fired"] in (True, False)
 
@@ -113,3 +116,81 @@ def test_legacy_gold_warmup_hold():
     df = _trending_ohlc(30)
     sig = legacy_gold_signal(df, 5)
     assert sig.side == "hold"
+
+
+def _forced_buy(df, i, **kwargs):
+    return TradeSignal(
+        side="buy",
+        stop_pct=0.10,
+        stop_r=1.0,
+        trail_atr_mult=2.0,
+        atr_abs=5.0,
+        reason="forced",
+    )
+
+
+def _flat_then(n: int, patches: dict[int, tuple[float, float, float, float]]) -> pd.DataFrame:
+    idx = pd.bdate_range("2023-01-02", periods=n)
+    rows = []
+    for i in range(n):
+        o, h, l, c = patches.get(i, (100.0, 100.2, 99.8, 100.0))
+        rows.append({"Open": o, "High": h, "Low": l, "Close": c, "Volume": 1e6})
+    return pd.DataFrame(rows, index=idx)
+
+
+def test_stop_fills_at_min_stop_open_on_gap():
+    """Gap through stop fills at open, not at the stop price."""
+    df = _flat_then(130, {20: (85.0, 86.0, 80.0, 82.0)})
+    r = run_symbol_backtest(
+        df, desk="gold", book="new", symbol="GLD", signal_fn=_forced_buy
+    )
+    gap = [t for t in r.sample_trades if t["reason"] == "stop_gap"]
+    assert gap, r.sample_trades[:3]
+    assert gap[0]["exit"] == 85.0
+    assert gap[0]["exit"] < gap[0]["entry"] * 0.95
+
+
+def test_trail_peak_updated_after_stop_eval():
+    """Same-bar high must not raise the trail before the stop is checked."""
+    # Bar 10: closed high 112 arms +1R for the *next* bar.
+    # Bar 11: high 125 / low 100.5 — lagged trail ~102, lookahead would fill ~115.
+    df = _flat_then(
+        130,
+        {
+            10: (100.0, 112.0, 99.5, 110.0),
+            11: (110.0, 125.0, 100.5, 108.0),
+        },
+    )
+    r = run_symbol_backtest(
+        df, desk="gold", book="new", symbol="GLD", signal_fn=_forced_buy
+    )
+    stopped = [t for t in r.sample_trades if t["reason"] in {"stop", "stop_gap"}]
+    assert stopped
+    # Must not fill at the same-bar trailed price (~115). Honest fill is the prior trail.
+    assert stopped[0]["exit"] < 110.0
+
+
+def test_long_stop_fill_helper():
+    from services.multiasset.backtest import long_stop_fill
+
+    px, reason = long_stop_fill(85.0, 80.0, 90.0)
+    assert px == 85.0 and reason == "stop_gap"
+    px, reason = long_stop_fill(100.0, 89.0, 90.0)
+    assert px == 90.0 and reason == "stop"
+    px, reason = long_stop_fill(100.0, 91.0, 90.0)
+    assert px is None
+
+
+def test_expectancy_ci_and_buy_hold_fields():
+    df = _trending_ohlc(400, drift=0.002)
+    out = compare_desk(df, desk="gold", symbol="GLD")
+    assert "buy_hold_oos" in out
+    r = out["new"]
+    assert "oos_trades" in r
+    assert "expectancy_ci95_low" in r
+    assert r["buy_hold_oos_return_pct"] is not None
+    from services.multiasset.backtest import expectancy_mean_ci95
+
+    mean, lo, hi = expectancy_mean_ci95([1.0, 2.0, 3.0, 4.0])
+    assert mean == 2.5
+    assert lo is not None and hi is not None and lo < mean < hi

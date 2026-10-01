@@ -365,3 +365,75 @@ async def test_autopilot_capital_aware_dry_cycle(session: AsyncSession, monkeypa
         assert isinstance(crypto.get("buys"), list)
 
     get_settings.cache_clear()
+
+
+def test_beta_url_must_be_paper(monkeypatch):
+    from config.settings import get_settings
+    from services.multiasset.paper_broker import (
+        MultiAssetNotPaperError,
+        assert_beta_url_is_paper,
+        beta_base_url_is_paper,
+        get_beta_broker_provider,
+    )
+
+    assert beta_base_url_is_paper("https://paper-api.alpaca.markets")
+    assert not beta_base_url_is_paper("https://api.alpaca.markets")
+    with pytest.raises(MultiAssetNotPaperError):
+        assert_beta_url_is_paper("https://api.alpaca.markets")
+    monkeypatch.setenv("ALPACA_BETA_BASE_URL", "https://api.alpaca.markets")
+    get_settings.cache_clear()
+    with pytest.raises(MultiAssetNotPaperError):
+        get_beta_broker_provider()
+    monkeypatch.delenv("ALPACA_BETA_BASE_URL", raising=False)
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_execute_refuses_when_account_not_paper(session, monkeypatch):
+    monkeypatch.setenv("MULTIASSET_BETA_ENABLED", "true")
+    from config.settings import get_settings
+
+    get_settings.cache_clear()
+    mock_broker = MagicMock()
+    mock_broker.is_configured.return_value = True
+    mock_broker.base_url = "https://paper-api.alpaca.markets"
+    mock_broker.get_account = AsyncMock(return_value={"paper": False, "status": "ACTIVE"})
+    mock_broker.submit_order = AsyncMock(side_effect=AssertionError("must not submit"))
+
+    with patch("services.multiasset.desk_service.get_beta_broker_provider", return_value=mock_broker):
+        svc = MultiAssetDeskService(session)
+        with pytest.raises(ValueError, match="paper=false"):
+            await svc.execute(
+                MultiAssetOrderRequest(
+                    desk="gold",
+                    symbol="GLD",
+                    side="buy",
+                    qty=1,
+                    confirm=True,
+                    dry_run=False,
+                )
+            )
+    assert mock_broker.submit_order.await_count == 0
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_autopilot_skips_when_account_not_paper(session, monkeypatch):
+    monkeypatch.setenv("MULTIASSET_BETA_ENABLED", "true")
+    monkeypatch.setenv("MULTIASSET_AUTOPILOT_ENABLED", "true")
+    from config.settings import get_settings
+    from services.multiasset.autopilot import MultiAssetAutopilotService
+
+    get_settings.cache_clear()
+    mock_broker = MagicMock()
+    mock_broker.is_configured.return_value = True
+    mock_broker.base_url = "https://paper-api.alpaca.markets"
+    mock_broker.get_account = AsyncMock(return_value={"paper": False})
+
+    with (
+        patch("services.multiasset.autopilot.get_beta_broker_provider", return_value=mock_broker),
+        patch("services.multiasset.desk_service.get_beta_broker_provider", return_value=mock_broker),
+    ):
+        result = await MultiAssetAutopilotService(session).run(actor="test")
+    assert result.get("skipped") == "not_paper"
+    get_settings.cache_clear()

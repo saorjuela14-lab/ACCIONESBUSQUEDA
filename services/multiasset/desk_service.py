@@ -275,6 +275,15 @@ class MultiAssetDeskService:
     async def execute(self, req: MultiAssetOrderRequest) -> MultiAssetOrderResult:
         if not self._settings.multiasset_beta_enabled:
             raise ValueError("Módulo multi-asset beta desactivado")
+        from services.multiasset.paper_broker import (
+            MultiAssetNotPaperError,
+            assert_beta_account_is_paper,
+        )
+
+        try:
+            await assert_beta_account_is_paper(self._broker)
+        except MultiAssetNotPaperError as exc:
+            raise ValueError(str(exc)) from exc
         strategy = get_desk(req.desk)
         sym = normalize_symbol(req.symbol)
         # canonicalize to universe symbol
@@ -325,7 +334,9 @@ class MultiAssetDeskService:
             except Exception:
                 px_s = 0.0
             if px_s > 0:
-                stop_px = round(px_s * (1 - float(strategy.default_stop_pct)), 4)
+                stop_px = round(px_s * (1 - float(strategy.default_stop_pct)), 8)
+                if stop_px <= 0:
+                    stop_px = px_s * (1 - float(strategy.default_stop_pct))
                 order["order_class"] = "oto"
                 order["stop_loss"] = {"stop_price": str(stop_px)}
                 order["time_in_force"] = "gtc"

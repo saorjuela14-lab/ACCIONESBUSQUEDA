@@ -36,6 +36,54 @@ logger = get_logger(__name__)
 _PENDING_TTL_S = 120.0
 _PENDING: dict[str, dict[str, Any]] = {}
 
+# Viernes trades the LIVE/firm equity desk only. Crypto pairs belong to Multi-Asset PAPER.
+_MULTIASSET_VOICE_CRYPTO = {
+    "BTC",
+    "ETH",
+    "SOL",
+    "BONK",
+    "SUSHI",
+    "DOGE",
+    "WIF",
+    "ARB",
+    "LDO",
+    "RENDER",
+    "BCH",
+    "XTZ",
+    "BAT",
+    "AVAX",
+    "LINK",
+    "UNI",
+    "PEPE",
+    "SHIB",
+    "LTC",
+    "DOT",
+    "ATOM",
+}
+
+
+def is_multiasset_voice_symbol(ticker: str) -> bool:
+    """True for crypto/multi-asset names that must never go through the LIVE voice path."""
+    t = (ticker or "").upper().replace(" ", "")
+    if not t:
+        return False
+    if "/" in t:
+        return True
+    root = t.replace("/USD", "").replace("-USD", "").replace("USD", "")
+    return root in _MULTIASSET_VOICE_CRYPTO
+
+
+def _multiasset_voice_refusal(intent: str, ticker: str) -> VoiceCommandResult:
+    return VoiceCommandResult(
+        intent=intent,
+        success=False,
+        speech=(
+            f"{ticker} es de la mesa Multi-Asset PAPER, no de la firma LIVE. "
+            "Viernes no envía esas órdenes. Usa el panel /beta/multiasset (cuenta paper)."
+        ),
+        params={"ticker": ticker, "blocked": "multiasset_paper_only"},
+    )
+
 
 def _pending_key(portfolio_id: str | None) -> str:
     return (portfolio_id or "").strip() or "_default"
@@ -788,6 +836,8 @@ class VoiceCommandService:
 
     async def _buy_preview(self, session, params, portfolio_id) -> VoiceCommandResult:
         ticker = params["ticker"].upper()
+        if is_multiasset_voice_symbol(ticker):
+            return _multiasset_voice_refusal("buy", ticker)
         shares = float(params.get("shares") or 1.0)
         if shares <= 0:
             return VoiceCommandResult(
@@ -844,6 +894,8 @@ class VoiceCommandService:
 
     async def _sell_preview(self, session, params, portfolio_id) -> VoiceCommandResult:
         ticker = params["ticker"].upper()
+        if is_multiasset_voice_symbol(ticker):
+            return _multiasset_voice_refusal("sell", ticker)
         close_all = bool(params.get("close_all"))
         shares = float(params.get("shares") or 0.0)
         svc = AlpacaOrderService()
@@ -957,6 +1009,9 @@ class VoiceCommandService:
 
         kind = pending.get("kind")
         ticker = str(pending.get("ticker") or "").upper()
+        if is_multiasset_voice_symbol(ticker):
+            _clear_pending(portfolio_id)
+            return _multiasset_voice_refusal("confirm", ticker)
         shares = pending.get("shares")
         confirm_live = not svc.paper
 

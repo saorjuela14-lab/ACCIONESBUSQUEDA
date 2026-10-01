@@ -179,3 +179,25 @@ async def test_confirm_without_pending():
     result = await svc.handle("confirma", AsyncMock())
     assert result.intent == "confirm"
     assert not result.success
+
+
+def test_multiasset_voice_symbol_helper():
+    from services.voice_command_service import is_multiasset_voice_symbol
+
+    assert is_multiasset_voice_symbol("BTC/USD")
+    assert is_multiasset_voice_symbol("BONK")
+    assert is_multiasset_voice_symbol("SUSHI/USD")
+    assert not is_multiasset_voice_symbol("AAPL")
+    assert not is_multiasset_voice_symbol("GLD")
+
+
+@pytest.mark.asyncio
+async def test_voice_refuses_multiasset_crypto_on_live_path():
+    svc = VoiceCommandService()
+    alpaca = MagicMock()
+    alpaca.execute = AsyncMock(side_effect=AssertionError("LIVE path must not run"))
+    with patch("services.voice_command_service.AlpacaOrderService", return_value=alpaca):
+        result = await svc.handle("compra 1 BTC/USD", AsyncMock(), portfolio_id="p1")
+    assert result.success is False
+    assert "paper" in result.speech.lower() or "multi-asset" in result.speech.lower()
+    assert alpaca.execute.await_count == 0

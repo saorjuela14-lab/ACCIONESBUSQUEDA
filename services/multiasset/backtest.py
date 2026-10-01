@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 from typing import Any, Callable
 
 import pandas as pd
@@ -29,6 +28,13 @@ RISK_PCT = {"gold": 2.5, "forex": 2.5, "crypto": 3.0}
 MAX_DAILY_LOSS_PCT = 6.0
 MAX_DD_KILL_PCT = 20.0
 START_EQUITY = 10_000.0
+# Same windows the review team used (regime.py).
+GOLD_ROBUSTNESS_WINDOWS = (
+    ("2011-2015", "2011-06-01", "2015-12-31"),
+    ("2013-2019", "2013-06-01", "2019-06-01"),
+    ("2011-2019", "2011-06-01", "2019-06-01"),
+)
+WEEKLY_LOSS_PCT = 12.0
 
 
 @dataclass
@@ -82,6 +88,14 @@ class BacktestReport:
     oos_max_drawdown_pct: float | None
     oos_sharpe: float | None
     oos_win_rate: float | None
+    oos_expectancy_pct: float | None = None
+    oos_expectancy_ci95_low: float | None = None
+    oos_expectancy_ci95_high: float | None = None
+    expectancy_ci95_low: float | None = None
+    expectancy_ci95_high: float | None = None
+    buy_hold_oos_return_pct: float | None = None
+    buy_hold_oos_start: str | None = None
+    buy_hold_oos_end: str | None = None
     crypto_24_7: dict[str, Any] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
     sample_trades: list[dict[str, Any]] = field(default_factory=list)
@@ -117,6 +131,90 @@ def _max_dd(curve: list[float]) -> float:
     return round(dd * 100.0, 2)
 
 
+def long_stop_fill(open_px: float, low_px: float, stop: float) -> tuple[float | None, str | None]:
+    """Long stop fill: if the bar traded through the stop, fill at min(stop, open).
+
+    That is the two-line review fix: `if low <= stop: exit = min(stop, open)`.
+    A gap-down open that is already through the stop cannot fill at the stop price.
+    """
+    if low_px <= stop:
+        fill = min(stop, open_px)
+        return fill, ("stop_gap" if open_px < stop else "stop")
+    return None, None
+
+
+def ratchet_trail_from_closed_bar(
+    *,
+    entry: float,
+    init_stop: float,
+    stop: float,
+    peak: float,
+    closed_high: float,
+    atr_abs: float,
+    trail_atr_mult: float,
+) -> tuple[float, float]:
+    """After the bar has closed: update peak from its high, then trail for the *next* bar."""
+    peak_px = max(float(peak), float(closed_high))
+    risk_px = float(entry) - float(init_stop)
+    if (
+        risk_px > 0
+        and trail_atr_mult > 0
+        and atr_abs > 0
+        and (peak_px - entry) >= risk_px  # +1R on closed high
+    ):
+        trailed = peak_px - trail_atr_mult * atr_abs
+        if trailed > stop:
+            stop = trailed
+    return peak_px, stop
+
+
+def expectancy_mean_ci95(pnls_pct: list[float]) -> tuple[float | None, float | None, float | None]:
+    """Sample mean of trade % P&L and 95% Student-t interval. None CI if n<2."""
+    if not pnls_pct:
+        return None, None, None
+    n = len(pnls_pct)
+    mean = sum(pnls_pct) / n
+    if n < 2:
+        return round(mean, 3), None, None
+    var = sum((x - mean) ** 2 for x in pnls_pct) / (n - 1)
+    se = math.sqrt(var / n) if var > 0 else 0.0
+    try:
+        from scipy.stats import t as student_t
+
+        t_crit = float(student_t.ppf(0.975, n - 1))
+    except Exception:
+        t_crit = 1.96
+    half = t_crit * se
+    return round(mean, 3), round(mean - half, 3), round(mean + half, 3)
+
+
+def buy_hold_oos_return(
+    df: pd.DataFrame,
+    *,
+    oos_frac: float = 0.33,
+    cost_bps_roundtrip: float = 0.0,
+) -> dict[str, Any]:
+    """Buy & hold on the same last-third OOS window (one round-trip cost)."""
+    n = len(df)
+    oos_i = int(n * (1 - oos_frac))
+    oos_i = min(max(oos_i, 0), n - 2)
+    start_px = float(df["Close"].iloc[oos_i])
+    end_px = float(df["Close"].iloc[-1])
+    cost = cost_bps_roundtrip / 100.0  # bps → percentage points
+    ret = (end_px / start_px - 1.0) * 100.0 - cost
+    start_ts = df.index[oos_i]
+    end_ts = df.index[-1]
+    return {
+        "start": str(start_ts.date()) if hasattr(start_ts, "date") else str(start_ts),
+        "end": str(end_ts.date()) if hasattr(end_ts, "date") else str(end_ts),
+        "start_px": round(start_px, 4),
+        "end_px": round(end_px, 4),
+        "return_pct": round(ret, 2),
+        "cost_bps_roundtrip": cost_bps_roundtrip,
+        "oos_index": oos_i,
+    }
+
+
 def run_symbol_backtest(
     df: pd.DataFrame,
     *,
@@ -126,6 +224,8 @@ def run_symbol_backtest(
     signal_fn: Callable[..., TradeSignal],
     dxy: pd.Series | None = None,
     oos_frac: float = 0.33,
+    use_sell_exits: bool = False,
+    apply_weekly_loss: bool = False,
 ) -> BacktestReport:
     need = {"Open", "High", "Low", "Close"}
     if df is None or df.empty or not need.issubset(set(df.columns)):
@@ -153,11 +253,27 @@ def run_symbol_backtest(
     kill_fired = False
     typical_stop = 0.04 if desk == "gold" else (0.035 if desk == "forex" else 0.08)
     trail_mult = 0.0
+    week_key = None
+    week_start_eq = equity
+    blocked_week = False
 
     def mark_to_market(px: float) -> float:
         if not pos:
             return cash
         return cash + pos["qty"] * px
+
+    def _sig_at(i: int) -> TradeSignal:
+        dxy_10d = None
+        if dxy is not None and desk == "gold" and book == "new":
+            try:
+                aligned = dxy.reindex(df.index, method="ffill")
+                if i >= 10 and pd.notna(aligned.iloc[i]) and pd.notna(aligned.iloc[i - 10]):
+                    dxy_10d = float(aligned.iloc[i] / aligned.iloc[i - 10] - 1.0)
+            except Exception:
+                dxy_10d = None
+        if desk == "gold" and book == "new":
+            return signal_fn(df, i, dxy_10d=dxy_10d)
+        return signal_fn(df, i)
 
     for i in range(1, len(df) - 1):
         row = df.iloc[i]
@@ -169,33 +285,51 @@ def run_symbol_backtest(
         o, h, l, c = float(row.Open), float(row.High), float(row.Low), float(row.Close)
         o_n = float(nxt.Open)
 
+        iso_w = None
+        try:
+            iso_w = f"{ts.isocalendar()[0]}-W{int(ts.isocalendar()[1]):02d}"
+        except Exception:
+            iso_w = date_s[:10]
+
         if day_key != date_s:
             day_key = date_s
             day_start = equity
             blocked_today = False
+        if week_key != iso_w:
+            week_key = iso_w
+            week_start_eq = equity
+            blocked_week = False
 
-        # Manage open position on this bar (stop / trail / target). Conservative: stop first.
+        # Manage open position on this bar.
+        # Trail uses peak from *prior closed bars* only (review: update peak AFTER stop).
+        # Stop fill is min(stop, open) when the bar trades through the stop.
         if pos:
             stop = float(pos["stop"])
-            peak_px = max(float(pos["peak"]), h)
-            pos["peak"] = peak_px
+            peak_px = float(pos["peak"])
             trail_mult = float(pos.get("trail_atr_mult") or 0)
             atr_abs = float(pos.get("atr") or 0)
             risk_px = float(pos["entry"]) - float(pos["init_stop"])
             if risk_px > 0 and trail_mult > 0 and atr_abs > 0:
-                if (peak_px - pos["entry"]) >= risk_px:  # +1R
+                if (peak_px - pos["entry"]) >= risk_px:  # +1R on closed peak
                     trailed = peak_px - trail_mult * atr_abs
                     if trailed > stop:
                         stop = trailed
                         pos["stop"] = stop
             exit_px = None
             reason = None
-            if l <= stop:
-                exit_px = stop
-                reason = "stop"
-            elif target_pct and h >= pos["entry"] * (1 + target_pct):
+            if pos.get("exit_next_open"):
+                exit_px = o
+                reason = "sell_signal"
+            fill, fill_reason = long_stop_fill(o, l, stop)
+            if fill is not None and (exit_px is None or fill <= float(exit_px)):
+                exit_px = fill
+                reason = fill_reason
+            elif exit_px is None and target_pct and h >= pos["entry"] * (1 + target_pct):
                 exit_px = pos["entry"] * (1 + target_pct)
                 reason = "target"
+            if exit_px is None:
+                # Closed-bar high only — next bar's trail sees this peak.
+                pos["peak"] = max(float(pos["peak"]), h)
             if exit_px is not None:
                 gross = (exit_px / pos["entry"] - 1.0) * pos["qty"] * pos["entry"]
                 fee = pos["notional"] * cost
@@ -235,22 +369,25 @@ def run_symbol_backtest(
             day_pnl = (equity - day_start) / day_start * 100
             if day_pnl <= -MAX_DAILY_LOSS_PCT:
                 blocked_today = True
+        if apply_weekly_loss and week_start_eq > 0:
+            week_pnl = (equity - week_start_eq) / week_start_eq * 100
+            if week_pnl <= -WEEKLY_LOSS_PCT:
+                blocked_week = True
 
-        # Signals at close[i], fill next open — skip if in position or blocked
-        if pos is not None or blocked_today or kill_fired:
-            continue
-        dxy_10d = None
-        if dxy is not None and desk == "gold" and book == "new":
+        # Sell-to-exit: signal at this close, fill next open (no look-ahead).
+        if pos is not None and use_sell_exits and not pos.get("exit_next_open"):
             try:
-                aligned = dxy.reindex(df.index, method="ffill")
-                if i >= 10 and pd.notna(aligned.iloc[i]) and pd.notna(aligned.iloc[i - 10]):
-                    dxy_10d = float(aligned.iloc[i] / aligned.iloc[i - 10] - 1.0)
+                sig_now = _sig_at(i)
+                typical_stop = sig_now.stop_pct
+                if sig_now.side == "sell":
+                    pos["exit_next_open"] = True
             except Exception:
-                dxy_10d = None
-        if desk == "gold" and book == "new":
-            sig = signal_fn(df, i, dxy_10d=dxy_10d)
-        else:
-            sig = signal_fn(df, i)
+                pass
+
+        # New entries at close[i], fill next open
+        if pos is not None or blocked_today or blocked_week or kill_fired:
+            continue
+        sig = _sig_at(i)
         typical_stop = sig.stop_pct
         if sig.side != "buy":
             continue
@@ -332,6 +469,10 @@ def run_symbol_backtest(
     if oos_curve:
         oos_ret = round((oos_curve[-1] / oos_curve[0] - 1) * 100.0, 2) if oos_curve[0] else None
 
+    exp, exp_lo, exp_hi = expectancy_mean_ci95([t.pnl_pct for t in closed])
+    oos_exp, oos_lo, oos_hi = expectancy_mean_ci95([t.pnl_pct for t in oos_trades])
+    bh = buy_hold_oos_return(df, oos_frac=oos_frac, cost_bps_roundtrip=COST_BPS[desk])
+
     days = max(1, (df.index[-1] - df.index[0]).days) if hasattr(df.index[-1] - df.index[0], "days") else len(df)
     crypto_note = {}
     if desk == "crypto":
@@ -345,9 +486,21 @@ def run_symbol_backtest(
 
     notes = [
         "Long only, apalancamiento 1.0, sin margen.",
-        f"Entrada en open t+1 tras señal en close t (sin look-ahead).",
+        "Entrada en open t+1 tras señal en close t (sin look-ahead).",
         f"Coste ida y vuelta {COST_BPS[desk]:.0f} bps (spread+slippage).",
+        "Stop: si low<=stop, fill = min(stop, open) (gap no llena al precio del stop).",
+        "Trailing: el máximo se actualiza DESPUÉS de evaluar el stop de esa barra (barras ya cerradas).",
         "Si high y low tocan stop y target el mismo día, se asume stop primero (conservador).",
+        (
+            "Salida por señal de venta: sí (fill en open t+1)."
+            if use_sell_exits
+            else "Salida por señal de venta: NO modelada (solo stop/trail/target)."
+        ),
+        (
+            f"Límite semanal {WEEKLY_LOSS_PCT:.0f}%: sí (bloquea nuevas entradas el resto de la semana)."
+            if apply_weekly_loss
+            else f"Límite semanal {WEEKLY_LOSS_PCT:.0f}%: NO aplicado en este backtest (el desk live sí lo tiene)."
+        ),
     ]
     if kill_fired:
         notes.append(f"Kill-switch de mesa ({MAX_DD_KILL_PCT:.0f}% DD) se habría disparado el {kill_at} (DD {kill_dd}%).")
@@ -391,6 +544,14 @@ def run_symbol_backtest(
         oos_win_rate=round(sum(1 for t in oos_trades if t.pnl_usd > 0) / len(oos_trades) * 100, 2)
         if oos_trades
         else None,
+        oos_expectancy_pct=oos_exp,
+        oos_expectancy_ci95_low=oos_lo,
+        oos_expectancy_ci95_high=oos_hi,
+        expectancy_ci95_low=exp_lo,
+        expectancy_ci95_high=exp_hi,
+        buy_hold_oos_return_pct=bh["return_pct"],
+        buy_hold_oos_start=bh["start"],
+        buy_hold_oos_end=bh["end"],
         crypto_24_7=crypto_note,
         notes=notes,
         sample_trades=[asdict(t) for t in closed[:8]],
@@ -403,6 +564,8 @@ def compare_desk(
     desk: str,
     symbol: str,
     dxy: pd.Series | None = None,
+    use_sell_exits: bool = False,
+    apply_weekly_loss: bool = False,
 ) -> dict[str, Any]:
     fns = {
         "gold": (legacy_gold_signal, new_gold_signal),
@@ -410,8 +573,9 @@ def compare_desk(
         "crypto": (legacy_crypto_signal, new_crypto_signal),
     }
     legacy_fn, new_fn = fns[desk]
-    legacy = run_symbol_backtest(df, desk=desk, book="legacy", symbol=symbol, signal_fn=legacy_fn, dxy=dxy)
-    new = run_symbol_backtest(df, desk=desk, book="new", symbol=symbol, signal_fn=new_fn, dxy=dxy)
+    kw = dict(dxy=dxy, use_sell_exits=use_sell_exits, apply_weekly_loss=apply_weekly_loss)
+    legacy = run_symbol_backtest(df, desk=desk, book="legacy", symbol=symbol, signal_fn=legacy_fn, **kw)
+    new = run_symbol_backtest(df, desk=desk, book="new", symbol=symbol, signal_fn=new_fn, **kw)
     # Honest winner on OOS total return, then IS max DD as tie-break
     winner = "tie"
     if (new.oos_total_return_pct or -999) > (legacy.oos_total_return_pct or -999) + 0.5:
@@ -427,6 +591,7 @@ def compare_desk(
             else "Sin ventaja clara en OOS."
         )
     )
+    bh = buy_hold_oos_return(df, oos_frac=0.33, cost_bps_roundtrip=COST_BPS[desk])
     return {
         "desk": desk,
         "symbol": symbol,
@@ -434,6 +599,9 @@ def compare_desk(
         "edge_note": edge_note,
         "leverage": 1.0,
         "margin": False,
+        "use_sell_exits": use_sell_exits,
+        "apply_weekly_loss": apply_weekly_loss,
+        "buy_hold_oos": bh,
         "legacy": asdict(legacy),
         "new": asdict(new),
     }

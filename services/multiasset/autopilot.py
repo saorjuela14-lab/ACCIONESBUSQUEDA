@@ -60,6 +60,16 @@ class MultiAssetAutopilotService:
             out["skipped"] = "multiasset_autopilot_disabled"
             return out
 
+        from services.multiasset.paper_broker import MultiAssetNotPaperError, assert_beta_account_is_paper
+
+        try:
+            await assert_beta_account_is_paper(self._broker)
+        except MultiAssetNotPaperError as exc:
+            out["skipped"] = "not_paper"
+            out["error"] = str(exc)
+            logger.error("multiasset.autopilot.refused_not_paper", error=str(exc))
+            return out
+
         # LIVE kill-switch is read-only (CEO panic). Mesa paper has its own DD kill.
         if await KillSwitchService(self._session).is_active():
             out["skipped"] = "firm_kill_switch_active"
