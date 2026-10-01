@@ -1146,7 +1146,7 @@ a.auth-logout {
 
 /* Mobile bottom nav */
 .mobile-nav {
-  display: none; position: fixed; bottom: 0; left: 0; right: 0; z-index: 60;
+  display: none; position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
   background: var(--surface); border-top: 1px solid var(--border);
   padding: 0.35rem 0.25rem calc(0.35rem + env(safe-area-inset-bottom));
   grid-template-columns: repeat(6, 1fr); gap: 2px;
@@ -1191,7 +1191,8 @@ a.mob-nav-btn {
   .graph-canvas { height: 220px; }
   .chart-box { height: 180px; }
   .term-footer { padding-bottom: calc(3.5rem + env(safe-area-inset-bottom)); }
-  .mobile-nav { display: grid; }
+  .terminal { padding-bottom: calc(4.5rem + env(safe-area-inset-bottom)); }
+  .mobile-nav { display: grid; z-index: 200; }
   .toast { bottom: calc(4rem + env(safe-area-inset-bottom)); left: 1rem; right: 1rem; }
   .briefing-panel, .panel { margin-left: 0.35rem; margin-right: 0.35rem; }
   .news-grid { grid-template-columns: 1fr; max-height: 360px; }

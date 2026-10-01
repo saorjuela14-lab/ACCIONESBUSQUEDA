@@ -2,6 +2,7 @@
   const API = "/api/v1";
   let desk = "gold";
   let statusCache = null;
+  let loadGen = 0;
 
   function token() {
     // Optional Bearer. Session is the httponly cookie (credentials: same-origin).
@@ -60,7 +61,9 @@
   }
 
   async function loadStatus() {
+    const gen = loadGen;
     const st = await api(`${API}/beta/multiasset/${desk}/status`);
+    if (gen !== loadGen) return;
     statusCache = st;
     $("#desk-title").textContent = st.strategy?.name || desk;
     $("#desk-thesis").textContent = st.strategy?.thesis || "";
@@ -94,10 +97,12 @@
   }
 
   async function loadHistory() {
+    const gen = loadGen;
     const el = $("#history-out");
     el.textContent = "Cargando…";
     try {
       const r = await api(`${API}/beta/multiasset/history?desk=${desk}&limit=40`);
+      if (gen !== loadGen) return;
       const items = r.items || [];
       if (!items.length) {
         el.textContent = "Sin operaciones aún en esta mesa.";
@@ -117,8 +122,10 @@
   }
 
   async function loadStats() {
+    const gen = loadGen;
     try {
       const s = await api(`${API}/beta/multiasset/track-record?desk=${desk}&window_days=90`);
+      if (gen !== loadGen) return;
       $("#st-win").textContent = pct(s.trades_win_rate_pct);
       $("#st-brief").textContent = pct(s.brief_hit_rate_pct);
       $("#st-pnl").textContent = money(s.trades_total_pnl_usd);
@@ -246,6 +253,7 @@
     btn.onclick = async () => {
       document.querySelectorAll(".ma-tab").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
+      loadGen += 1;
       desk = btn.dataset.desk;
       await loadStatus();
       await loadHistory();
