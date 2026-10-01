@@ -358,6 +358,10 @@ async def test_autopilot_capital_aware_dry_cycle(session: AsyncSession, monkeypa
             ),
         ),
         patch(
+            "agents.multiasset.quote_symbol",
+            AsyncMock(return_value={"symbol": "BTC/USD", "current_price": 50000.0, "bid": 49995.0, "ask": 50005.0}),
+        ),
+        patch(
             "services.multiasset.desk_service.quote_symbol",
             AsyncMock(return_value={"symbol": "BTC/USD", "current_price": 50000.0}),
         ),

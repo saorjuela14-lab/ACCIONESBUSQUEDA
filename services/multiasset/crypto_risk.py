@@ -11,7 +11,15 @@ from utils.logging import get_logger
 logger = get_logger(__name__)
 
 BTC_ETH = frozenset({"BTC/USD", "ETH/USD"})
-SOL = "SOL/USD"
+MAJORS = frozenset({
+    "SOL/USD", "AVAX/USD", "LINK/USD", "DOT/USD", "ADA/USD", "LTC/USD",
+    "BCH/USD", "UNI/USD", "ATOM/USD", "NEAR/USD", "XRP/USD", "DOGE/USD",
+})
+SPREAD_UNIVERSE_BPS = 30.0
+SPREAD_BTC_BPS = 10.0
+SPREAD_ETH_BPS = 10.0
+SPREAD_MAJORS_BPS = 15.0
+SPREAD_REJECT_MULT = 2.5
 
 MAX_CRYPTO_EQUITY_PCT = 25.0
 MAX_OPEN_RISK_PCT = 1.5  # aggregate, treated as one asset
@@ -24,11 +32,6 @@ ALT_ADV_PCT = 1.0
 CORR_THRESHOLD = 0.7
 GROUP_RISK_PCT = 1.0
 GROUP_EQUITY_PCT = 15.0
-SPREAD_UNIVERSE_BPS = 30.0
-SPREAD_BTC_BPS = 10.0
-SPREAD_ETH_BPS = 10.0
-SPREAD_SOL_BPS = 15.0
-SPREAD_REJECT_MULT = 2.5
 RAMP_TRADES = 12
 KILL_ALLOC_DD_PCT = 10.0
 PAUSE_DAILY_PCT = 1.5
@@ -56,8 +59,8 @@ def hard_spread_cap_bps(symbol: str) -> float:
         return SPREAD_BTC_BPS
     if s == "ETH/USD":
         return SPREAD_ETH_BPS
-    if s == SOL:
-        return SPREAD_SOL_BPS
+    if s in MAJORS:
+        return SPREAD_MAJORS_BPS
     return SPREAD_UNIVERSE_BPS
 
 
@@ -179,13 +182,15 @@ def size_crypto_order(
     n_trades: int = 0,
     median_adv_usd: float | None = None,
     groups: list[set[str]] | None = None,
+    max_positions: int | None = None,
 ) -> tuple[float, dict[str, Any]]:
     """Return notional (0 = reject) and diagnostics. Paper 1x."""
     info: dict[str, Any] = {"symbol": _norm(symbol)}
     if entry <= 0 or stop <= 0 or stop >= entry:
         info["reason"] = "invalid_stop"
         return 0.0, info
-    if book.n_positions >= MAX_POSITIONS and _norm(symbol) not in book.name_notional:
+    cap_n = int(max_positions if max_positions is not None else MAX_POSITIONS)
+    if book.n_positions >= cap_n and _norm(symbol) not in book.name_notional:
         info["reason"] = "max_positions"
         return 0.0, info
 

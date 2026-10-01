@@ -98,6 +98,7 @@ def public_payload(data: dict[str, Any] | None = None) -> dict[str, Any]:
         "multiple_testing_correction": payload.get("multiple_testing_correction"),
         "survivorship_bias": payload.get("survivorship_bias"),
         "costs": payload.get("costs"),
+        "min_oos_trades": (payload.get("costs") or {}).get("min_oos_trades"),
         "note": payload.get("note"),
         "count": len(rows),
         "approved": [
@@ -106,6 +107,7 @@ def public_payload(data: dict[str, Any] | None = None) -> dict[str, Any]:
                 "expectancy": r.get("expectancy"),
                 "n_trades": r.get("n_trades") or r.get("trades"),
                 "median_spread_bps": r.get("median_spread_bps"),
+                "median_adv_usd": r.get("median_adv_usd"),
                 "status": r.get("status"),
             }
             for r in rows

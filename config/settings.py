@@ -206,6 +206,8 @@ class Settings(BaseSettings):
     crypto_max_equity_pct: float = 25.0
     crypto_max_open_risk_pct: float = 1.5
     crypto_max_positions: int = 6
+    crypto_min_adv_usd: float = 1_000_000.0
+    crypto_min_oos_trades: int = 20
     crypto_pause_daily_pct: float = 1.5
     crypto_pause_weekly_pct: float = 3.0
     crypto_kill_alloc_dd_pct: float = 10.0

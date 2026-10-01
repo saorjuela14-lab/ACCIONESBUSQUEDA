@@ -120,6 +120,38 @@ def test_risk_btc_eth_vs_alt_caps():
     assert hard_spread_cap_bps("WIF/USD") == 30
 
 
+def test_daily_screen_liquidity_evidence_and_report():
+    from services.multiasset.crypto_filters import build_gate_report, evidence_gate, liquidity_ok, screen_symbol
+
+    assert evidence_gate({"status": "seed_pending_strategy_backtest"}, min_trades=20)[0] is True
+    assert evidence_gate({"expectancy": -0.1, "n_trades": 80}, min_trades=20)[0] is False
+    assert evidence_gate({"expectancy": 0.4, "n_trades": 5}, min_trades=20)[0] is False
+    assert evidence_gate({"expectancy": 0.4, "n_trades": 40}, min_trades=20)[0] is True
+    assert liquidity_ok(500_000, min_adv_usd=1_000_000)[0] is False
+    assert liquidity_ok(5_000_000, min_adv_usd=1_000_000)[0] is True
+    btc = screen_symbol(
+        {"symbol": "BTC/USD", "status": "seed", "median_spread_bps": 8, "median_adv_usd": 2e10, "expectancy": None},
+        min_adv_usd=1_000_000,
+        min_trades=20,
+        live_spread_bps=9.0,
+        adv_usd=2e10,
+        tradable=True,
+    )
+    thin = screen_symbol(
+        {"symbol": "WIF/USD", "expectancy": 0.2, "n_trades": 40, "median_spread_bps": 40},
+        min_adv_usd=1_000_000,
+        min_trades=20,
+        live_spread_bps=12.0,
+        adv_usd=1000,
+        tradable=True,
+    )
+    assert btc["passed"] is True
+    assert thin["passed"] is False
+    report = build_gate_report([btc, thin])
+    assert report["passed_symbols"] == ["BTC/USD"]
+    assert report["runtime_must_not_recompute_oos"] is True
+
+
 def test_size_respects_25pct_sleeve_and_1_5_agg_risk():
     eq = 10_000.0
     book = CryptoBook(
@@ -181,6 +213,26 @@ def test_max_six_positions_and_ramp_half_size():
         symbol="BTC/USD", equity=eq, entry=100.0, stop=99.0, book=book, n_trades=20
     )
     assert n == 0 and info["reason"] == "max_positions"
+    n3, info3 = size_crypto_order(
+        symbol="BTC/USD",
+        equity=eq,
+        entry=100.0,
+        stop=99.0,
+        book=CryptoBook(
+            equity=eq,
+            crypto_notional=0,
+            open_risk_usd=0,
+            n_positions=3,
+            name_notional={},
+            name_risk={},
+            group_notional={},
+            group_risk={},
+            membership={},
+        ),
+        n_trades=20,
+        max_positions=3,
+    )
+    assert n3 == 0 and info3["reason"] == "max_positions"
 
 
 def test_corr_group_caps_and_spread_filters():

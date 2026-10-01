@@ -324,10 +324,10 @@ class MultiAssetAutopilotService:
             load_eligibility,
             median_spread_bps,
         )
+        from services.multiasset.crypto_filters import build_gate_report, screen_symbol
         from services.multiasset.crypto_risk import (
             CryptoBook,
             MAX_CRYPTO_EQUITY_PCT,
-            MAX_POSITIONS,
             cluster_symbols,
             daily_weekly_pause,
             entry_spread_ok,
@@ -360,6 +360,9 @@ class MultiAssetAutopilotService:
             return out
         out["eligibility_version"] = elig.get("version")
         out["approved"] = approved
+        min_adv = float(getattr(self._settings, "crypto_min_adv_usd", 1_000_000) or 0)
+        min_oos = int(getattr(self._settings, "crypto_min_oos_trades", 20) or 20)
+        max_pos = int(getattr(self._settings, "crypto_max_positions", 6) or 6)
 
         tradable: set[str] = set()
         try:
@@ -372,6 +375,41 @@ class MultiAssetAutopilotService:
                     tradable.add(ns)
         except Exception as exc:
             logger.warning("crypto.a.assets_failed", error=str(exc))
+
+        screened_rows: list[dict] = []
+        quotes: dict[str, dict] = {}
+        for row in rows:
+            sym = row["symbol"]
+            live = None
+            last = None
+            try:
+                from agents.multiasset import quote_symbol
+
+                q = await quote_symbol(sym)
+                quotes[sym] = q or {}
+                last = float((q or {}).get("current_price") or 0) or None
+                live = spread_bps((q or {}).get("bid"), (q or {}).get("ask"), last)
+            except Exception:
+                quotes[sym] = {}
+            adv = row.get("median_adv_usd") or row.get("adv_usd")
+            try:
+                adv_f = float(adv) if adv is not None else None
+            except (TypeError, ValueError):
+                adv_f = None
+            tradable_ok = (not tradable) or (sym in tradable)
+            screened_rows.append(
+                screen_symbol(
+                    row,
+                    min_adv_usd=min_adv,
+                    min_trades=min_oos,
+                    live_spread_bps=live,
+                    adv_usd=adv_f,
+                    tradable=tradable_ok,
+                )
+            )
+        gate_report = build_gate_report(screened_rows)
+        out["gate_report"] = gate_report
+        passed_set = set(gate_report["passed_symbols"])
 
         open_trades = await self._tracker.list_open(desk="crypto")
         open_by_sym = {t.symbol: t for t in open_trades}
@@ -439,6 +477,17 @@ class MultiAssetAutopilotService:
         mark["day_pnl_pct"] = round(day_pnl_pct, 4)
         mark["week_pnl_pct"] = round(week_pnl_pct, 4)
         await flags.set_json("crypto_strategy_a_risk", mark)
+        await flags.set_json(
+            "crypto_strategy_a_daily_screen",
+            {
+                **gate_report,
+                "day": day,
+                "version": elig.get("version"),
+                "at": datetime.now(timezone.utc).isoformat(),
+                "min_adv_usd": min_adv,
+                "min_oos_trades": min_oos,
+            },
+        )
         out["crypto_usd"] = round(crypto_usd, 2)
         out["allocation_usd"] = round(allocation, 2)
 
@@ -485,20 +534,17 @@ class MultiAssetAutopilotService:
             sym = row["symbol"]
             if sym in open_by_sym:
                 continue
+            if sym not in passed_set:
+                why = next((r.get("reasons") for r in screened_rows if r.get("symbol") == sym), ["gate"])
+                out["scanned"].append({"symbol": sym, "skip": why[0] if why else "gate"})
+                continue
             if tradable and sym not in tradable:
                 out["scanned"].append({"symbol": sym, "skip": "not_tradable_alpaca"})
                 continue
             med = median_spread_bps(sym, elig)
-            live = None
-            last = None
-            try:
-                from agents.multiasset import quote_symbol
-
-                q = await quote_symbol(sym)
-                last = float((q or {}).get("current_price") or 0) or None
-                live = spread_bps(q.get("bid") if q else None, q.get("ask") if q else None, last)
-            except Exception:
-                live = None
+            q = quotes.get(sym) or {}
+            last = float(q.get("current_price") or 0) or None
+            live = spread_bps(q.get("bid"), q.get("ask"), last)
             ok_sp, why_sp = entry_spread_ok(sym, live_bps=live, median_bps=med)
             if not ok_sp:
                 out["scanned"].append({"symbol": sym, "skip": why_sp})
@@ -515,6 +561,11 @@ class MultiAssetAutopilotService:
                 out["scanned"].append({"symbol": sym, "skip": "invalid_stop_round"})
                 continue
             n_trades = await self._tracker.count_symbol_trades(desk="crypto", symbol=sym)
+            adv = row.get("median_adv_usd")
+            try:
+                adv_f = float(adv) if adv is not None else None
+            except (TypeError, ValueError):
+                adv_f = None
             notional, info = size_crypto_order(
                 symbol=sym,
                 equity=eq,
@@ -522,8 +573,9 @@ class MultiAssetAutopilotService:
                 stop=float(sig.stop_px),
                 book=book,
                 n_trades=n_trades,
-                median_adv_usd=None,
+                median_adv_usd=adv_f,
                 groups=groups,
+                max_positions=max_pos,
             )
             if notional <= 0:
                 out["scanned"].append({"symbol": sym, "skip": info.get("reason")})
@@ -564,7 +616,7 @@ class MultiAssetAutopilotService:
                 )
             except Exception as exc:
                 out["buys"].append({"symbol": sym, "error": str(exc)})
-            if book.n_positions >= MAX_POSITIONS:
+            if book.n_positions >= max_pos:
                 break
 
         out["open_after"] = book.n_positions

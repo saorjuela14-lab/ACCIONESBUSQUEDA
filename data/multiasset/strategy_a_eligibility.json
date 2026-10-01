@@ -11,7 +11,11 @@
   "costs": {
     "spread": "per_symbol_measured_or_estimated",
     "fixed_slippage": false,
-    "comment": "Usar spread mediano por símbolo (medido o estimado). No slippage fijo. Costes taker Alpaca 0,15%/0,25% se documentan aparte."
+    "alpaca_maker_bps": 15,
+    "alpaca_taker_bps": 25,
+    "min_oos_trades": 20,
+    "expectancy_rule": "> 0 after per-symbol spread + Alpaca taker 0.15%/0.25%. El runtime NO recalcula este OOS.",
+    "comment": "Usar spread mediano por símbolo (medido o estimado). No slippage fijo."
   },
   "approved": [
     {
@@ -19,6 +23,7 @@
       "expectancy": null,
       "n_trades": null,
       "median_spread_bps": 8.0,
+      "median_adv_usd": 25000000000,
       "status": "seed_pending_strategy_backtest"
     },
     {
@@ -26,6 +31,7 @@
       "expectancy": null,
       "n_trades": null,
       "median_spread_bps": 8.0,
+      "median_adv_usd": 8000000000,
       "status": "seed_pending_strategy_backtest"
     }
   ]

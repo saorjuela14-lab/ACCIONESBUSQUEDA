@@ -76,16 +76,26 @@ async def last_multiasset_cycle(session: AsyncSession = Depends(get_session)):
 
 
 @router.get("/beta/multiasset/strategy-a/eligibility")
-async def strategy_a_eligibility(scope: OrgScope = Depends(get_org_scope)):
-    """Read-only Strategy A gate file. Mesa only. Never recomputes the backtest."""
+async def strategy_a_eligibility(
+    scope: OrgScope = Depends(get_org_scope),
+    session: AsyncSession = Depends(get_session),
+):
+    """Read-only Strategy A gate + last daily liquidity/spread screen. Mesa only."""
     _enabled()
     scope.require_desk()
+    from database.repositories.ops_repository import OpsFlagRepository
     from services.multiasset.crypto_eligibility import EligibilityClosed, public_payload
 
     try:
-        return public_payload()
+        payload = public_payload()
     except EligibilityClosed as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    daily = await OpsFlagRepository(session).get_json("crypto_strategy_a_daily_screen")
+    payload["daily_screen"] = daily or None
+    payload["passed_symbols"] = (daily or {}).get("passed_symbols") or [
+        r["symbol"] for r in payload.get("approved") or []
+    ]
+    return payload
 
 
 @router.get("/beta/multiasset/desks")
