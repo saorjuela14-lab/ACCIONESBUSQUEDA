@@ -8,9 +8,12 @@ pool after each transaction. This module uses a single UPDATE ... RETURNING on
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import socket
+import uuid
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -25,8 +28,10 @@ log = logging.getLogger("nexbuy.db_lease")
 LEASE_CRYPTO_A = "crypto_a"
 LEASE_LIVE_STOCKS = "live_stocks"
 LEASE_LIVE_ENTRY = "live_entry"
+LEASE_LIFECYCLE = "lifecycle_scan"
 DEFAULT_TTL_SECONDS = 120
 ALERT_AFTER_MISSES = 2
+HEARTBEAT_INTERVAL_SECONDS = 40
 
 
 @dataclass
@@ -54,7 +59,20 @@ class LeaseSnapshot:
 
 
 def replica_id() -> str:
-    return (os.getenv("RAILWAY_REPLICA_ID") or os.getenv("HOSTNAME") or socket.gethostname() or "replica")[:80]
+    """Stable-enough host identity: hostname (or Railway replica) plus pid."""
+    host = (
+        os.getenv("RAILWAY_REPLICA_ID")
+        or os.getenv("HOSTNAME")
+        or socket.gethostname()
+        or "replica"
+    )
+    host = "".join(c for c in str(host) if c.isalnum() or c in "-_.:")[:48] or "replica"
+    return f"{host}:{os.getpid()}"[:80]
+
+
+def run_owner() -> str:
+    """Per-cycle owner so scheduler and /ops/autopilot/run cannot share a lease."""
+    return f"{replica_id()}:{uuid.uuid4().hex[:8]}"[:80]
 
 
 def _iso(value: Any) -> str | None:
@@ -159,7 +177,7 @@ async def snapshot_lease(session: AsyncSession, name: str) -> LeaseSnapshot:
 
 
 async def snapshot_leases(session: AsyncSession, names: list[str] | None = None) -> dict[str, dict[str, Any]]:
-    names = names or [LEASE_CRYPTO_A, LEASE_LIVE_STOCKS, LEASE_LIVE_ENTRY]
+    names = names or [LEASE_CRYPTO_A, LEASE_LIVE_STOCKS, LEASE_LIVE_ENTRY, LEASE_LIFECYCLE]
     out: dict[str, dict[str, Any]] = {}
     for name in names:
         try:
@@ -223,6 +241,19 @@ async def acquire_lease(
             snap.expires_at,
             owner,
         )
+        try:
+            from services.desk_ops_alert import KIND_LEASE_MISSES, emit_desk_ops_alert
+
+            await emit_desk_ops_alert(
+                KIND_LEASE_MISSES,
+                owner=str(snap.owner or ""),
+                detail=(
+                    f"lease={name} misses={snap.misses_consecutive} "
+                    f"holder={snap.owner} challenger={owner} expires={snap.expires_at}"
+                ),
+            )
+        except Exception as exc:
+            log.warning("lease_miss_alert_push_failed name=%s err=%s", name, exc)
     return snap
 
 
@@ -279,6 +310,125 @@ async def force_expire_for_tests(session: AsyncSession, name: str) -> None:
         {"n": name},
     )
     await session.commit()
+
+
+class LeaseHeartbeat:
+    """Periodic lease renewer. Cancelled in ``finally``. Interval < TTL.
+
+    Each beat opens its own session so it does not share the cycle session.
+    ``still_mine`` heartbeats once and returns False if ownership was lost.
+    """
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        owner: str,
+        ttl_seconds: int = DEFAULT_TTL_SECONDS,
+        interval_seconds: float | None = None,
+        session_factory: Callable[[], AsyncIterator[AsyncSession]] | None = None,
+    ) -> None:
+        self.name = name
+        self.owner = owner
+        self.ttl_seconds = max(1, int(ttl_seconds))
+        default_iv = min(HEARTBEAT_INTERVAL_SECONDS, max(1, self.ttl_seconds // 3))
+        self.interval_seconds = float(
+            interval_seconds if interval_seconds is not None else default_iv
+        )
+        self._session_factory = session_factory
+        self._task: asyncio.Task[None] | None = None
+        self.lost = False
+        self._started = False
+
+    def _iter_session(self) -> AsyncIterator[AsyncSession]:
+        if self._session_factory is not None:
+            return self._session_factory()
+        from database.engine import get_session
+
+        return get_session()
+
+    async def _beat(self) -> bool:
+        agen = self._iter_session()
+        session = await agen.__anext__()
+        try:
+            ok = await heartbeat_lease(
+                session,
+                name=self.name,
+                owner=self.owner,
+                ttl_seconds=self.ttl_seconds,
+            )
+            return bool(ok)
+        finally:
+            try:
+                await agen.aclose()
+            except Exception:
+                pass
+
+    async def _loop(self) -> None:
+        try:
+            while True:
+                ok = await self._beat()
+                if not ok:
+                    self.lost = True
+                    log.warning(
+                        "lease_heartbeat_lost name=%s owner=%s",
+                        self.name,
+                        self.owner,
+                    )
+                    return
+                await asyncio.sleep(self.interval_seconds)
+        except asyncio.CancelledError:
+            return
+
+    async def start(self) -> None:
+        if self._task is not None:
+            return
+        try:
+            ok = await self._beat()
+            if not ok:
+                self.lost = True
+                return
+            self._started = True
+            self._task = asyncio.create_task(self._loop())
+        except Exception as exc:
+            log.warning(
+                "lease_heartbeat_start_failed name=%s owner=%s err=%s",
+                self.name,
+                self.owner,
+                exc,
+            )
+            self._task = None
+            self._started = False
+
+    async def still_mine(self) -> bool:
+        if self.lost:
+            return False
+        try:
+            ok = await self._beat()
+        except Exception as exc:
+            log.warning(
+                "lease_still_mine_failed name=%s owner=%s err=%s",
+                self.name,
+                self.owner,
+                exc,
+            )
+            return not self.lost
+        if not ok:
+            self.lost = True
+        return ok
+
+    async def stop(self) -> None:
+        task = self._task
+        self._task = None
+        if task is None:
+            return
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
 
 
 # Keep the ORM imported so metadata.create_all sees the table even if unused here.

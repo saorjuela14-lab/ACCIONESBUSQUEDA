@@ -11,6 +11,7 @@ from domain.broker import BrokerOrderRequest, BrokerOrderResult
 from services.live_cycle_lock import allocate_live_client_order_id, live_client_order_id
 from services.order_idempotency import (
     ALPACA_DUPLICATE_COID_CODE,
+    ALPACA_INSUFFICIENT_QTY_CODE,
     FLAG_ATTEMPTS,
     bump_attempt,
     is_duplicate_client_order_id_error,
@@ -360,6 +361,8 @@ async def test_insufficient_qty_on_stop_does_not_close_or_unprotect():
 def test_insufficient_qty_helper():
     assert is_insufficient_qty_error("insufficient qty available") is True
     assert is_insufficient_qty_error("asset not found") is False
+    coded = _http_err(422, code=ALPACA_INSUFFICIENT_QTY_CODE, message="qty")
+    assert is_insufficient_qty_error(coded) is True
 
 
 def test_manual_source_tag_uuid_not_fixed_minus_one():
@@ -406,6 +409,36 @@ async def test_reconcile_rejects_dead_or_mismatch():
     )
     assert ok.error is None
     assert ok.raw.get("reconciled") is True
+    stop_req = BrokerOrderRequest(symbol="SNAP", qty=1, side="sell", order_type="stop", stop_price=5.4)
+    for dead in ("filled", "replaced", "done_for_day", "canceled"):
+        bad = svc._reconcile_existing_order(
+            stop_req,
+            {
+                "id": "s",
+                "symbol": "SNAP",
+                "qty": "1",
+                "side": "sell",
+                "type": "stop",
+                "status": dead,
+                "stop_price": "5.4",
+            },
+        )
+        assert bad.error == f"stale_order:{dead}"
+        assert bad.raw.get("not_live_stop") is True
+    live_stop = svc._reconcile_existing_order(
+        stop_req,
+        {
+            "id": "s",
+            "symbol": "SNAP",
+            "qty": "1",
+            "side": "sell",
+            "type": "stop",
+            "status": "held",
+            "stop_price": "5.4",
+        },
+    )
+    assert live_stop.error is None
+    assert order_is_live_stop(live_stop) is True
 
 
 @pytest.mark.asyncio

@@ -87,15 +87,16 @@ class AutopilotService:
         actor: str = "autopilot",
     ) -> dict[str, Any]:
         steps: dict[str, Any] = {"started_at": utc_now().isoformat(), "actor": actor}
+        from services.db_lease import LEASE_LIVE_STOCKS, LeaseHeartbeat
         from services.live_cycle_lock import (
             ADVISORY_KEY,
             FLAG_LEASE,
             acquire_lease,
             release_lease,
-            replica_id,
+            run_owner,
         )
 
-        owner = replica_id()
+        owner = run_owner()
         flags_lock = OpsFlagRepository(self._session)
         try:
             got, lease = await acquire_lease(
@@ -118,17 +119,36 @@ class AutopilotService:
             steps["finished_at"] = utc_now().isoformat()
             steps["message"] = "otra réplica tiene el ciclo de acciones"
             return steps
+        hb = LeaseHeartbeat(
+            name=LEASE_LIVE_STOCKS,
+            owner=owner,
+            session_factory=self._lease_sessions,
+        )
         try:
-            from services.live_cycle_lock import heartbeat_cycle_lease
-
-            await heartbeat_cycle_lease(self._session, owner=owner)
+            await hb.start()
             return await self._run_unlocked(
-                steps, session_label=session_label, execute_trades=execute_trades, actor=actor
+                steps,
+                session_label=session_label,
+                execute_trades=execute_trades,
+                actor=actor,
+                lease_guard=hb,
             )
         finally:
+            await hb.stop()
             await release_lease(
                 flags_lock, owner, flag=FLAG_LEASE, advisory_key=ADVISORY_KEY, session=self._session
             )
+
+    def _lease_sessions(self):
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        bind = self._session.get_bind()
+
+        async def _gen():
+            async with AsyncSession(bind, expire_on_commit=False) as session:
+                yield session
+
+        return _gen()
 
     async def _run_unlocked(
         self,
@@ -137,6 +157,7 @@ class AutopilotService:
         session_label: str,
         execute_trades: bool | None,
         actor: str,
+        lease_guard: Any = None,
     ) -> dict[str, Any]:
         settings = self._settings
         kill_on = False
@@ -247,15 +268,35 @@ class AutopilotService:
 
         # 3) Lifecycle scan (mechanical exits after reformulation)
         try:
-            life = await PositionLifecycleService(self._session, self._broker).scan(
-                execute_exits=settings.lifecycle_auto_exit
+            from services.db_lease import LEASE_LIFECYCLE, acquire_lease as acquire_life
+            from services.db_lease import release_lease as release_life
+            from services.db_lease import run_owner as life_run_owner
+
+            life_owner = life_run_owner()
+            life_snap = await acquire_life(
+                self._session, name=LEASE_LIFECYCLE, owner=life_owner
             )
-            steps["lifecycle"] = {
-                "positions": life.positions,
-                "exits": life.exits,
-                "actions": len(life.actions),
-                "warnings": life.warnings[:5],
-            }
+            if not life_snap.acquired:
+                steps["lifecycle"] = {
+                    "skipped": True,
+                    "reason": "lifecycle_lease_held",
+                    "owner": life_snap.owner,
+                }
+            else:
+                try:
+                    life = await PositionLifecycleService(self._session, self._broker).scan(
+                        execute_exits=settings.lifecycle_auto_exit
+                    )
+                    steps["lifecycle"] = {
+                        "positions": life.positions,
+                        "exits": life.exits,
+                        "actions": len(life.actions),
+                        "warnings": life.warnings[:5],
+                    }
+                finally:
+                    await release_life(
+                        self._session, name=LEASE_LIFECYCLE, owner=life_owner
+                    )
         except Exception as exc:
             steps["lifecycle"] = {"error": str(exc)}
 
@@ -266,18 +307,41 @@ class AutopilotService:
             paper=bool(self._broker.paper) if self._broker.is_configured() else True,
             live_entries_enabled=bool(getattr(settings, "live_entries_enabled", False)),
         )
-        exits_only = (not entries_ok) or kill_on or bool(steps.get("buys_blocked"))
+        lease_ok = True
+        if lease_guard is not None:
+            try:
+                lease_ok = await lease_guard.still_mine()
+            except Exception as exc:
+                logger.warning("autopilot.lease_still_mine_failed", error=str(exc))
+                lease_ok = False
+            if not lease_ok:
+                steps["lease_lost_mid_cycle"] = True
+        exits_only = (
+            (not entries_ok)
+            or kill_on
+            or bool(steps.get("buys_blocked"))
+            or (not lease_ok)
+        )
         capital = None
         report = None
         if exits_only:
+            skip_why = (
+                "lease_lost_mid_cycle"
+                if not lease_ok
+                else ("exits_only_cycle")
+            )
             steps["recommendations"] = {
                 "skipped": True,
-                "reason": "exits_only_cycle",
-                "entries": entries_why if not entries_ok else steps.get("buys_blocked"),
+                "reason": skip_why,
+                "entries": (
+                    "lease_lost_mid_cycle"
+                    if not lease_ok
+                    else (entries_why if not entries_ok else steps.get("buys_blocked"))
+                ),
             }
             steps["auto_execute"] = {
                 "skipped": True,
-                "reason": "exits_only_cycle",
+                "reason": skip_why,
             }
         else:
             try:
@@ -334,11 +398,19 @@ class AutopilotService:
                             }
                         else:
                             steps["auto_execute"] = await auto.run_from_picks(
-                                report.picks, actor=actor
+                                report.picks,
+                                actor=actor,
+                                entry_lease_ok=(
+                                    lease_guard.still_mine if lease_guard is not None else None
+                                ),
                             )
                     else:
                         steps["auto_execute"] = await auto.run_from_picks(
-                            report.picks, actor=actor
+                            report.picks,
+                            actor=actor,
+                            entry_lease_ok=(
+                                lease_guard.still_mine if lease_guard is not None else None
+                            ),
                         )
                 except Exception as exc:
                     steps["auto_execute"] = {"error": str(exc)}

@@ -17,6 +17,7 @@ from utils.logging import get_logger
 logger = get_logger(__name__)
 
 ALPACA_DUPLICATE_COID_CODE = 40_010_001
+ALPACA_INSUFFICIENT_QTY_CODE = 40_310_000
 DUPLICATE_COID_PHRASE = "client_order_id must be unique"
 FLAG_ATTEMPTS = "order_client_id_attempts"
 WORKING_ORDER_STATUSES = frozenset(
@@ -31,6 +32,9 @@ WORKING_ORDER_STATUSES = frozenset(
     }
 )
 DEAD_RETRYABLE_STATUSES = frozenset({"canceled", "cancelled", "rejected", "expired"})
+STALE_STOP_STATUSES = DEAD_RETRYABLE_STATUSES | frozenset(
+    {"filled", "replaced", "done_for_day"}
+)
 
 
 class AttemptUnavailable(Exception):
@@ -174,8 +178,15 @@ def is_timeout_or_network(exc: BaseException) -> bool:
 
 
 def is_insufficient_qty_error(exc: BaseException | str | None) -> bool:
+    if exc is not None and not isinstance(exc, str):
+        if alpaca_error_code(exc) == ALPACA_INSUFFICIENT_QTY_CODE:
+            return True
     text = str(exc or "").lower()
-    return "insufficient qty" in text or "insufficient quantity" in text
+    return (
+        "insufficient qty" in text
+        or "insufficient quantity" in text
+        or "40310000" in text
+    )
 
 
 def is_working_status(status: str | None) -> bool:
@@ -184,6 +195,16 @@ def is_working_status(status: str | None) -> bool:
 
 def is_dead_retryable_status(status: str | None) -> bool:
     return (status or "").strip().lower() in DEAD_RETRYABLE_STATUSES
+
+
+def is_stale_stop_status(status: str | None) -> bool:
+    """Filled / replaced / done_for_day / canceled / expired — not a live stop."""
+    return (status or "").strip().lower() in STALE_STOP_STATUSES
+
+
+def is_protective_stop_request(req: Any) -> bool:
+    otype = str(getattr(req, "order_type", None) or getattr(req, "type", "") or "").lower()
+    return otype in {"stop", "stop_limit"}
 
 
 def order_is_live_stop(order: Any) -> bool:

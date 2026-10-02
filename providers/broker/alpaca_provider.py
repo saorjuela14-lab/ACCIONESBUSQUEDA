@@ -40,6 +40,7 @@ class AlpacaBrokerProvider(BrokerProvider):
         else:
             self._base_url = PAPER_BASE_URL if paper else LIVE_BASE_URL
         self.last_request_id: str | None = None
+        self.last_next_page_token: str | None = None
 
     def is_configured(self) -> bool:
         return bool(self._api_key and self._secret_key)
@@ -111,6 +112,11 @@ class AlpacaBrokerProvider(BrokerProvider):
                 json=json_body,
             )
             self._raise_for_alpaca(response)
+            self.last_next_page_token = (
+                response.headers.get("next-page-token")
+                or response.headers.get("x-next-page-token")
+                or None
+            )
             if response.status_code == 204 or not response.content:
                 return {"ok": True, "request_id": self.last_request_id}
             data = response.json()
@@ -125,19 +131,24 @@ class AlpacaBrokerProvider(BrokerProvider):
         data = await self._request("GET", "/v2/positions")
         return data if isinstance(data, list) else []
 
-    async def list_orders(self, status: str = "all", limit: int = 50) -> list[dict[str, Any]]:
-        data = await self._request(
-            "GET",
-            "/v2/orders",
-            params={
-                "status": status,
-                "limit": limit,
-                "direction": "desc",
-                "nested": "true",
-            },
-        )
+    async def list_orders(
+        self, status: str = "all", limit: int = 50, page_token: str | None = None
+    ) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {
+            "status": status,
+            "limit": limit,
+            "direction": "desc",
+            "nested": "true",
+        }
+        if page_token:
+            params["page_token"] = str(page_token)
+        data = await self._request("GET", "/v2/orders", params=params)
         rows = data if isinstance(data, list) else []
-        return flatten_orders_with_legs(rows)
+        flat = flatten_orders_with_legs(rows)
+        if not self.last_next_page_token and len(rows) >= int(limit or 0) and rows:
+            last = rows[-1] if isinstance(rows[-1], dict) else {}
+            self.last_next_page_token = str(last.get("id") or "") or None
+        return flat
 
     async def get_order_by_client_order_id(self, client_order_id: str) -> dict[str, Any] | None:
         """GET /v2/orders:by_client_order_id/{client_order_id}. None if missing."""

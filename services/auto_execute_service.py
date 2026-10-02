@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from typing import Any
 
 from config.settings import get_settings
 from domain.broker import ExecuteLine, ExecuteOrdersRequest
@@ -115,7 +116,13 @@ class AutoExecuteService:
             return True, "live via AUTO_EXECUTE_LIVE (promotion flag ausente)"
         return True, reason
 
-    async def run_from_picks(self, picks: list, *, actor: str = "scheduler") -> dict:
+    async def run_from_picks(
+        self,
+        picks: list,
+        *,
+        actor: str = "scheduler",
+        entry_lease_ok: Any = None,
+    ) -> dict:
         ok, reason = await self.can_auto_trade_async()
         if not ok:
             logger.info("auto_execute.skip", reason=reason)
@@ -352,6 +359,15 @@ class AutoExecuteService:
             )
             if len(lines) >= remaining:
                 break
+        if entry_lease_ok is not None:
+            try:
+                still = await entry_lease_ok()
+            except Exception as exc:
+                logger.warning("auto_execute.lease_check_failed", error=str(exc))
+                still = False
+            if not still:
+                return {"skipped": True, "reason": "lease_lost_mid_cycle"}
+
         if not lines:
             if skipped_avoid and not skipped_no_committee and not skipped_risk:
                 reason_out = "avoid_or_already_open"
@@ -384,8 +400,9 @@ class AutoExecuteService:
                 lines=lines,
                 dry_run=False,
                 confirm_live=not self._broker.paper,
-                entry_slot_reserved=reserved,
-            )
+            ),
+            skip_daily_cap=reserved,
+            allow_entry=entry_lease_ok,
         )
         try:
             from database.repositories.ops_repository import OpsFlagRepository

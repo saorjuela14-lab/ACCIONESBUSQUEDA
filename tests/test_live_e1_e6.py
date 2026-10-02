@@ -590,8 +590,8 @@ async def test_b4_central_gate_honors_own_reservation():
                     qty=1,
                     side="buy",
                     client_order_id="live-SNAP-res",
-                    entry_slot_reserved=True,
-                )
+                ),
+                skip_daily_cap=True,
             )
     await engine.dispose()
     assert blocked == "max_1_entry_per_day"

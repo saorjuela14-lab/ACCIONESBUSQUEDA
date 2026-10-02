@@ -19,6 +19,7 @@ from services.db_lease import (
     heartbeat_lease as heartbeat_row_lease,
     release_lease as release_row_lease,
     replica_id,
+    run_owner,
     snapshot_lease,
 )
 
@@ -40,6 +41,7 @@ __all__ = [
     "live_client_order_id",
     "release_lease",
     "replica_id",
+    "run_owner",
     "snapshot_cycle_lease",
 ]
 
@@ -77,6 +79,7 @@ async def allocate_live_client_order_id(
         bump_attempt,
         cycle_key_date,
         is_dead_retryable_status,
+        order_is_live_stop,
         read_attempt,
     )
 
@@ -99,7 +102,13 @@ async def allocate_live_client_order_id(
                 status = str(existing.get("status") or "")
             elif existing is not None:
                 status = str(getattr(existing, "status", "") or "")
+            should_bump = False
             if existing is not None and is_dead_retryable_status(status):
+                should_bump = True
+            if existing is not None and (action or "").lower() == "stop":
+                if not order_is_live_stop(existing):
+                    should_bump = True
+            if should_bump:
                 attempt = await bump_attempt(flags, slot)
                 cid = live_client_order_id(symbol, action, when, attempt=attempt)
     return cid, attempt

@@ -185,24 +185,41 @@ class SchedulerService:
         if not should_run_automation():
             return
         async for session in get_session():
+            from services.db_lease import LEASE_LIFECYCLE, acquire_lease, release_lease, run_owner
             from services.position_lifecycle_service import PositionLifecycleService
 
-            report = await PositionLifecycleService(session).scan(
-                execute_exits=self._settings.lifecycle_auto_exit
-            )
-            logger.info(
-                "scheduler.lifecycle",
-                positions=report.positions,
-                exits=report.exits,
-                warnings=len(report.warnings),
-            )
-            if report.exits and self._settings.push_daily_trades:
-                push = PushNotificationService()
-                if push.any_channel_configured:
-                    await push.notify_message(
-                        "Lifecycle exits",
-                        "Cerradas: " + ", ".join(report.exits),
-                    )
+            owner = run_owner()
+            try:
+                snap = await acquire_lease(session, name=LEASE_LIFECYCLE, owner=owner)
+            except Exception as exc:
+                logger.warning("scheduler.lifecycle_lease_failed", error=str(exc))
+                break
+            if not snap.acquired:
+                logger.info(
+                    "scheduler.lifecycle_lease_held",
+                    owner=snap.owner,
+                    misses=snap.misses_consecutive,
+                )
+                break
+            try:
+                report = await PositionLifecycleService(session).scan(
+                    execute_exits=self._settings.lifecycle_auto_exit
+                )
+                logger.info(
+                    "scheduler.lifecycle",
+                    positions=report.positions,
+                    exits=report.exits,
+                    warnings=len(report.warnings),
+                )
+                if report.exits and self._settings.push_daily_trades:
+                    push = PushNotificationService()
+                    if push.any_channel_configured:
+                        await push.notify_message(
+                            "Lifecycle exits",
+                            "Cerradas: " + ", ".join(report.exits),
+                        )
+            finally:
+                await release_lease(session, name=LEASE_LIFECYCLE, owner=owner)
             break
 
     async def _run_reconcile(self) -> None:

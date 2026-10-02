@@ -98,6 +98,13 @@ class PositionLifecycleService:
                         "posición intacta, no se cierra"
                     )
                 return f"broker stop fail: {result.error}"
+            from services.order_idempotency import order_is_live_stop
+
+            if not order_is_live_stop(result):
+                return (
+                    f"broker stop not live: {result.status or '?'} "
+                    f"id={result.id or '?'}"
+                )
             return f"broker GTC stop @{stop:.4f} id={result.id or '?'}"
         except Exception as exc:
             return f"broker stop sync error: {exc}"
