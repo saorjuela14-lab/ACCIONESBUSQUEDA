@@ -105,6 +105,14 @@ def classify_cycle_side(rows: list[Any] | None, *, side: str) -> dict[str, Any]:
     filled: list[dict[str, Any]] = []
     pending: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
+    if not isinstance(rows, list):
+        return {
+            f"{prefix}s_submitted": 0,
+            f"{prefix}s_filled": 0,
+            f"{prefix}s_pending": [],
+            f"{prefix}s_rejected": [],
+            f"{prefix}s": 0,
+        }
     for raw in rows or []:
         if not isinstance(raw, dict):
             continue
@@ -175,10 +183,23 @@ def attach_last_cycle_obs(cycle: dict[str, Any] | None, state: dict[str, Any] | 
     crypto["broker_stops_gtc"] = False
     crypto["broker_stop"] = "none"
     crypto["legacy_engine"] = "off"
-    counts = classify_cycle_fills(crypto)
-    for key, val in counts.items():
-        crypto.setdefault(key, val)
-    last.setdefault("spread_reject_count", crypto.get("spread_reject_count", 0))
+    if isinstance(crypto.get("buys"), list) or isinstance(crypto.get("sells"), list):
+        counts = classify_cycle_fills(crypto)
+        for key, val in counts.items():
+            crypto[key] = val
+        last["spread_reject_count"] = crypto.get("spread_reject_count", 0)
+    else:
+        crypto.setdefault("buys_submitted", crypto.get("buys") if isinstance(crypto.get("buys"), int) else 0)
+        crypto.setdefault("buys_filled", 0)
+        crypto.setdefault("buys_pending", [])
+        crypto.setdefault("buys_rejected", [])
+        crypto.setdefault("sells_submitted", crypto.get("sells") if isinstance(crypto.get("sells"), int) else 0)
+        crypto.setdefault("sells_filled", 0)
+        crypto.setdefault("sells_pending", [])
+        crypto.setdefault("sells_rejected", [])
+        crypto.setdefault("spread_rejects", [])
+        crypto.setdefault("spread_reject_count", 0)
+        last.setdefault("spread_reject_count", crypto.get("spread_reject_count", 0))
     last["broker_stops_gtc"] = False
     last["legacy_engine"] = "off"
     if state:
