@@ -132,23 +132,26 @@ class AlpacaBrokerProvider(BrokerProvider):
         return data if isinstance(data, list) else []
 
     async def list_orders(
-        self, status: str = "all", limit: int = 50, page_token: str | None = None
+        self,
+        status: str = "all",
+        limit: int = 50,
+        after: str | None = None,
+        until: str | None = None,
     ) -> list[dict[str, Any]]:
+        """Alpaca orders. Paginate with after/until or a higher limit — not page_token."""
         params: dict[str, Any] = {
             "status": status,
-            "limit": limit,
+            "limit": max(1, min(int(limit or 50), 500)),
             "direction": "desc",
             "nested": "true",
         }
-        if page_token:
-            params["page_token"] = str(page_token)
+        if after:
+            params["after"] = str(after)
+        if until:
+            params["until"] = str(until)
         data = await self._request("GET", "/v2/orders", params=params)
         rows = data if isinstance(data, list) else []
-        flat = flatten_orders_with_legs(rows)
-        if not self.last_next_page_token and len(rows) >= int(limit or 0) and rows:
-            last = rows[-1] if isinstance(rows[-1], dict) else {}
-            self.last_next_page_token = str(last.get("id") or "") or None
-        return flat
+        return flatten_orders_with_legs(rows)
 
     async def get_order_by_client_order_id(self, client_order_id: str) -> dict[str, Any] | None:
         """GET /v2/orders:by_client_order_id/{client_order_id}. None if missing."""

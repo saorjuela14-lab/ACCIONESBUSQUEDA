@@ -34,7 +34,17 @@ def reset_desk_ops_alert_dedupe() -> None:
     _sent.clear()
 
 
-def _dedupe_key(kind: str, *, owner: str | None, detail: str) -> str:
+def _dedupe_key(
+    kind: str,
+    *,
+    owner: str | None,
+    detail: str,
+    dedupe_key: str | None = None,
+) -> str:
+    if dedupe_key:
+        return str(dedupe_key)
+    if kind == KIND_LEASE_MISSES:
+        return f"{kind}|{owner or 'unknown'}"
     return f"{kind}|{owner or ''}|{(detail or '')[:80]}"
 
 
@@ -45,16 +55,16 @@ async def emit_desk_ops_alert(
     owner: str | None = None,
     title: str | None = None,
     force: bool = False,
+    dedupe_key: str | None = None,
 ) -> bool:
-    """Send a mesa alert. Returns True if a new notification was attempted."""
-    key = _dedupe_key(kind, owner=owner, detail=detail)
+    """Send a mesa alert. False when no channel is configured or send fails."""
+    key = _dedupe_key(kind, owner=owner, detail=detail, dedupe_key=dedupe_key)
     now = time.monotonic()
     if not force:
         last = _sent.get(key, 0.0)
         if now - last < DEDUPE_SECONDS:
             logger.info("desk_ops_alert.suppressed", kind=kind, owner=owner)
             return False
-    _sent[key] = now
 
     text_title = title or _TITLES.get(kind, kind)
     body = detail.strip() or kind
@@ -65,10 +75,14 @@ async def emit_desk_ops_alert(
         from services.push_notification_service import PushNotificationService
 
         push = PushNotificationService()
+        if not push.any_channel_configured:
+            logger.info("desk_ops_alert.no_channel", kind=kind)
+            return False
         await push.notify_message(text_title, body)
     except Exception as exc:
         logger.warning("desk_ops_alert.failed", kind=kind, error=str(exc))
         return False
+    _sent[key] = now
     return True
 
 

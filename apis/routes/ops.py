@@ -278,7 +278,6 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
             "max_beta": settings.risk_max_portfolio_beta,
             "max_sector_pct": settings.risk_max_sector_pct,
         },
-        "db_host": _ops_db_host(),
         "leases": await _lease_status(session),
     }
 

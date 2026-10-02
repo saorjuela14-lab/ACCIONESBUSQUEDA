@@ -217,11 +217,17 @@ class AlpacaOrderService:
         return [self._map_position(p) for p in raw_list]
 
     async def list_orders(
-        self, status: str = "all", limit: int = 50, page_token: str | None = None
+        self,
+        status: str = "all",
+        limit: int = 50,
+        after: str | None = None,
+        until: str | None = None,
     ) -> list[BrokerOrderResult]:
         kwargs: dict[str, Any] = {"status": status, "limit": limit}
-        if page_token:
-            kwargs["page_token"] = page_token
+        if after:
+            kwargs["after"] = after
+        if until:
+            kwargs["until"] = until
         try:
             raw_list = await self._broker.list_orders(**kwargs)
         except TypeError:
@@ -242,20 +248,27 @@ class AlpacaOrderService:
         from services.order_idempotency import order_is_live_stop
 
         sym = (symbol or "").upper().strip()
-        token: str | None = None
+        until: str | None = None
         pages = 0
         max_pages = 8
         try:
             while pages < max_pages:
-                orders = await self.list_orders(status="all", limit=200, page_token=token)
+                orders = await self.list_orders(status="all", limit=200, until=until)
                 for od in orders:
                     if (od.symbol or "").upper() != sym:
                         continue
                     if order_is_live_stop(od):
                         return od
                 pages += 1
-                token = getattr(self._broker, "last_next_page_token", None) or None
-                if not token:
+                if len(orders) < 200:
+                    break
+                last = orders[-1]
+                raw = last.raw if isinstance(getattr(last, "raw", None), dict) else {}
+                until = (
+                    str(raw.get("created_at") or raw.get("submitted_at") or "")
+                    or None
+                )
+                if not until:
                     break
         except Exception as exc:
             logger.warning("broker.stop_list_all_failed", symbol=sym, error=str(exc))
