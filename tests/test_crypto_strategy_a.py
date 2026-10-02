@@ -1460,18 +1460,33 @@ def test_new_entry_cursor_ignores_pre_entry_bars():
 
 
 def test_clean_clips_eth_788_outlier():
-    from services.multiasset.engine_bars import clean
+    from services.multiasset.engine_bars import bars_to_1h, clean
 
-    idx = pd.date_range("2025-04-01", periods=80, freq="1h", tz="UTC")
-    close = np.full(80, 1500.0)
-    close[40] = 788.0  # 2025-04-07 style print
+    # Real print is Low=788 Close≈1429 — not a Close-only spike.
+    idx = pd.date_range("2025-04-06", periods=50, freq="1h", tz="UTC")
+    close = np.full(50, 1500.0)
     raw = pd.DataFrame(
-        {"Open": close, "High": close + 2, "Low": close - 2, "Close": close, "Volume": 1.0},
+        {"Open": close, "High": close + 10, "Low": close - 10, "Close": close, "Volume": 1.0},
         index=idx,
     )
+    hit = pd.Timestamp("2025-04-07T06:00:00Z")
+    raw.loc[hit, ["Open", "High", "Low", "Close"]] = [1539.95, 1550.75, 788.66, 1429.74]
     cleaned = clean(raw)
-    assert 788.0 not in set(cleaned["Close"].astype(float))
-    assert (cleaned["Close"] > 1000).all()
+    assert float(cleaned.loc[hit, "Low"]) > 1000.0
+    assert float(cleaned.loc[hit, "Low"]) != pytest.approx(788.66)
+    assert float(cleaned.loc[hit, "Close"]) == pytest.approx(1429.74, rel=0.12)
+
+    from pathlib import Path
+    import json
+
+    path = Path(__file__).parent / "fixtures" / "bars" / "eth_1h_2025-04.json"
+    if path.exists():
+        payload = json.loads(path.read_text())
+        frame = bars_to_1h(payload.get("items") or [])
+        real = clean(frame)
+        ts = pd.Timestamp("2025-04-07T06:00:00Z")
+        if ts in real.index:
+            assert float(real.loc[ts, "Low"]) > 1000.0
 
 
 def test_realized_vol_uses_simple_returns():

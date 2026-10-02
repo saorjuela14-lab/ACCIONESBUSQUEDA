@@ -14,22 +14,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from services.db_lease import (
     DEFAULT_TTL_SECONDS,
     LEASE_CRYPTO_A,
+    LeaseHeartbeat,
     acquire_lease,
     heartbeat_lease,
     release_lease,
     replica_id,
+    run_owner,
     snapshot_lease,
 )
 
 __all__ = [
     "DEFAULT_TTL_SECONDS",
     "LEASE_CRYPTO_A",
+    "LeaseHeartbeat",
     "acquire_cycle_lease",
     "allocate_sa9_client_order_id",
     "heartbeat_cycle_lease",
     "idempotency_key",
     "release_cycle_lease",
     "replica_id",
+    "run_owner",
     "snapshot_cycle_lease",
 ]
 

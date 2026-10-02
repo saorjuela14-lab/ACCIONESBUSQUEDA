@@ -17,9 +17,8 @@ from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-OUTLIER_LOOKBACK = 48
-OUTLIER_LO = 0.55
-OUTLIER_HI = 1.80
+OUTLIER_LOOKBACK = 25
+OUTLIER_BAND = 0.12
 
 ALPACA_CRYPTO_BARS_PATH = "/v1beta3/crypto/us/bars"
 ALPACA_DATA_BASE = "https://data.alpaca.markets"
@@ -81,14 +80,27 @@ def clean(df: pd.DataFrame, bar_h: int = 1) -> pd.DataFrame:
 
 
 def clip_outlier_prints(df: pd.DataFrame) -> pd.DataFrame:
-    """Drop prints that deviate from a rolling median (engine.py: ETH 788 USD case)."""
+    """engine.clean: clip OHLC to a centered 25-bar median ±12% (ETH Low 788)."""
     if df is None or getattr(df, "empty", True) or "Close" not in df.columns:
         return df
-    close = df["Close"].astype(float)
-    med = close.rolling(OUTLIER_LOOKBACK, min_periods=8).median()
-    ratio = close / med.replace(0, np.nan)
-    keep = med.isna() | ((ratio >= OUTLIER_LO) & (ratio <= OUTLIER_HI))
-    return df.loc[keep]
+    out = df.copy()
+    close = out["Close"].astype(float)
+    med = close.rolling(OUTLIER_LOOKBACK, center=True, min_periods=8).median()
+    lo = med * (1.0 - OUTLIER_BAND)
+    hi = med * (1.0 + OUTLIER_BAND)
+    for col in ("Open", "High", "Low", "Close"):
+        if col not in out.columns:
+            continue
+        series = out[col].astype(float)
+        clipped = series.copy()
+        mask = med.notna()
+        clipped.loc[mask] = series.loc[mask].clip(lower=lo.loc[mask], upper=hi.loc[mask])
+        out[col] = clipped
+    if "High" in out.columns:
+        out["High"] = out[["High", "Open", "Close"]].max(axis=1)
+    if "Low" in out.columns:
+        out["Low"] = out[["Low", "Open", "Close"]].min(axis=1)
+    return out
 
 
 def resample_4h(df_1h: pd.DataFrame) -> pd.DataFrame:

@@ -415,6 +415,36 @@ def rolling_window_start(
     return start_w, stamp, reset
 
 
+def allocation_wealth(
+    *,
+    allocation: float,
+    realized_pnl_usd: float,
+    open_marks: list[tuple[float, float, float]] | None = None,
+) -> float:
+    """Continuous wealth: allocation + realized + unrealized. Survives a sale.
+
+    Each open mark is ``(qty, entry, last)``. Selling a name moves its
+    ``(exit-entry)*qty`` into realized and drops it from unrealized, so wealth
+    is unchanged when exit ≈ mark (the cost basis is not lost).
+    """
+    unrealized = 0.0
+    for qty, entry, last in open_marks or []:
+        try:
+            unrealized += (float(last) - float(entry)) * float(qty)
+        except (TypeError, ValueError):
+            continue
+    return float(allocation or 0) + float(realized_pnl_usd or 0) + unrealized
+
+
+def record_closed_pnl(losses: list[dict[str, Any]] | None, *, pnl_usd: float, at: str, symbol: str) -> list[dict[str, Any]]:
+    """Append a loss or reset the streak on a win."""
+    rows = list(losses or [])
+    if float(pnl_usd) >= 0:
+        return []
+    rows.append({"at": at, "symbol": symbol, "pnl_usd": float(pnl_usd)})
+    return rows[-24:]
+
+
 def loss_streak_pause(
     losses: list[dict[str, Any]] | None,
     *,

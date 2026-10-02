@@ -120,18 +120,12 @@ class MultiAssetAutopilotService:
             except Exception as exc:
                 logger.warning("multiasset.stale_buys.failed", error=str(exc))
                 out["stale_market_buys"] = {"skipped": "error", "error": str(exc), "cancelled": []}
-            try:
-                from database.repositories.ops_repository import OpsFlagRepository
-                from services.multiasset.crypto_legacy import flatten_before_strategy_a
-
-                out["legacy_flatten"] = await flatten_before_strategy_a(
-                    self._broker,
-                    tracker=self._tracker,
-                    flags=OpsFlagRepository(self._session),
-                )
-            except Exception as exc:
-                logger.warning("crypto.legacy.flatten_failed", error=str(exc))
-                out["legacy_flatten"] = {"skipped": "error", "error": str(exc)}
+            out["legacy_flatten"] = {
+                "skipped": "manual_only",
+                "auto": False,
+                "hint": "POST /ops/crypto/legacy-flatten",
+            }
+            out["legacy_engine"] = "off"
 
         records = {}
         try:
@@ -208,10 +202,20 @@ class MultiAssetAutopilotService:
                     "desks": {
                         k: (
                             {
-                                "buys": len((v or {}).get("buys") or []),
-                                "sells": len((v or {}).get("sells") or []),
+                                "buys": sum(
+                                    1
+                                    for b in ((v or {}).get("buys") or [])
+                                    if isinstance(b, dict) and b.get("ok")
+                                ),
+                                "sells": sum(
+                                    1
+                                    for s in ((v or {}).get("sells") or [])
+                                    if isinstance(s, dict) and s.get("ok")
+                                ),
                                 "skipped": (v or {}).get("skipped"),
                                 "strategy": (v or {}).get("strategy"),
+                                "legacy_engine": (v or {}).get("legacy_engine") or "off",
+                                "strategy_a_armed": (v or {}).get("strategy_a_armed"),
                                 "open_positions": (v or {}).get("open_positions") or [],
                                 "broker_stops_gtc": False,
                                 "broker_stop": "none",
@@ -323,21 +327,57 @@ class MultiAssetAutopilotService:
         return round(max(15.0, min(cap, cap * frac)), 2)
 
     async def _crypto_position_qty(self, symbol: str, trade: Any) -> float | None:
-        """Full Alpaca qty. Never invent a $25 notional."""
+        """Broker qty only. Never fall back to the tracker — retry next cycle."""
+        del trade
         want = (symbol or "").upper().replace("/", "").replace("-", "")
         try:
             positions = await self._broker.get_positions()
-            for p in positions or []:
-                raw = str(p.get("symbol") if isinstance(p, dict) else getattr(p, "symbol", "") or "")
-                key = raw.upper().replace("/", "").replace("-", "")
-                if key == want or key.endswith(want):
-                    q = float(p.get("qty") if isinstance(p, dict) else getattr(p, "qty", 0) or 0)
-                    if q > 0:
-                        return q
         except Exception as exc:
             logger.warning("crypto_a.position_qty_failed", symbol=symbol, error=str(exc))
-        fallback = float(getattr(trade, "qty", 0) or 0)
-        return fallback if fallback > 0 else None
+            return None
+        for p in positions or []:
+            raw = str(p.get("symbol") if isinstance(p, dict) else getattr(p, "symbol", "") or "")
+            key = raw.upper().replace("/", "").replace("-", "")
+            if key == want or key.endswith(want):
+                q = float(p.get("qty") if isinstance(p, dict) else getattr(p, "qty", 0) or 0)
+                if q > 0:
+                    return q
+                return 0.0
+        return 0.0
+
+    async def _crypto_broker_book(self) -> tuple[list[dict[str, Any]], float]:
+        """All paper crypto positions (inherited + A). Counts toward the 25% sleeve."""
+        from services.multiasset.crypto_legacy import is_crypto_symbol
+
+        rows: list[dict[str, Any]] = []
+        notional = 0.0
+        try:
+            positions = await self._broker.get_positions()
+        except Exception as exc:
+            logger.warning("crypto_a.positions_failed", error=str(exc))
+            return rows, 0.0
+        for p in positions or []:
+            raw = p if isinstance(p, dict) else {}
+            sym = str(raw.get("symbol") or getattr(p, "symbol", "") or "")
+            if not is_crypto_symbol(sym):
+                continue
+            try:
+                qty = float(raw.get("qty") or getattr(p, "qty", 0) or 0)
+            except (TypeError, ValueError):
+                qty = 0.0
+            try:
+                mv = float(raw.get("market_value") or 0)
+            except (TypeError, ValueError):
+                mv = 0.0
+            try:
+                px = float(raw.get("current_price") or raw.get("avg_entry_price") or 0)
+            except (TypeError, ValueError):
+                px = 0.0
+            if mv <= 0 and qty and px:
+                mv = qty * px
+            rows.append({"symbol": sym, "qty": qty, "market_value": mv, "price": px})
+            notional += mv
+        return rows, notional
 
     async def _crypto_alert(self, flags: Any, *, kind: str, symbol: str, detail: str) -> None:
         payload = {
@@ -366,8 +406,43 @@ class MultiAssetAutopilotService:
         qty: float | None = None,
         client_order_id: str | None = None,
     ) -> dict[str, Any]:
-        sell_qty = float(qty) if qty is not None else await self._crypto_position_qty(symbol, trade)
-        if sell_qty is None or sell_qty <= 0:
+        broker_qty = await self._crypto_position_qty(symbol, trade)
+        if broker_qty is None:
+            await self._crypto_alert(
+                None, kind="positions_failed_no_sell", symbol=symbol, detail="retry_next_cycle"
+            )
+            return {
+                "symbol": symbol,
+                "reason": reason,
+                "ok": False,
+                "error": "positions_unavailable",
+                "keep_state": True,
+                "alert": True,
+            }
+        if broker_qty == 0:
+            try:
+                await self._tracker.close_trade(
+                    desk="crypto",
+                    symbol=symbol,
+                    exit_price=float(getattr(trade, "entry_price", 0) or 0) or 1.0,
+                    exit_reason="broker_flat_dust",
+                )
+            except Exception as exc:
+                logger.warning("crypto_a.dust_close_failed", symbol=symbol, error=str(exc))
+            return {
+                "symbol": symbol,
+                "reason": reason,
+                "ok": True,
+                "dust": True,
+                "qty": 0.0,
+                "pnl_usd": None,
+                "keep_state": False,
+            }
+        own = float(getattr(trade, "qty", 0) or 0)
+        requested = float(qty) if qty is not None and float(qty) > 0 else (own if own > 0 else broker_qty)
+        candidates = [q for q in (requested, own if own > 0 else None, broker_qty) if q and q > 0]
+        sell_qty = min(candidates) if candidates else 0.0
+        if sell_qty <= 0:
             return {
                 "symbol": symbol,
                 "reason": reason,
@@ -441,9 +516,11 @@ class MultiAssetAutopilotService:
             daily_weekly_pause,
             entry_spread_ok,
             group_id_for,
+            allocation_wealth,
             kill_from_allocation_peak,
             open_risk_from_mark,
             per_name_caps,
+            record_closed_pnl,
             rolling_wealth_from_samples,
             rolling_window_start,
             size_crypto_order,
@@ -478,6 +555,7 @@ class MultiAssetAutopilotService:
             "open_positions": [],
             "paper": True,
             "dry_run": dry_run,
+            "legacy_engine": "off",
             "paper_gap_note": (
                 "Alpaca paper no mide bien los gaps; la protección real es el "
                 "stop al cierre de cada vela 4h."
@@ -514,8 +592,28 @@ class MultiAssetAutopilotService:
         except Exception as exc:
             logger.warning("crypto.a.assets_failed", error=str(exc))
 
-        open_trades = await self._tracker.list_open(desk="crypto")
+        from services.multiasset.crypto_owned import (
+            inherited_present,
+            inherited_trades,
+            strategy_a_is_armed,
+            strategy_a_owned,
+        )
+
+        all_open = await self._tracker.list_open(desk="crypto")
+        a_owned = strategy_a_owned(all_open)
+        inherited = inherited_trades(all_open)
+        open_trades = a_owned
         open_by_sym = {t.symbol: t for t in open_trades}
+        broker_rows, inherited_book = await self._crypto_broker_book()
+        out["inherited_open"] = [
+            {"symbol": getattr(t, "symbol", ""), "qty": getattr(t, "qty", None)} for t in inherited
+        ]
+        out["inherited_broker_notional_usd"] = round(inherited_book, 2)
+        out["inherited_count_toward_25pct"] = True
+        out["book_deviation"] = (
+            "inherited August lots count toward the 25% paper crypto sleeve; "
+            "Strategy A does not manage, sell, or resize them"
+        )
 
         screened_rows: list[dict] = []
         quotes: dict[str, dict] = {}
@@ -568,11 +666,13 @@ class MultiAssetAutopilotService:
         from services.multiasset.risk_engine import calendar_day_key, iso_week_key
 
         from services.multiasset.crypto_cycle_lock import (
+            LEASE_CRYPTO_A,
+            LeaseHeartbeat,
             acquire_cycle_lease,
             allocate_sa9_client_order_id,
             heartbeat_cycle_lease,
             release_cycle_lease,
-            replica_id,
+            run_owner,
         )
 
         flags = OpsFlagRepository(self._session)
@@ -588,7 +688,7 @@ class MultiAssetAutopilotService:
         blocks: dict[str, Any] = dict(state.get("blocks") or {})
         now = datetime.now(timezone.utc)
         ohlc_cache: dict[str, Any] = {}
-        owner = replica_id()
+        owner = run_owner()
         out["replica_id"] = owner
         got_lease, lease = await acquire_cycle_lease(
             flags, owner=owner, now=now, session=self._session
@@ -598,9 +698,18 @@ class MultiAssetAutopilotService:
             out["lease"] = lease
             return out
 
+        hb = LeaseHeartbeat(name=LEASE_CRYPTO_A, owner=owner)
         try:
+            await hb.start()
             await heartbeat_cycle_lease(self._session, owner=owner)
             out["lease"] = lease
+            armed = await strategy_a_is_armed(
+                flags, inherited=inherited_present(all_open, [r["symbol"] for r in broker_rows])
+            )
+            out["strategy_a_armed"] = armed
+            if not armed:
+                allow_buys = False
+                out["buys_paused"] = out.get("buys_paused") or "strategy_a_not_armed"
             async def _ohlc(sym: str):
                 if sym not in ohlc_cache:
                     from services.multiasset.engine_bars import load_strategy_a_4h
@@ -809,7 +918,7 @@ class MultiAssetAutopilotService:
                         reason="software_chandelier_stop",
                         client_order_id=cid,
                     )
-                    sold["late"] = True
+                    sold["late"] = bool(hit_bar.get("late"))
                     sold["eval"] = {k: hit_bar.get(k) for k in ("candle_open", "candle_close", "late", "stop_px")}
                     out["sells"].append(sold)
                     if sold.get("ok"):
@@ -839,28 +948,33 @@ class MultiAssetAutopilotService:
             out["missed_candles"] = missed_total
             out["candles_behind"] = missed_total
 
-            # Mark-to-market + realized wealth (never cost). Selling a name must not stick kill.
+            # Continuous wealth: allocation + realized + unrealized. A sale must not drop cost basis.
+            open_marks: list[tuple[float, float, float]] = []
             crypto_usd = 0.0
             for t in open_by_sym.values():
                 last_px = float((quotes.get(t.symbol) or {}).get("current_price") or 0) or float(
                     t.entry_price or 0
                 )
-                crypto_usd += last_px * float(t.qty or 0)
-            realized = 0.0
+                qty_now = float(t.qty or 0)
+                crypto_usd += last_px * qty_now
+                open_marks.append((qty_now, float(t.entry_price or 0), last_px))
+            cycle_realized = 0.0
             for sold in out["sells"]:
                 if not sold.get("ok"):
                     continue
                 try:
                     if sold.get("pnl_usd") is None:
                         continue
-                    realized += float(sold.get("pnl_usd"))
+                    cycle_realized += float(sold.get("pnl_usd"))
                 except (TypeError, ValueError):
                     pass
             eq = float(equity or desk_budget or 0)
             allocation = eq * MAX_CRYPTO_EQUITY_PCT / 100.0
             mark = await flags.get_json("crypto_strategy_a_risk")
-            realized += float(mark.get("realized_pnl_usd") or 0)
-            wealth = crypto_usd + realized
+            realized = float(mark.get("realized_pnl_usd") or 0) + cycle_realized
+            wealth = allocation_wealth(
+                allocation=allocation, realized_pnl_usd=realized, open_marks=open_marks
+            )
             peak = max(float(mark.get("peak_wealth_usd") or mark.get("peak_crypto_usd") or 0), wealth)
             day = calendar_day_key()
             week = iso_week_key()
@@ -911,10 +1025,9 @@ class MultiAssetAutopilotService:
                     pnl_v = float(sold["pnl_usd"])
                 except (TypeError, ValueError):
                     continue
-                if pnl_v < 0:
-                    losses.append(
-                        {"at": now.isoformat(), "symbol": sold.get("symbol"), "pnl_usd": pnl_v}
-                    )
+                losses = record_closed_pnl(
+                    losses, pnl_usd=pnl_v, at=now.isoformat(), symbol=str(sold.get("symbol") or "")
+                )
             mark["losses"] = losses[-24:]
 
             dd_pct = wealth_drawdown_pct(peak=peak, wealth=wealth, allocation=allocation)
@@ -1039,9 +1152,18 @@ class MultiAssetAutopilotService:
                 r = name_risk.get(t.symbol, 0.0)
                 group_notional[gid] = group_notional.get(gid, 0.0) + n
                 group_risk[gid] = group_risk.get(gid, 0.0) + r
+            # 25% sleeve = all paper crypto (inherited + A). Do not double-count A MTM.
+            sleeve_crypto = float(inherited_book or 0) or crypto_usd
+            inherited_only = 0.0
+            a_qty = {t.symbol: float(t.qty or 0) for t in open_by_sym.values()}
+            for row in broker_rows:
+                own = a_qty.get(row["symbol"], 0.0)
+                leftover = max(0.0, float(row.get("qty") or 0) - own)
+                inherited_only += leftover * float(row.get("price") or 0)
+            out["inherited_broker_notional_usd"] = round(inherited_only, 2)
             book = CryptoBook(
                 equity=eq,
-                crypto_notional=crypto_usd,
+                crypto_notional=sleeve_crypto,
                 open_risk_usd=open_risk,
                 n_positions=len(open_by_sym),
                 name_notional=name_notional,
@@ -1055,6 +1177,8 @@ class MultiAssetAutopilotService:
             # Rebalance-up and new entries: last bar + allow_buys. Never replay recovered signals.
             pending_rebalance_up: list[tuple[str, Any, Any, float, float]] = []
             for sym, trade in list(open_by_sym.items()):
+                if (pos_state.get(sym) or {}).get("pending_exit"):
+                    continue
                 try:
                     sig = await signal_for_symbol(
                         sym,
@@ -1193,8 +1317,17 @@ class MultiAssetAutopilotService:
                     )
                     try:
                         res = await self._desk.execute(req)
-                        out["buys"].append({"symbol": sym, "notional": add, "ok": res.ok, "reason": "rebalance_up"})
-                        if res.ok:
+                        tracked_up = bool((res.payload or {}).get("tracked_trade_id")) if res.ok else False
+                        out["buys"].append(
+                            {
+                                "symbol": sym,
+                                "notional": add,
+                                "ok": bool(res.ok and tracked_up),
+                                "tracked": tracked_up,
+                                "reason": "rebalance_up",
+                            }
+                        )
+                        if res.ok and tracked_up:
                             book.crypto_notional += add
                             book.name_notional[sym] = book.name_notional.get(sym, 0.0) + add
                         else:
@@ -1205,6 +1338,19 @@ class MultiAssetAutopilotService:
 
             if not allow_buys:
                 out["reason"] = "new_buys_blocked"
+                await flags.set_json(
+                    "crypto_paper_book",
+                    {
+                        "inherited_count_toward_25pct": True,
+                        "inherited_notional_usd": out.get("inherited_broker_notional_usd"),
+                        "inherited_symbols": [r["symbol"] for r in broker_rows],
+                        "a_owned": [t.symbol for t in open_by_sym.values()],
+                        "strategy_a_armed": armed,
+                        "legacy_engine": "off",
+                        "book_deviation": out.get("book_deviation"),
+                        "at": now.isoformat(),
+                    },
+                )
                 await _persist_state()
                 return out
 
@@ -1278,7 +1424,8 @@ class MultiAssetAutopilotService:
                 )
                 try:
                     res = await self._desk.execute(req)
-                    if res.ok:
+                    tracked = bool((res.payload or {}).get("tracked_trade_id")) if res.ok else False
+                    if res.ok and tracked:
                         entry_candle = (sig.extras or {}).get("candle_ts")
                         open_t = await self._tracker.get_open("crypto", sym)
                         if open_t:
@@ -1324,7 +1471,9 @@ class MultiAssetAutopilotService:
                             "notional": notional,
                             "stop": sig.stop_px,
                             "S": sig.S,
-                            "ok": res.ok,
+                            "ok": bool(res.ok and tracked),
+                            "tracked": tracked,
+                            "status": res.status,
                             "message": res.message,
                             "ramp": info.get("ramp"),
                             "software_stop": True,
@@ -1338,6 +1487,19 @@ class MultiAssetAutopilotService:
 
             out["open_after"] = book.n_positions
             out["open_risk_usd"] = round(book.open_risk_usd, 4)
+            await flags.set_json(
+                "crypto_paper_book",
+                {
+                    "inherited_count_toward_25pct": True,
+                    "inherited_notional_usd": out.get("inherited_broker_notional_usd"),
+                    "inherited_symbols": [r["symbol"] for r in broker_rows],
+                    "a_owned": [t.symbol for t in open_by_sym.values()],
+                    "strategy_a_armed": armed,
+                    "legacy_engine": "off",
+                    "book_deviation": out.get("book_deviation"),
+                    "at": now.isoformat(),
+                },
+            )
             await heartbeat_cycle_lease(self._session, owner=owner)
             await _persist_state()
             if not out["buys"] and not out["sells"]:
@@ -1345,14 +1507,30 @@ class MultiAssetAutopilotService:
             return out
 
         finally:
+            try:
+                await hb.stop()
+            except Exception:
+                pass
             await release_cycle_lease(flags, owner, session=self._session)
 
     async def crypto_catchup_on_wake(self, *, actor: str = "wake") -> dict[str, Any]:
-        """On wake / last-cycle GET: catch-up closed 4h bars (exits only)."""
+        """On wake: catch-up closed 4h bars for A-owned lots only. Never adopts inherited."""
         if not getattr(self._settings, "crypto_strategy_a_enabled", True):
-            return {"skipped": "strategy_a_disabled"}
+            return {"skipped": "strategy_a_disabled", "legacy_engine": "off"}
         if not getattr(self._settings, "multiasset_beta_enabled", False):
             return {"skipped": "multiasset_beta_disabled"}
+        from database.repositories.ops_repository import OpsFlagRepository
+        from services.multiasset.crypto_owned import inherited_present, strategy_a_is_armed
+
+        flags = OpsFlagRepository(self._session)
+        inherited = inherited_present(await self._tracker.list_open(desk="crypto"))
+        if not await strategy_a_is_armed(flags, inherited=inherited):
+            return {
+                "skipped": "strategy_a_not_armed",
+                "legacy_engine": "off",
+                "adopted": [],
+                "inherited_count_toward_25pct": True,
+            }
         equity = 0.0
         cash = 0.0
         try:
@@ -1385,15 +1563,23 @@ class MultiAssetAutopilotService:
         equity: float = 0.0,
         cash: float = 0.0,
     ) -> dict[str, Any]:
-        if desk == "crypto" and bool(getattr(self._settings, "crypto_strategy_a_enabled", True)):
-            return await self._run_crypto_strategy_a(
-                desk_budget=desk_budget,
-                dry_run=dry_run,
-                allow_buys=allow_buys,
-                equity=equity,
-                cash=cash,
-                actor=actor,
-            )
+        if desk == "crypto":
+            if bool(getattr(self._settings, "crypto_strategy_a_enabled", True)):
+                return await self._run_crypto_strategy_a(
+                    desk_budget=desk_budget,
+                    dry_run=dry_run,
+                    allow_buys=allow_buys,
+                    equity=equity,
+                    cash=cash,
+                    actor=actor,
+                )
+            return {
+                "skipped": "legacy_crypto_engine_off",
+                "legacy_engine": "off",
+                "budget": desk_budget,
+                "buys": [],
+                "sells": [],
+            }
         strategy = get_desk(desk)
         # ETFs need RTH unless simulating; crypto is 24/7
         if desk != "crypto" and not market_open and not dry_run:

@@ -284,7 +284,12 @@ class MultiAssetTradeTracker:
         open_qty = float(row.qty or 0)
         fill_qty = float(qty) if qty is not None and float(qty) > 0 else open_qty
         exit_px = float(exit_price)
-        if fill_qty + 1e-12 < open_qty:
+        residual = open_qty - fill_qty
+        from services.multiasset.crypto_fills import is_dust
+
+        if fill_qty + 1e-12 < open_qty and not is_dust(
+            residual, exit_px, symbol=str(row.symbol or "")
+        ):
             # Partial fill: reduce the open lot; do not close the remainder.
             sold = fill_qty
             row.qty = open_qty - sold
@@ -315,6 +320,14 @@ class MultiAssetTradeTracker:
             if risk > 0:
                 r_mult = round(pnl_pct / risk, 2)
 
+        if residual > 1e-12:
+            try:
+                meta = json.loads(row.meta_json or "{}")
+            except json.JSONDecodeError:
+                meta = {}
+            meta["dust_qty"] = residual
+            meta["dust"] = True
+            row.meta_json = json.dumps(meta, default=str)
         row.status = "closed"
         row.exit_price = exit_px
         row.closed_at = utc_now()

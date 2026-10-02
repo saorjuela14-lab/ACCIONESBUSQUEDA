@@ -280,30 +280,52 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
         },
         "db_host": _ops_db_host(),
         "leases": await _lease_status(session),
+        "crypto_paper": await _crypto_paper_status(session),
+    }
+
+
+async def _crypto_paper_status(session: AsyncSession) -> dict:
+    flags = OpsFlagRepository(session)
+    book = await flags.get_json("crypto_paper_book")
+    armed = await flags.get_json("crypto_strategy_a_armed")
+    return {
+        "legacy_engine": "off",
+        "strategy_a_armed": bool((armed or {}).get("armed")) if isinstance(armed, dict) else False,
+        "inherited_count_toward_25pct": True,
+        "inherited_notional_usd": (book or {}).get("inherited_notional_usd"),
+        "inherited_symbols": (book or {}).get("inherited_symbols") or [],
+        "book_deviation": (book or {}).get("book_deviation")
+        or (
+            "inherited August lots count toward the 25% paper crypto sleeve; "
+            "Strategy A does not manage them"
+        ),
     }
 
 
 class CryptoKillResetRequest(BaseModel):
     confirm: bool = False
     reason: str = Field(min_length=3, max_length=240)
-    actor: str = "desk"
 
 
 @router.post("/ops/crypto/kill-reset")
 async def reset_crypto_allocation_kill(
     body: CryptoKillResetRequest,
     session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
 ) -> dict:
     """Audited reset of Strategy A allocation kill. Does not submit orders."""
+    scope.require_desk()
     if not body.confirm:
         raise HTTPException(status_code=400, detail="confirm=true required")
+    from services.multiasset.crypto_owned import desk_actor
     from services.multiasset.crypto_risk import reset_allocation_kill
 
     flags = OpsFlagRepository(session)
     mark = await flags.get_json("crypto_strategy_a_risk")
     wealth = float(mark.get("wealth_usd") or mark.get("crypto_usd") or 0)
+    actor = desk_actor(scope)
     updated = reset_allocation_kill(
-        mark, actor=body.actor, reason=body.reason, current_wealth=wealth
+        mark, actor=actor, reason=body.reason, current_wealth=wealth
     )
     await flags.set_json("crypto_strategy_a_risk", updated)
     return {
@@ -391,6 +413,112 @@ async def paper_multiasset_activities(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+class LegacyFlattenRequest(BaseModel):
+    confirm: bool = False
+    dry_run: bool = True
+    symbols: list[str] = Field(default_factory=list)
+
+
+class EnableStrategyARequest(BaseModel):
+    confirm: bool = False
+
+
+def _paper_ops_broker():
+    from services.multiasset.paper_broker import MultiAssetNotPaperError, get_beta_broker_provider
+
+    try:
+        return get_beta_broker_provider()
+    except MultiAssetNotPaperError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/ops/multiasset/positions")
+async def paper_multiasset_positions(
+    scope: OrgScope = Depends(get_org_scope),
+) -> dict:
+    """Read-only Alpaca PAPER positions. Mesa token. Refuses a LIVE client."""
+    scope.require_desk()
+    from services.multiasset.crypto_legacy import list_paper_positions
+    from services.multiasset.paper_broker import MultiAssetNotPaperError
+
+    broker = _paper_ops_broker()
+    try:
+        return await list_paper_positions(broker)
+    except MultiAssetNotPaperError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/ops/multiasset/orders")
+async def paper_multiasset_orders(
+    status: str = Query(default="open", description="open | closed | all"),
+    page_token: str | None = Query(default=None),
+    page_size: int = Query(default=100, ge=1, le=500),
+    scope: OrgScope = Depends(get_org_scope),
+) -> dict:
+    """Read-only Alpaca PAPER orders. Mesa token. Refuses a LIVE client."""
+    scope.require_desk()
+    from services.multiasset.crypto_legacy import list_paper_orders
+    from services.multiasset.paper_broker import MultiAssetNotPaperError
+
+    broker = _paper_ops_broker()
+    try:
+        return await list_paper_orders(
+            broker, status=status, page_token=page_token, page_size=page_size
+        )
+    except MultiAssetNotPaperError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/ops/crypto/legacy-flatten")
+async def crypto_legacy_flatten(
+    body: LegacyFlattenRequest,
+    session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
+) -> dict:
+    """Explicit PAPER flatten of inherited August lots. dry_run=true by default."""
+    scope.require_desk()
+    if not body.dry_run and not body.confirm:
+        raise HTTPException(status_code=400, detail="confirm=true required when dry_run=false")
+    from services.multiasset.crypto_legacy import legacy_flatten
+    from services.multiasset.crypto_owned import desk_actor
+    from services.multiasset.paper_broker import MultiAssetNotPaperError
+    from services.multiasset.trade_tracker import MultiAssetTradeTracker
+
+    broker = _paper_ops_broker()
+    actor = desk_actor(scope)
+    try:
+        return await legacy_flatten(
+            broker,
+            symbols=body.symbols,
+            dry_run=body.dry_run,
+            actor=actor,
+            tracker=MultiAssetTradeTracker(session),
+            flags=OpsFlagRepository(session),
+        )
+    except MultiAssetNotPaperError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/ops/crypto/enable-strategy-a")
+async def enable_crypto_strategy_a(
+    body: EnableStrategyARequest,
+    session: AsyncSession = Depends(get_session),
+    scope: OrgScope = Depends(get_org_scope),
+) -> dict:
+    """Arm Strategy A after the mesa closes inherited lots. Paper only."""
+    scope.require_desk()
+    if not body.confirm:
+        raise HTTPException(status_code=400, detail="confirm=true required")
+    from services.multiasset.crypto_owned import desk_actor, set_strategy_a_armed
+
+    actor = desk_actor(scope)
+    flags = OpsFlagRepository(session)
+    payload = await set_strategy_a_armed(flags, armed=True, actor=actor)
+    return {"ok": True, "paper": True, **payload}
 
 
 @router.post("/ops/autopilot/run")

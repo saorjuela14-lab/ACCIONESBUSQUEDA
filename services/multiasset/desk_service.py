@@ -507,11 +507,8 @@ class MultiAssetDeskService:
             logger.warning("multiasset.track_no_price", symbol=sym)
             return
 
-        qty = req.qty
-        if qty is None and req.notional is not None:
-            qty = float(req.notional) / px
-        if qty is None or float(qty) <= 0:
-            return
+        from services.multiasset.crypto_fills import resolve_filled_qty
+        from services.multiasset.crypto_owned import STRATEGY_A_CID_PREFIX
 
         brief: DeskBrief | None = None
         try:
@@ -519,30 +516,56 @@ class MultiAssetDeskService:
         except Exception as exc:
             logger.warning("multiasset.track_brief_failed", error=str(exc))
 
-        fill_qty = float(qty)
-        if isinstance(result.payload, dict):
-            for key in ("filled_qty", "filledQty", "qty"):
-                raw_q = result.payload.get(key)
-                try:
-                    if raw_q is not None and float(raw_q) > 0:
-                        fill_qty = float(raw_q)
-                        break
-                except (TypeError, ValueError):
-                    continue
+        fill_qty = None
+        fill_px = px
+        if req.desk == "crypto" and not is_sim:
+            resolved = await resolve_filled_qty(
+                self._broker,
+                symbol=sym,
+                order_id=result.order_id,
+                payload=result.payload if isinstance(result.payload, dict) else None,
+            )
+            if not resolved.get("ok"):
+                logger.info(
+                    "multiasset.track_skip_unfilled",
+                    symbol=sym,
+                    reason=resolved.get("reason"),
+                    order_id=result.order_id,
+                )
+                result.payload = {
+                    **(result.payload or {}),
+                    "tracked": False,
+                    "track_reason": resolved.get("reason"),
+                }
+                return
+            fill_qty = float(resolved["qty"])
+            if resolved.get("avg_price"):
+                fill_px = float(resolved["avg_price"])
+        else:
+            qty = req.qty
+            if qty is None and req.notional is not None and px:
+                qty = float(req.notional) / px
+            fill_qty = float(qty or 0)
+        if fill_qty is None or fill_qty <= 0:
+            return
         if req.side == "buy":
+            cid = req.client_order_id or ""
+            meta = {
+                "note": req.note,
+                "dry_run": is_sim,
+                "client_order_id": cid,
+            }
+            if str(cid).startswith(STRATEGY_A_CID_PREFIX):
+                meta["strategy"] = "strategy_a"
             trade = await tracker.open_trade(
                 desk=req.desk,
                 symbol=sym,
                 qty=fill_qty,
-                entry_price=px,
+                entry_price=fill_px,
                 brief=brief,
                 is_sim=is_sim,
                 order_id=result.order_id,
-                meta={
-                    "note": req.note,
-                    "dry_run": is_sim,
-                    "client_order_id": req.client_order_id,
-                },
+                meta=meta,
             )
             result.payload = {
                 **(result.payload or {}),
@@ -555,7 +578,7 @@ class MultiAssetDeskService:
             closed = await tracker.close_trade(
                 desk=req.desk,
                 symbol=sym,
-                exit_price=px,
+                exit_price=fill_px,
                 exit_reason=req.note or ("dry-run sell" if is_sim else "paper sell"),
                 qty=fill_qty,
             )
@@ -563,7 +586,7 @@ class MultiAssetDeskService:
                 result.payload = {
                     **(result.payload or {}),
                     "tracked_trade_id": closed.id,
-                    "exit_price": px,
+                    "exit_price": fill_px,
                     "pnl_pct": closed.pnl_pct,
                     "was_correct": closed.was_correct,
                     "error_tag": closed.error_tag,
