@@ -171,6 +171,9 @@ def test_last_cycle_pending_new_is_not_a_fill():
     )
     assert pending_only["buys_filled"] == 0
     assert pending_only["buys"] == 0
+    stale = classify_cycle_fills({"buys": 1, "sells": 0})
+    assert stale["buys_filled"] == 0
+    assert stale["buys"] == 0
 
 
 def test_buy_net_qty_uses_rate_not_cfee_subtraction():
