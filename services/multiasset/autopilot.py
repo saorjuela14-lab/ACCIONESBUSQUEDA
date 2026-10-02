@@ -10,6 +10,7 @@ from services.kill_switch_service import KillSwitchService
 from services.multiasset.allocator import allocate
 from services.multiasset.desk_service import MultiAssetDeskService
 from services.multiasset.desks import DESKS, get_desk
+from services.multiasset.crypto_obs import classify_cycle_fills
 from services.multiasset.paper_broker import get_beta_broker_provider
 from services.multiasset.risk_engine import MultiAssetRiskDesk, size_notional_1x, trail_stop
 from services.multiasset.trade_tracker import MultiAssetTradeTracker
@@ -202,16 +203,7 @@ class MultiAssetAutopilotService:
                     "desks": {
                         k: (
                             {
-                                "buys": sum(
-                                    1
-                                    for b in ((v or {}).get("buys") or [])
-                                    if isinstance(b, dict) and b.get("ok")
-                                ),
-                                "sells": sum(
-                                    1
-                                    for s in ((v or {}).get("sells") or [])
-                                    if isinstance(s, dict) and s.get("ok")
-                                ),
+                                **classify_cycle_fills(v),
                                 "skipped": (v or {}).get("skipped"),
                                 "strategy": (v or {}).get("strategy"),
                                 "legacy_engine": (v or {}).get("legacy_engine") or "off",
@@ -466,18 +458,26 @@ class MultiAssetAutopilotService:
             fill_px = _fill_price(res, fallback=None)
             entry = float(getattr(trade, "entry_price", 0) or 0)
             pnl = None
-            if res.ok and fill_px is not None and entry > 0:
+            status = str(res.status or "").lower()
+            if getattr(res, "dry_run", False) or status == "dry_run":
+                filled = bool(res.ok)
+            else:
+                filled = status in {"filled", "partially_filled"}
+            if filled and fill_px is not None and entry > 0:
                 pnl = (float(fill_px) - entry) * sell_qty
             return {
                 "symbol": symbol,
                 "reason": reason,
-                "ok": bool(res.ok),
+                "ok": bool(filled),
+                "tracked": filled,
                 "message": res.message,
                 "qty": sell_qty,
-                "fill_px": fill_px,
+                "fill_px": fill_px if filled else None,
                 "pnl_usd": pnl,
+                "order_id": res.order_id,
+                "status": res.status,
                 "software_stop": True,
-                "keep_state": not bool(res.ok),
+                "keep_state": not filled,
             }
         except Exception as exc:
             return {
@@ -508,7 +508,12 @@ class MultiAssetAutopilotService:
             load_eligibility,
             median_spread_bps,
         )
-        from services.multiasset.crypto_filters import build_gate_report, screen_symbol
+        from services.multiasset.crypto_filters import (
+            build_gate_report,
+            eligibility_threshold,
+            evidence_gate,
+            screen_symbol,
+        )
         from services.multiasset.crypto_risk import (
             CryptoBook,
             MAX_CRYPTO_EQUITY_PCT,
@@ -524,7 +529,9 @@ class MultiAssetAutopilotService:
             rolling_wealth_from_samples,
             rolling_window_start,
             size_crypto_order,
+            sizing_allocation,
             spread_bps,
+            spread_reject_record,
         )
         from services.multiasset.crypto_obs import position_stop_fields
         from services.multiasset.crypto_universe import _normalize_alpaca_symbol
@@ -552,6 +559,7 @@ class MultiAssetAutopilotService:
             "sells": [],
             "holds": [],
             "scanned": [],
+            "spread_rejects": [],
             "open_positions": [],
             "paper": True,
             "dry_run": dry_run,
@@ -577,7 +585,9 @@ class MultiAssetAutopilotService:
         out["eligibility_version"] = elig.get("version")
         out["approved"] = approved
         min_adv = float(getattr(self._settings, "crypto_min_adv_usd", 1_000_000) or 0)
-        min_oos = int(getattr(self._settings, "crypto_min_oos_trades", 20) or 20)
+        thresh = eligibility_threshold(self._broker)
+        min_oos = int(thresh["min_trades"])
+        out["eligibility_threshold"] = thresh
         max_pos = int(getattr(self._settings, "crypto_max_positions", 6) or 6)
 
         tradable: set[str] = set()
@@ -593,6 +603,7 @@ class MultiAssetAutopilotService:
             logger.warning("crypto.a.assets_failed", error=str(exc))
 
         from services.multiasset.crypto_owned import (
+            inherited_on_symbol,
             inherited_present,
             inherited_trades,
             strategy_a_is_armed,
@@ -969,7 +980,14 @@ class MultiAssetAutopilotService:
                 except (TypeError, ValueError):
                     pass
             eq = float(equity or desk_budget or 0)
-            allocation = eq * MAX_CRYPTO_EQUITY_PCT / 100.0
+            armed_raw = await flags.get_json("crypto_strategy_a_armed")
+            from services.multiasset.crypto_owned import armed_allocation_usd
+
+            fixed_alloc = armed_allocation_usd(armed_raw)
+            if fixed_alloc <= 0:
+                fixed_alloc = eq * MAX_CRYPTO_EQUITY_PCT / 100.0
+            allocation = fixed_alloc
+            size_alloc = sizing_allocation(fixed_allocation=fixed_alloc, equity=eq)
             mark = await flags.get_json("crypto_strategy_a_risk")
             realized = float(mark.get("realized_pnl_usd") or 0) + cycle_realized
             wealth = allocation_wealth(
@@ -1055,6 +1073,8 @@ class MultiAssetAutopilotService:
             )
             out["crypto_usd"] = round(crypto_usd, 2)
             out["allocation_usd"] = round(allocation, 2)
+            out["sizing_allocation_usd"] = round(size_alloc, 2)
+            out["fixed_allocation_usd"] = round(fixed_alloc, 2)
 
             if mark.get("kill_active") or kill_from_allocation_peak(
                 peak_crypto_usd=peak, crypto_usd=wealth, allocation_usd=allocation
@@ -1161,8 +1181,13 @@ class MultiAssetAutopilotService:
                 leftover = max(0.0, float(row.get("qty") or 0) - own)
                 inherited_only += leftover * float(row.get("price") or 0)
             out["inherited_broker_notional_usd"] = round(inherited_only, 2)
+            size_equity = (
+                size_alloc / (MAX_CRYPTO_EQUITY_PCT / 100.0)
+                if MAX_CRYPTO_EQUITY_PCT
+                else eq
+            )
             book = CryptoBook(
-                equity=eq,
+                equity=size_equity,
                 crypto_notional=sleeve_crypto,
                 open_risk_usd=open_risk,
                 n_positions=len(open_by_sym),
@@ -1248,7 +1273,8 @@ class MultiAssetAutopilotService:
                         qty=None if flatten else sell_qty,
                         client_order_id=cid,
                     )
-                    out["sells"].append({"symbol": sym, "reason": "rebalance_down", "ok": sold.get("ok")})
+                    sold["reason"] = "rebalance_down"
+                    out["sells"].append(sold)
                     if sold.get("ok") and flatten:
                         open_by_sym.pop(sym, None)
                         pos_state.pop(sym, None)
@@ -1263,6 +1289,13 @@ class MultiAssetAutopilotService:
 
             if allow_buys:
                 for sym, trade, sig, last, delta in pending_rebalance_up:
+                    row_elig = next((r for r in rows if r.get("symbol") == sym), {"symbol": sym})
+                    ok_e, why_e = evidence_gate(row_elig, min_trades=min_oos)
+                    if not ok_e or (passed_set and sym not in passed_set):
+                        out["scanned"].append(
+                            {"symbol": sym, "skip": why_e if not ok_e else "not_eligible", "reason": "rebalance_up"}
+                        )
+                        continue
                     st = dict(pos_state.get(sym) or {})
                     stop_px = float(st.get("stop_px") or sig.stop_px or 0)
                     if stop_px <= 0 or not stop_is_tradable(last, stop_px):
@@ -1272,6 +1305,8 @@ class MultiAssetAutopilotService:
                     live = spread_bps(q.get("bid"), q.get("ask"), last)
                     ok_sp, why_sp = entry_spread_ok(sym, live_bps=live, median_bps=med)
                     if not ok_sp:
+                        rec = spread_reject_record(sym, live_bps=live, median_bps=med, reason=why_sp)
+                        out["spread_rejects"].append(rec)
                         out["scanned"].append({"symbol": sym, "skip": why_sp})
                         continue
                     adv_rebal, why_rebal = adv_for_symbol(weekly, sym)
@@ -1283,7 +1318,7 @@ class MultiAssetAutopilotService:
                     book.open_risk_usd += add_risk
                     add, info = size_crypto_order(
                         symbol=sym,
-                        equity=eq,
+                        equity=size_equity,
                         entry=last,
                         stop=stop_px,
                         book=book,
@@ -1325,6 +1360,8 @@ class MultiAssetAutopilotService:
                                 "ok": bool(res.ok and tracked_up),
                                 "tracked": tracked_up,
                                 "reason": "rebalance_up",
+                                "order_id": res.order_id,
+                                "status": res.status,
                             }
                         )
                         if res.ok and tracked_up:
@@ -1358,6 +1395,9 @@ class MultiAssetAutopilotService:
                 sym = row["symbol"]
                 if sym in open_by_sym:
                     continue
+                if inherited_on_symbol(all_open, sym):
+                    out["scanned"].append({"symbol": sym, "skip": "inherited_on_symbol"})
+                    continue
                 if sym not in passed_set:
                     why = next((r.get("reasons") for r in screened_rows if r.get("symbol") == sym), ["gate"])
                     out["scanned"].append({"symbol": sym, "skip": why[0] if why else "gate"})
@@ -1371,6 +1411,8 @@ class MultiAssetAutopilotService:
                 live = spread_bps(q.get("bid"), q.get("ask"), last)
                 ok_sp, why_sp = entry_spread_ok(sym, live_bps=live, median_bps=med)
                 if not ok_sp:
+                    rec = spread_reject_record(sym, live_bps=live, median_bps=med, reason=why_sp)
+                    out["spread_rejects"].append(rec)
                     out["scanned"].append({"symbol": sym, "skip": why_sp})
                     continue
                 try:
@@ -1395,7 +1437,7 @@ class MultiAssetAutopilotService:
                     continue
                 notional, info = size_crypto_order(
                     symbol=sym,
-                    equity=eq,
+                    equity=size_equity,
                     entry=float(last),
                     stop=float(sig.stop_px),
                     book=book,
@@ -1474,6 +1516,7 @@ class MultiAssetAutopilotService:
                             "ok": bool(res.ok and tracked),
                             "tracked": tracked,
                             "status": res.status,
+                            "order_id": res.order_id,
                             "message": res.message,
                             "ramp": info.get("ramp"),
                             "software_stop": True,

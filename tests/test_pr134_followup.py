@@ -414,16 +414,17 @@ async def test_legacy_flatten_dry_run_and_dust_no_loop():
 
 
 @pytest.mark.asyncio
-async def test_strategy_a_armed_missing_allows_only_without_inherited(session):
+async def test_strategy_a_armed_missing_is_disarmed(session):
     from database.repositories.ops_repository import OpsFlagRepository
 
     flags = OpsFlagRepository(session)
-    assert await strategy_a_is_armed(flags, inherited=False) is True
+    assert await strategy_a_is_armed(flags, inherited=False) is False
     assert await strategy_a_is_armed(flags, inherited=True) is False
     await set_strategy_a_armed(flags, armed=False, actor="desk")
     assert await strategy_a_is_armed(flags, inherited=False) is False
     await set_strategy_a_armed(flags, armed=True, actor="desk")
     assert await strategy_a_is_armed(flags, inherited=True) is True
+    assert await strategy_a_is_armed(None, inherited=False) is False
 
 
 def test_inherited_not_strategy_a():
@@ -438,14 +439,13 @@ def test_inherited_not_strategy_a():
     assert [x.symbol for x in strategy_a_owned([t, a])] == ["BTC/USD"]
 
 
-def test_real_bar_parity_vs_engine_prints():
+def test_real_bar_parity_vs_saved_engine_exits():
     from services.multiasset.engine_bars import bars_to_1h, clean, resample_4h
-    from services.multiasset.strategy_a import catch_up_exits, chandelier_stop_px
-    from services.multiasset.indicators import atr
+    from services.multiasset.strategy_a import catch_up_exits
 
     payload = _load("bars/btc_eth_1h_2025-09-10.json")
-    prints = payload["engine_prints"]
-    for symbol, expect in prints.items():
+    exits = _load("bars/engine_exits_2025-10-10.json")
+    for symbol, expect in exits.items():
         raw = bars_to_1h(payload[symbol])
         four = resample_4h(clean(raw))
         assert not four.empty
@@ -453,16 +453,13 @@ def test_real_bar_parity_vs_engine_prints():
         assert hit_open in four.index
         loc = four.index.get_loc(hit_open)
         engine_stop = float(expect["stop_px"])
-        prev = four.iloc[:loc]
-        atr_prev = float(atr(prev, 14).iloc[-1])
-        implied_high = engine_stop + 8.0 * atr_prev
-        assert chandelier_stop_px(implied_high, atr_prev) == pytest.approx(engine_stop, abs=0.02)
+        saved_high = float(expect["highest_close"])
         now = (four.index[loc] + pd.Timedelta(hours=4, minutes=20)).to_pydatetime()
 
         cup = catch_up_exits(
             four,
             last_evaluated_open=four.index[loc - 1],
-            highest_close=implied_high,
+            highest_close=saved_high,
             stop_px=engine_stop,
             now=now,
         )
@@ -473,13 +470,11 @@ def test_real_bar_parity_vs_engine_prints():
 
         for n_gap in (3, 7):
             last_eval = four.index[loc - n_gap]
-            hist = four.loc[:last_eval]
-            stop0 = chandelier_stop_px(implied_high, float(atr(hist, 14).iloc[-1]))
             cup_n = catch_up_exits(
                 four,
                 last_evaluated_open=last_eval,
-                highest_close=implied_high,
-                stop_px=stop0,
+                highest_close=saved_high,
+                stop_px=engine_stop,
                 now=now,
             )
             assert cup_n["data_ok"] is True

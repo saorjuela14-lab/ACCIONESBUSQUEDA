@@ -1,5 +1,7 @@
 """Ops desk API — kill switch, audit, reconcile, lifecycle, auto-execute policy."""
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -281,13 +283,28 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
         "db_host": _ops_db_host(),
         "leases": await _lease_status(session),
         "crypto_paper": await _crypto_paper_status(session),
+        "strategy_a_eligibility": _strategy_a_eligibility_status(),
     }
+
+
+def _strategy_a_eligibility_status(broker: Any = None) -> dict:
+    from services.multiasset.crypto_filters import eligibility_threshold
+
+    if broker is None:
+        try:
+            from services.multiasset.paper_broker import get_beta_broker_provider
+
+            broker = get_beta_broker_provider()
+        except Exception:
+            broker = None
+    return eligibility_threshold(broker)
 
 
 async def _crypto_paper_status(session: AsyncSession) -> dict:
     flags = OpsFlagRepository(session)
     book = await flags.get_json("crypto_paper_book")
     armed = await flags.get_json("crypto_strategy_a_armed")
+    thresh = _strategy_a_eligibility_status()
     return {
         "legacy_engine": "off",
         "strategy_a_armed": bool((armed or {}).get("armed")) if isinstance(armed, dict) else False,
@@ -299,6 +316,7 @@ async def _crypto_paper_status(session: AsyncSession) -> dict:
             "inherited August lots count toward the 25% paper crypto sleeve; "
             "Strategy A does not manage them"
         ),
+        "eligibility_threshold": thresh,
     }
 
 
@@ -513,11 +531,53 @@ async def enable_crypto_strategy_a(
     scope.require_desk()
     if not body.confirm:
         raise HTTPException(status_code=400, detail="confirm=true required")
-    from services.multiasset.crypto_owned import desk_actor, set_strategy_a_armed
+    from services.multiasset.crypto_legacy import require_paper_broker
+    from services.multiasset.crypto_owned import (
+        desk_actor,
+        inherited_btc_eth_symbols,
+        set_strategy_a_armed,
+    )
+    from services.multiasset.crypto_risk import MAX_CRYPTO_EQUITY_PCT
+    from services.multiasset.paper_broker import MultiAssetNotPaperError
+    from services.multiasset.trade_tracker import MultiAssetTradeTracker
 
+    broker = _paper_ops_broker()
+    try:
+        require_paper_broker(broker)
+    except MultiAssetNotPaperError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    tracker = MultiAssetTradeTracker(session)
+    open_lots = await tracker.list_open(desk="crypto")
+    broker_syms: list[str] = []
+    try:
+        for pos in await broker.get_positions() or []:
+            if isinstance(pos, dict):
+                broker_syms.append(str(pos.get("symbol") or ""))
+            else:
+                broker_syms.append(str(getattr(pos, "symbol", "") or ""))
+    except Exception:
+        broker_syms = []
+    inherited_be = inherited_btc_eth_symbols(open_lots, broker_syms)
+    if inherited_be:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "inherited_btc_eth", "symbols": inherited_be},
+        )
+    equity = 0.0
+    try:
+        acct = await broker.get_account()
+        if isinstance(acct, dict):
+            equity = float(acct.get("equity") or acct.get("portfolio_value") or 0)
+        else:
+            equity = float(getattr(acct, "equity", 0) or 0)
+    except Exception:
+        equity = 0.0
+    allocation = max(0.0, equity * MAX_CRYPTO_EQUITY_PCT / 100.0)
     actor = desk_actor(scope)
     flags = OpsFlagRepository(session)
-    payload = await set_strategy_a_armed(flags, armed=True, actor=actor)
+    payload = await set_strategy_a_armed(
+        flags, armed=True, actor=actor, allocation_usd=allocation, equity_usd=equity
+    )
     return {"ok": True, "paper": True, **payload}
 
 

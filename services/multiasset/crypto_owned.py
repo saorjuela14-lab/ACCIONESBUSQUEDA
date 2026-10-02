@@ -83,16 +83,24 @@ async def strategy_a_is_armed(
     *,
     inherited: bool = False,
 ) -> bool:
-    """Explicit flag wins. Missing flag: allow only when no inherited lots (tests / greenfield)."""
+    """Missing flag → DISARMED. ``inherited`` is ignored for the default."""
+    del inherited
     if flags is None:
-        return not inherited
+        return False
     raw = await flags.get_json(FLAG_STRATEGY_A_ARMED)
     if not isinstance(raw, dict) or "armed" not in raw:
-        return not inherited
+        return False
     return bool(raw.get("armed"))
 
 
-async def set_strategy_a_armed(flags: Any, *, armed: bool, actor: str) -> dict[str, Any]:
+async def set_strategy_a_armed(
+    flags: Any,
+    *,
+    armed: bool,
+    actor: str,
+    allocation_usd: float | None = None,
+    equity_usd: float | None = None,
+) -> dict[str, Any]:
     from datetime import datetime, timezone
 
     payload = {
@@ -100,8 +108,53 @@ async def set_strategy_a_armed(flags: Any, *, armed: bool, actor: str) -> dict[s
         "actor": actor,
         "at": datetime.now(timezone.utc).isoformat(),
     }
+    if armed and allocation_usd is not None:
+        payload["allocation_usd"] = float(allocation_usd)
+    if armed and equity_usd is not None:
+        payload["equity_at_arm_usd"] = float(equity_usd)
     await flags.set_json(FLAG_STRATEGY_A_ARMED, payload)
     return payload
+
+
+def armed_allocation_usd(raw: Any) -> float:
+    if not isinstance(raw, dict):
+        return 0.0
+    try:
+        return float(raw.get("allocation_usd") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def inherited_on_symbol(trades: list[Any] | None, symbol: str) -> bool:
+    want = _norm(symbol)
+    for t in trades or []:
+        if _norm(str(getattr(t, "symbol", "") or "")) != want:
+            continue
+        if not is_strategy_a_trade(t):
+            return True
+    return False
+
+
+def inherited_btc_eth_symbols(
+    trades: list[Any] | None = None,
+    broker_symbols: list[str] | None = None,
+) -> list[str]:
+    found: list[str] = []
+    want = STRATEGY_A_SYMBOLS
+    for t in trades or []:
+        sym = _norm(str(getattr(t, "symbol", "") or ""))
+        if sym in want and not is_strategy_a_trade(t) and sym not in found:
+            found.append(sym)
+    for raw in broker_symbols or []:
+        sym = _norm(raw)
+        if sym in want and sym not in found:
+            # Broker merge: same-symbol lot without an A tag is inherited.
+            if not any(
+                _norm(str(getattr(t, "symbol", "") or "")) == sym and is_strategy_a_trade(t)
+                for t in (trades or [])
+            ):
+                found.append(sym)
+    return found
 
 
 def desk_actor(scope: Any) -> str:

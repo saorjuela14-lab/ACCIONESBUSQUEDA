@@ -80,6 +80,82 @@ def open_positions_from_state(state: dict[str, Any] | None) -> list[dict[str, An
     return rows
 
 
+_FILLED = frozenset({"filled", "partially_filled"})
+_PENDING = frozenset(
+    {
+        "pending_new",
+        "new",
+        "accepted",
+        "held",
+        "accepted_for_bidding",
+        "pending_replace",
+        "calculated",
+    }
+)
+_REJECTED = frozenset({"rejected", "canceled", "cancelled", "expired", "done_for_day"})
+
+
+def classify_cycle_side(rows: list[Any] | None, *, side: str) -> dict[str, Any]:
+    """Split submitted vs filled vs pending/rejected by order_id.
+
+    A pending_new must never increment ``{side}s`` / ``{side}s_filled``.
+    """
+    prefix = "buy" if side == "buy" else "sell"
+    submitted: list[dict[str, Any]] = []
+    filled: list[dict[str, Any]] = []
+    pending: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    for raw in rows or []:
+        if not isinstance(raw, dict):
+            continue
+        oid = raw.get("order_id") or raw.get("id")
+        status = str(raw.get("status") or raw.get("order_status") or "").strip().lower()
+        item = {
+            "order_id": oid,
+            "symbol": raw.get("symbol"),
+            "status": status or None,
+            "reason": raw.get("reason") or raw.get("error"),
+        }
+        submitted.append(item)
+        if raw.get("error") or status in _REJECTED:
+            rejected.append(item)
+            continue
+        if status in _FILLED:
+            filled.append(item)
+            continue
+        if status in _PENDING:
+            pending.append(item)
+            continue
+        if raw.get("tracked") is True and status not in _PENDING:
+            filled.append(item)
+            continue
+        if raw.get("ok") is True and raw.get("tracked") is True:
+            filled.append(item)
+            continue
+        if raw.get("ok") is False or raw.get("tracked") is False:
+            pending.append(item)
+            continue
+        pending.append(item)
+    return {
+        f"{prefix}s_submitted": len(submitted),
+        f"{prefix}s_filled": len(filled),
+        f"{prefix}s_pending": pending,
+        f"{prefix}s_rejected": rejected,
+        f"{prefix}s": len(filled),
+    }
+
+
+def classify_cycle_fills(desk: dict[str, Any] | None) -> dict[str, Any]:
+    src = desk or {}
+    out = {}
+    out.update(classify_cycle_side(src.get("buys") or [], side="buy"))
+    out.update(classify_cycle_side(src.get("sells") or [], side="sell"))
+    rejects = list(src.get("spread_rejects") or [])
+    out["spread_rejects"] = rejects
+    out["spread_reject_count"] = len(rejects)
+    return out
+
+
 def attach_last_cycle_obs(cycle: dict[str, Any] | None, state: dict[str, Any] | None) -> dict[str, Any]:
     """Ensure last-cycle crypto desks expose per-position stop fields and no false GTC."""
     last = dict(cycle or {})
@@ -99,6 +175,10 @@ def attach_last_cycle_obs(cycle: dict[str, Any] | None, state: dict[str, Any] | 
     crypto["broker_stops_gtc"] = False
     crypto["broker_stop"] = "none"
     crypto["legacy_engine"] = "off"
+    counts = classify_cycle_fills(crypto)
+    for key, val in counts.items():
+        crypto.setdefault(key, val)
+    last.setdefault("spread_reject_count", crypto.get("spread_reject_count", 0))
     last["broker_stops_gtc"] = False
     last["legacy_engine"] = "off"
     if state:

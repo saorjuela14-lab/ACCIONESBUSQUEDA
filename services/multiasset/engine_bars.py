@@ -80,7 +80,11 @@ def clean(df: pd.DataFrame, bar_h: int = 1) -> pd.DataFrame:
 
 
 def clip_outlier_prints(df: pd.DataFrame) -> pd.DataFrame:
-    """engine.clean: clip OHLC to a centered 25-bar median ±12% (ETH Low 788)."""
+    """engine.clean: clip OHLC to a centered 25-bar median ±12% (ETH Low 788).
+
+    Only bars with trade-count ``n < 200`` (or missing ``n``) are clipped.
+    Liquid bars (n ≥ 200) keep the raw print.
+    """
     if df is None or getattr(df, "empty", True) or "Close" not in df.columns:
         return df
     out = df.copy()
@@ -88,12 +92,17 @@ def clip_outlier_prints(df: pd.DataFrame) -> pd.DataFrame:
     med = close.rolling(OUTLIER_LOOKBACK, center=True, min_periods=8).median()
     lo = med * (1.0 - OUTLIER_BAND)
     hi = med * (1.0 + OUTLIER_BAND)
+    thin = pd.Series(True, index=out.index)
+    n_col = next((c for c in ("n", "N", "trade_count") if c in out.columns), None)
+    if n_col is not None:
+        counts = pd.to_numeric(out[n_col], errors="coerce")
+        thin = counts.isna() | (counts < 200)
     for col in ("Open", "High", "Low", "Close"):
         if col not in out.columns:
             continue
         series = out[col].astype(float)
         clipped = series.copy()
-        mask = med.notna()
+        mask = med.notna() & thin
         clipped.loc[mask] = series.loc[mask].clip(lower=lo.loc[mask], upper=hi.loc[mask])
         out[col] = clipped
     if "High" in out.columns:

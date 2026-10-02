@@ -98,6 +98,40 @@ def universe_spread_ok(symbol: str, median_bps: float | None) -> tuple[bool, str
     return True, "ok"
 
 
+def spread_threshold_bps(median_bps: float | None) -> float | None:
+    if median_bps is None:
+        return None
+    try:
+        return SPREAD_REJECT_MULT * float(median_bps)
+    except (TypeError, ValueError):
+        return None
+
+
+def spread_reject_record(
+    symbol: str,
+    *,
+    live_bps: float | None,
+    median_bps: float | None,
+    reason: str,
+) -> dict[str, Any]:
+    """Every spread reject is visible: symbol, observed, threshold. Never silent."""
+    rec = {
+        "symbol": symbol,
+        "observed_spread_bps": live_bps,
+        "threshold_bps": spread_threshold_bps(median_bps),
+        "median_spread_bps": median_bps,
+        "reason": reason,
+    }
+    logger.warning(
+        "crypto.spread_reject",
+        symbol=symbol,
+        observed_spread_bps=live_bps,
+        threshold_bps=rec["threshold_bps"],
+        reason=reason,
+    )
+    return rec
+
+
 def entry_spread_ok(symbol: str, *, live_bps: float | None, median_bps: float | None) -> tuple[bool, str]:
     """Fail closed: no moment spread → reject the entry."""
     ok, why = universe_spread_ok(symbol, median_bps)
@@ -105,9 +139,24 @@ def entry_spread_ok(symbol: str, *, live_bps: float | None, median_bps: float | 
         return False, why
     if live_bps is None:
         return False, "live_spread_unknown"
-    if float(live_bps) > SPREAD_REJECT_MULT * float(median_bps):
+    cap = spread_threshold_bps(median_bps)
+    if cap is None:
+        return False, "median_spread_unknown"
+    if float(live_bps) > cap:
         return False, f"live_spread {live_bps:.1f}bp > {SPREAD_REJECT_MULT}× median {median_bps:.1f}"
     return True, "ok"
+
+
+def sizing_allocation(*, fixed_allocation: float, equity: float, sleeve_pct: float = MAX_CRYPTO_EQUITY_PCT) -> float:
+    """Kill/brake use the armed fixed allocation. Size = min(fixed, equity×sleeve).
+
+    Can fall with equity; never rises above the allocation persisted at arm.
+    """
+    live = max(0.0, float(equity or 0) * float(sleeve_pct) / 100.0)
+    fixed = float(fixed_allocation or 0)
+    if fixed <= 0:
+        return live
+    return min(fixed, live)
 
 
 def per_name_caps(symbol: str, equity: float) -> tuple[float, float]:

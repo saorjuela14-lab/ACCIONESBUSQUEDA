@@ -7,6 +7,8 @@ from typing import Any
 from services.multiasset.crypto_risk import alpaca_min_qty
 
 FILLED_STATUSES = frozenset({"filled", "partially_filled"})
+BUY_NET_QTY_RATE = 0.9975  # 0.25% CFEE in coin — configurable, default official
+POSITION_DELTA_ALERT_REL = 1e-6
 DEAD_NO_FILL = frozenset(
     {"canceled", "cancelled", "expired", "rejected", "done_for_day"}
 )
@@ -26,12 +28,42 @@ def _norm(symbol: str) -> str:
     return (symbol or "").upper().replace("/", "").replace("-", "")
 
 
+def buy_net_qty(filled_qty: float, *, rate: float | None = None) -> float:
+    """Buy net = filled_qty × rate (default 0.9975). Sells do not change qty."""
+    r = BUY_NET_QTY_RATE if rate is None else float(rate)
+    return float(filled_qty or 0) * r
+
+
+def position_qty_delta_alert(
+    net_qty: float,
+    position_qty: float | None,
+    *,
+    rel: float = POSITION_DELTA_ALERT_REL,
+) -> dict[str, Any] | None:
+    if position_qty is None:
+        return None
+    try:
+        pos = float(position_qty)
+    except (TypeError, ValueError):
+        return None
+    denom = max(abs(pos), 1e-12)
+    rel_diff = abs(float(net_qty) - pos) / denom
+    if rel_diff > float(rel):
+        return {
+            "alert": True,
+            "net_qty": float(net_qty),
+            "position_qty": pos,
+            "rel_diff": rel_diff,
+        }
+    return None
+
+
 def net_qty_from_fill_and_cfee(
     *,
     filled_qty: float,
     cfee_qty: float | None = None,
 ) -> float:
-    """Fill qty minus coin fee (CFEE qty is negative on Alpaca)."""
+    """Reconcile helper: fill qty minus coin fee (CFEE qty is negative on Alpaca)."""
     fill = float(filled_qty or 0)
     fee = float(cfee_qty or 0)
     if fee > 0:
@@ -145,12 +177,15 @@ async def resolve_filled_qty(
         cfee = cfee_qty_for_symbol(cfees, symbol)
     except Exception:
         cfee = 0.0
-    net = net_qty_from_fill_and_cfee(filled_qty=filled, cfee_qty=cfee)
+    net = buy_net_qty(filled, rate=BUY_NET_QTY_RATE)
+    cfee_net = net_qty_from_fill_and_cfee(filled_qty=filled, cfee_qty=cfee)
     return {
         "ok": True,
         "qty": net,
         "filled_qty": filled,
         "cfee_qty": cfee,
+        "cfee_net_qty": cfee_net,
+        "net_qty_rate": BUY_NET_QTY_RATE,
         "avg_price": avg,
         "order": order,
     }

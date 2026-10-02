@@ -168,8 +168,15 @@ async def cancel_stale_gtc_buys(broker: Any) -> dict[str, Any]:
     return {"skipped": None, "cancelled": cancelled, "count": len(cancelled)}
 
 
-async def cancel_open_crypto_orders(broker: Any) -> dict[str, Any]:
-    """Cancel working crypto orders one-by-one by id. Never DELETE /v2/orders."""
+async def cancel_open_crypto_orders(
+    broker: Any,
+    *,
+    symbols: list[str] | None = None,
+) -> dict[str, Any]:
+    """Cancel working crypto orders one-by-one by id. Never DELETE /v2/orders.
+
+    When ``symbols`` is set, only those names are cancelled.
+    """
     require_paper_broker(broker)
     await assert_beta_account_is_paper(broker)
     if not getattr(broker, "is_configured", lambda: False)():
@@ -177,6 +184,7 @@ async def cancel_open_crypto_orders(broker: Any) -> dict[str, Any]:
     if hasattr(broker, "cancel_all_orders"):
         # Belt: never call the bulk cancel even if a caller mixes this up.
         pass
+    want = {_norm_sym(s) for s in (symbols or []) if str(s).strip()} or None
     try:
         orders = await broker.list_orders(status="open", limit=500)
     except Exception as exc:
@@ -192,6 +200,15 @@ async def cancel_open_crypto_orders(broker: Any) -> dict[str, Any]:
                     "id": raw.get("id"),
                     "symbol": raw.get("symbol"),
                     "reason": "not_crypto",
+                }
+            )
+            continue
+        if want is not None and _norm_sym(str(raw.get("symbol") or "")) not in want:
+            skipped.append(
+                {
+                    "id": raw.get("id"),
+                    "symbol": raw.get("symbol"),
+                    "reason": "not_requested",
                 }
             )
             continue
@@ -357,13 +374,11 @@ async def legacy_flatten(
             open_a = await tracker.list_open(desk="crypto")
         except Exception:
             open_a = []
-    armed = await strategy_a_is_armed(flags, inherited=True) if flags is not None else False
     blocked: list[str] = []
-    if armed:
-        for sym in asked:
-            if is_strategy_a_symbol(sym) and a_has_open_lot(open_a, sym):
-                blocked.append(sym)
-    # After A is armed: skip BTC/ETH with an A lot; still flatten the other inherited names.
+    for sym in asked:
+        if is_strategy_a_symbol(sym) and a_has_open_lot(open_a, sym):
+            blocked.append(sym)
+    # Reject BTC/ETH when A has its own lot — armed or not. Still flatten the rest.
 
     cancels: dict[str, Any] = {"cancelled": [], "dry_run": dry_run}
     try:
@@ -378,7 +393,7 @@ async def legacy_flatten(
                 ],
             }
         else:
-            cancels = await cancel_open_crypto_orders(broker)
+            cancels = await cancel_open_crypto_orders(broker, symbols=asked)
     except MultiAssetNotPaperError:
         raise
     except Exception as exc:
@@ -476,9 +491,11 @@ async def legacy_flatten(
         except Exception:
             leftover = leftover
 
-    all_blocked = bool(blocked) and not closed and not dry_run and not missing
+    ok_closes = [c for c in closed if not c.get("error")]
+    failed_closes = [c for c in closed if c.get("error")]
+    all_blocked = bool(blocked) and not ok_closes and not dry_run and not missing
     out = {
-        "ok": not (blocked and not closed and not dry_run),
+        "ok": bool(dry_run) or (bool(ok_closes) and not failed_closes),
         "paper": True,
         "dry_run": bool(dry_run),
         "actor": actor,
@@ -491,9 +508,13 @@ async def legacy_flatten(
         "cancels": cancels,
         "at": datetime.now(timezone.utc).isoformat(),
         "legacy_engine": "off",
-        "error": "strategy_a_open_lot" if all_blocked else None,
+        "error": (
+            "close_failed"
+            if failed_closes
+            else ("strategy_a_open_lot" if all_blocked else None)
+        ),
     }
-    if flags is not None and not dry_run and closed:
+    if flags is not None and not dry_run and ok_closes and not failed_closes:
         await flags.set_json(
             FLAG_LEGACY_FLAT,
             {"done": True, "actor": actor, **{k: v for k, v in out.items() if k != "preview"}},

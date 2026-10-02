@@ -361,6 +361,14 @@ class MultiAssetDeskService:
                 order = sanitize_crypto_order(order)
             except CryptoStopNotSupported as exc:
                 raise ValueError(str(exc)) from exc
+            cid = str(req.client_order_id or "")
+            if req.side == "buy" and cid.startswith("sa9-") and self._session is not None:
+                from services.multiasset.crypto_owned import inherited_on_symbol
+                from services.multiasset.trade_tracker import MultiAssetTradeTracker
+
+                open_lots = await MultiAssetTradeTracker(self._session).list_open(desk="crypto")
+                if inherited_on_symbol(open_lots, sym):
+                    raise ValueError(f"mixed_lot_blocked:{sym}:inherited_open")
 
         if req.dry_run or not self._broker.is_configured():
             result = MultiAssetOrderResult(
@@ -557,6 +565,7 @@ class MultiAssetDeskService:
             }
             if str(cid).startswith(STRATEGY_A_CID_PREFIX):
                 meta["strategy"] = "strategy_a"
+                meta["evidence_grade"] = "paper_cost_only"
             trade = await tracker.open_trade(
                 desk=req.desk,
                 symbol=sym,

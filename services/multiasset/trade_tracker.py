@@ -169,6 +169,19 @@ class MultiAssetTradeTracker:
         existing = await self.get_open(desk, symbol)
         scores = {v.agent_name: float(v.score) for v in (brief.votes if brief else [])}
         if existing:
+            from services.multiasset.crypto_owned import is_strategy_a_trade
+
+            incoming_a = bool(
+                isinstance(meta, dict)
+                and (
+                    str(meta.get("strategy") or "").lower() in {"strategy_a", "sa9", "combo9"}
+                    or str(meta.get("client_order_id") or order_id or "").startswith("sa9-")
+                )
+            )
+            if incoming_a != is_strategy_a_trade(existing):
+                raise ValueError(
+                    f"mixed_lot_blocked:{symbol}:inherited_and_strategy_a_must_not_merge"
+                )
             row = await self._session.get(MultiAssetTradeORM, existing.id)
             assert row is not None
             try:

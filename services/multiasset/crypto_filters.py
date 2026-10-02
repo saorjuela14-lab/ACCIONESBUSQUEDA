@@ -19,20 +19,78 @@ ALPACA_MAKER_BPS = 15.0
 ALPACA_TAKER_BPS = 25.0
 
 
+# Fixed code constants — never relaxed via env. Paper 10 sits behind the B6 paper guard.
+LIVE_MIN_OOS_TRADES = 20
+PAPER_MIN_OOS_TRADES = 10
+EVIDENCE_GRADE_PAPER = "paper_cost_only"
+
+
+def eligibility_threshold(broker: Any = None) -> dict[str, Any]:
+    """LIVE 20 unless the B6 paper guard passes. Any doubt → LIVE.
+
+    Paper threshold is a code constant, not an environment variable.
+    """
+    if broker is None:
+        return {
+            "mode": "live",
+            "min_trades": LIVE_MIN_OOS_TRADES,
+            "reason": "no_broker_defaults_live",
+        }
+    from services.multiasset.crypto_legacy import paper_guard
+
+    skip = paper_guard(broker)
+    paper_flag = getattr(broker, "paper", None)
+    if skip is None and paper_flag is True:
+        return {
+            "mode": "paper",
+            "min_trades": PAPER_MIN_OOS_TRADES,
+            "reason": "paper_guard_ok_and_broker.paper_is_true",
+        }
+    if skip:
+        why = skip.get("skipped") if isinstance(skip, dict) else "paper_guard_failed"
+        return {
+            "mode": "live",
+            "min_trades": LIVE_MIN_OOS_TRADES,
+            "reason": f"paper_guard:{why}",
+        }
+    return {
+        "mode": "live",
+        "min_trades": LIVE_MIN_OOS_TRADES,
+        "reason": f"broker.paper={paper_flag!r}_defaults_live",
+    }
+
+
+def is_live_eligibility_evidence(trade: Any) -> bool:
+    """Paper A fills are cost-only; LIVE eligibility must not count them."""
+    if trade is None:
+        return False
+    meta = getattr(trade, "meta", None)
+    if meta is None and isinstance(trade, dict):
+        meta = trade.get("meta") or trade
+    if not isinstance(meta, dict):
+        meta = {}
+    grade = str(meta.get("evidence_grade") or "").strip().lower()
+    if grade == EVIDENCE_GRADE_PAPER:
+        return False
+    return True
+
+
+def count_live_eligibility_trades(trades: list[Any] | None) -> int:
+    return sum(1 for t in (trades or []) if is_live_eligibility_evidence(t))
+
+
 def evidence_gate(
     row: dict[str, Any],
     *,
-    min_trades: int = 20,
+    min_trades: int = LIVE_MIN_OOS_TRADES,
 ) -> tuple[bool, str]:
-    """Expectancy > 0 and enough OOS trades. Seed status does not skip evidence.
+    """Always evaluate expectancy > 0 and n_trades >= threshold.
 
-    The JSON universe is the list of names — not an evidence waiver.
+    ``on_approved_universe`` can only restrict (False → reject). It never
+    approves. Null or missing expectancy / n_trades = no buy.
     """
-    if row.get("on_approved_universe") and row.get("status") not in {
-        "seed",
-        "seed_pending_strategy_backtest",
-    }:
-        return True, "approved_universe"
+    if row.get("on_approved_universe") is False:
+        return False, "not_on_approved_universe"
     try:
         exp = row.get("expectancy")
         n = row.get("n_trades") if row.get("n_trades") is not None else row.get("trades")
@@ -40,7 +98,9 @@ def evidence_gate(
             return False, "expectancy_missing"
         if float(exp) <= 0:
             return False, f"expectancy {exp} <= 0"
-        nn = int(n or 0)
+        if n is None:
+            return False, "n_trades_missing"
+        nn = int(n)
         if nn < int(min_trades):
             return False, f"n_trades {nn} < {min_trades}"
     except (TypeError, ValueError):
