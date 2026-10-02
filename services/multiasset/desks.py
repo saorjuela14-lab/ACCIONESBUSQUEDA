@@ -120,3 +120,10 @@ def normalize_symbol(symbol: str) -> str:
         if base.isalpha() and len(base) <= 10:
             return f"{base}/USD"
     return s
+
+
+def same_symbol(left: str | None, right: str | None) -> bool:
+    """True when BTCUSD and BTC/USD (or ETHUSD / ETH/USD) are the same pair."""
+    if not left or not right:
+        return False
+    return normalize_symbol(str(left)) == normalize_symbol(str(right))

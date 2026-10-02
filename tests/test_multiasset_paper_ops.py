@@ -63,10 +63,18 @@ def test_sanitize_activity_drops_secrets():
 
 
 def test_normalize_activity_symbol_btcusd():
+    from services.multiasset.desks import same_symbol
+
     assert normalize_activity_symbol("BTCUSD") == "BTC/USD"
     assert normalize_activity_symbol("btc/usd") == "BTC/USD"
     assert normalize_activity_symbol("ETHUSD") == "ETH/USD"
     assert sanitize_activity({"id": "1", "symbol": "BTCUSD"})["symbol"] == "BTC/USD"
+    assert same_symbol("BTCUSD", "BTC/USD") is True
+    assert same_symbol("btcusd", "btc/usd") is True
+    assert same_symbol("ETHUSD", "ETH/USD") is True
+    assert same_symbol("SOLUSD", "BTC/USD") is False
+    assert same_symbol("AAPL", "AAPL") is True
+    assert same_symbol("", "BTC/USD") is False
 
 
 @pytest.mark.asyncio
@@ -322,3 +330,43 @@ async def test_list_paper_activities_truncated_exposes_next_token():
     assert out["next_page_token"] == "x1"
     assert out["items"][0]["symbol"] == "SOL/USD"
     broker.list_account_activities.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_desk_status_reconciles_btcusd_without_slash():
+    """Alpaca crypto fills/positions arrive as BTCUSD; desk universe is BTC/USD."""
+    from services.multiasset.desk_service import MultiAssetDeskService
+
+    broker = MagicMock()
+    broker.is_configured.return_value = True
+    broker.get_account = AsyncMock(return_value={"equity": 1000, "cash": 400, "paper": True})
+    broker.get_positions = AsyncMock(
+        return_value=[
+            {"symbol": "BTCUSD", "qty": "0.01", "avg_entry_price": "60000"},
+            {"symbol": "ETH/USD", "qty": "0.1", "avg_entry_price": "3000"},
+            {"symbol": "AAPL", "qty": "1", "avg_entry_price": "200"},
+        ]
+    )
+    broker.list_orders = AsyncMock(
+        return_value=[
+            {"id": "o1", "symbol": "BTCUSD", "side": "buy", "status": "new"},
+            {"id": "o2", "symbol": "GLD", "side": "buy", "status": "new"},
+        ]
+    )
+    with patch(
+        "services.multiasset.desk_service.get_beta_broker_provider",
+        return_value=broker,
+    ):
+        svc = MultiAssetDeskService()
+    with patch.object(svc, "sync_crypto_universe", AsyncMock()), patch(
+        "services.multiasset.desk_service.quote_symbol",
+        AsyncMock(return_value={"last": 1.0}),
+    ):
+        status = await svc.status("crypto")
+    pos_syms = {str(p.get("symbol")) for p in status.positions}
+    assert "BTCUSD" in pos_syms
+    assert "ETH/USD" in pos_syms
+    assert "AAPL" not in pos_syms
+    order_syms = {str(o.get("symbol")) for o in status.open_orders}
+    assert "BTCUSD" in order_syms
+    assert "GLD" not in order_syms

@@ -20,7 +20,14 @@ from domain.multiasset import (
     MultiAssetOrderRequest,
     MultiAssetOrderResult,
 )
-from services.multiasset.desks import DESKS, desk_symbols, get_desk, normalize_symbol, set_crypto_symbols
+from services.multiasset.desks import (
+    DESKS,
+    desk_symbols,
+    get_desk,
+    normalize_symbol,
+    same_symbol,
+    set_crypto_symbols,
+)
 from services.multiasset.crypto_universe import resolve_crypto_universe
 from services.multiasset.paper_broker import get_beta_broker_provider
 from services.multiasset.trade_tracker import MultiAssetTradeTracker
@@ -92,30 +99,17 @@ class MultiAssetDeskService:
                 raw_pos = await self._broker.get_positions()
                 wanted = desk_symbols(desk)
                 for p in raw_pos:
-                    sym = str(p.get("symbol") or "").upper()
-                    # crypto may be BTCUSD without slash
-                    norm = sym if "/" in sym else sym
-                    match = False
-                    for w in wanted:
-                        w2 = w.replace("/", "")
-                        if sym == w or sym == w2 or norm == w2:
-                            match = True
-                            break
-                    if match:
+                    if any(same_symbol(str(p.get("symbol") or ""), w) for w in wanted):
                         positions.append(p)
             except Exception as exc:
                 logger.warning("multiasset.positions_failed", desk=desk, error=str(exc))
             try:
                 orders = await self._broker.list_orders(status="open", limit=40)
-                # filter loosely by desk symbols
                 wanted = desk_symbols(desk)
-                wanted_flat = {w.replace("/", "") for w in wanted} | wanted
                 orders = [
                     o
                     for o in orders
-                    if str(o.get("symbol") or "").upper().replace("/", "") in {
-                        x.replace("/", "") for x in wanted_flat
-                    }
+                    if any(same_symbol(str(o.get("symbol") or ""), w) for w in wanted)
                 ]
             except Exception:
                 orders = []
