@@ -343,6 +343,48 @@ def accum_brake_triggered(dd_pct: float, *, brake_pct: float = ACCUM_BRAKE_PCT) 
     return float(dd_pct) >= float(brake_pct)
 
 
+def open_risk_from_mark(*, qty: float, last: float, stop: float) -> float:
+    """Open long risk measured from the *current* price down to the software stop."""
+    try:
+        q = float(qty or 0)
+        px = float(last or 0)
+        st = float(stop or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if q <= 0 or px <= 0 or st <= 0:
+        return 0.0
+    return max(0.0, (px - st) * q)
+
+
+def rolling_window_start(
+    *,
+    stamped_at: str | None,
+    stamped_wealth: float | None,
+    wealth: float,
+    now: datetime,
+    hours: float,
+) -> tuple[float, str, bool]:
+    """Anchor wealth for a rolling pause window. Reset when missing or older than `hours`."""
+    clock = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
+    stamp = clock.isoformat()
+    if not stamped_at:
+        return float(wealth), stamp, True
+    try:
+        started = datetime.fromisoformat(str(stamped_at).replace("Z", "+00:00"))
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+    except Exception:
+        return float(wealth), stamp, True
+    age = (clock - started).total_seconds()
+    if age > float(hours) * 3600:
+        return float(wealth), stamp, True
+    try:
+        start_w = float(stamped_wealth) if stamped_wealth is not None else float(wealth)
+    except (TypeError, ValueError):
+        start_w = float(wealth)
+    return start_w, str(stamped_at), False
+
+
 def loss_streak_pause(
     losses: list[dict[str, Any]] | None,
     *,

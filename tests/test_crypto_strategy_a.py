@@ -187,6 +187,13 @@ def test_post_stop_block_until_S_zero_then_up():
     assert b["blocked"] is True and b["seen_zero"] is True
     b = update_post_stop_block(b, 1 / 3)
     assert b["blocked"] is False
+    # Alternate unlock: S rises above S-at-stop without visiting 0.
+    b2 = arm_post_stop_block(1 / 3)
+    assert b2["s_at_stop"] == pytest.approx(1 / 3)
+    b2 = update_post_stop_block(b2, 1 / 3)
+    assert b2["blocked"] is True
+    b2 = update_post_stop_block(b2, 2 / 3)
+    assert b2["blocked"] is False
     assert should_rebalance(100, 100, 1.0, 2 / 3) is True
     assert should_rebalance(100, 100, 1.0, 1.0) is False
     assert should_rebalance(130, 100, 1.0, 1.0) is True  # 30% > 20%
@@ -1243,3 +1250,139 @@ async def test_crypto_insufficient_qty_does_not_flatten():
     assert held["id"] == "h1"
     broker.close_position.assert_not_called()
     assert broker.list_orders.await_args.kwargs.get("status") == "all"
+
+
+def test_open_risk_from_current_price_not_entry():
+    from services.multiasset.crypto_risk import open_risk_from_mark
+
+    # Entry 100, stop 92 (8R). Mark now 110 → risk is (110-92)*qty, not (100-92)*qty.
+    qty = 0.5
+    assert open_risk_from_mark(qty=qty, last=110.0, stop=92.0) == pytest.approx(9.0)
+    assert open_risk_from_mark(qty=qty, last=100.0, stop=92.0) == pytest.approx(4.0)
+    assert open_risk_from_mark(qty=qty, last=90.0, stop=92.0) == 0.0
+    assert open_risk_from_mark(qty=0, last=110.0, stop=92.0) == 0.0
+
+
+def test_accum_brake_5pct_and_loss_streak():
+    from datetime import datetime, timedelta, timezone
+
+    from services.multiasset.crypto_risk import accum_brake_triggered, loss_streak_pause
+
+    assert accum_brake_triggered(4.99) is False
+    assert accum_brake_triggered(5.0) is True
+    assert accum_brake_triggered(5.01, brake_pct=5.0) is True
+    now = datetime(2026, 10, 2, 16, tzinfo=timezone.utc)
+    losses = [
+        {"pnl_usd": -10, "at": (now - timedelta(hours=5)).isoformat()},
+        {"pnl_usd": -4, "at": (now - timedelta(hours=3)).isoformat()},
+        {"pnl_usd": -2, "at": (now - timedelta(hours=1)).isoformat()},
+    ]
+    paused, why = loss_streak_pause(losses, now=now, n=3, hours=24)
+    assert paused is True
+    assert "loss_streak_3" in why
+    stale = [
+        {"pnl_usd": -1, "at": (now - timedelta(hours=30)).isoformat()},
+        {"pnl_usd": -1, "at": (now - timedelta(hours=28)).isoformat()},
+        {"pnl_usd": -1, "at": (now - timedelta(hours=26)).isoformat()},
+    ]
+    assert loss_streak_pause(stale, now=now, n=3, hours=24)[0] is False
+    mixed = losses[:-1] + [{"pnl_usd": 1, "at": now.isoformat()}]
+    assert loss_streak_pause(mixed, now=now, n=3, hours=24)[0] is False
+
+
+def test_rolling_24h_window_resets_after_expiry():
+    from datetime import datetime, timedelta, timezone
+
+    from services.multiasset.crypto_risk import rolling_window_start
+
+    now = datetime(2026, 10, 2, 16, tzinfo=timezone.utc)
+    start, stamp, reset = rolling_window_start(
+        stamped_at=(now - timedelta(hours=10)).isoformat(),
+        stamped_wealth=2000.0,
+        wealth=1900.0,
+        now=now,
+        hours=24.0,
+    )
+    assert reset is False
+    assert start == pytest.approx(2000.0)
+    assert stamp.endswith("+00:00") or "2026-10-02" in stamp
+    start2, _stamp2, reset2 = rolling_window_start(
+        stamped_at=(now - timedelta(hours=25)).isoformat(),
+        stamped_wealth=2000.0,
+        wealth=1900.0,
+        now=now,
+        hours=24.0,
+    )
+    assert reset2 is True
+    assert start2 == pytest.approx(1900.0)
+    start3, _, reset3 = rolling_window_start(
+        stamped_at=None, stamped_wealth=None, wealth=1800.0, now=now, hours=24.0
+    )
+    assert reset3 is True and start3 == pytest.approx(1800.0)
+
+
+def test_engine_bars_clean_and_resample_4h():
+    from services.multiasset.engine_bars import clean, resample_4h
+
+    idx = pd.date_range("2026-01-01", periods=12, freq="1h", tz="UTC")
+    close = np.linspace(100, 111, 12)
+    raw = pd.DataFrame(
+        {"Open": close - 0.1, "High": close + 0.5, "Low": close - 0.5, "Close": close, "Volume": 1.0},
+        index=idx,
+    )
+    # Incomplete minute + duplicate + zero close must drop.
+    dirty = pd.concat(
+        [
+            raw,
+            pd.DataFrame(
+                {"Open": [1], "High": [1], "Low": [1], "Close": [0], "Volume": [1]},
+                index=[pd.Timestamp("2026-01-01T00:15:00Z")],
+            ),
+        ]
+    )
+    cleaned = clean(dirty)
+    assert all(ts.minute == 0 for ts in cleaned.index)
+    assert (cleaned["Close"] > 0).all()
+    four = resample_4h(raw)
+    # 12 complete hours → 3 closed 4h buckets (00, 04, 08).
+    assert len(four) == 3
+    assert list(four.index.hour) == [0, 4, 8]
+    gapped = raw.drop(raw.index[1])  # missing 01:00 → first 4h bucket incomplete
+    four_g = resample_4h(gapped)
+    assert all(ts.hour != 0 for ts in four_g.index)
+
+
+@pytest.mark.asyncio
+async def test_scheduler_fires_crypto_catchup_before_run(monkeypatch):
+    from services.scheduler_service import SchedulerService
+
+    monkeypatch.setenv("MULTIASSET_BETA_ENABLED", "true")
+    monkeypatch.setenv("MULTIASSET_AUTOPILOT_ENABLED", "true")
+    from config.settings import get_settings
+
+    get_settings.cache_clear()
+    calls: list[str] = []
+
+    class FakeAuto:
+        def __init__(self, session):
+            del session
+
+        async def crypto_catchup_on_wake(self, *, actor: str = "wake"):
+            calls.append(f"catchup:{actor}")
+            return {"ok": True}
+
+        async def run(self, *, actor: str = "scheduler"):
+            calls.append(f"run:{actor}")
+            return {"skipped": None, "desks": {}}
+
+    async def _sessions():
+        yield MagicMock()
+
+    with (
+        patch("services.scheduler_service.get_settings", return_value=get_settings()),
+        patch("services.scheduler_service.get_session", return_value=_sessions()),
+        patch("services.multiasset.autopilot.MultiAssetAutopilotService", FakeAuto),
+    ):
+        await SchedulerService()._run_multiasset_autopilot()
+    assert calls == ["catchup:scheduler_wake", "run:scheduler"]
+    get_settings.cache_clear()

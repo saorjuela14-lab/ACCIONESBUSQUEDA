@@ -410,7 +410,9 @@ class MultiAssetAutopilotService:
             entry_spread_ok,
             group_id_for,
             kill_from_allocation_peak,
+            open_risk_from_mark,
             per_name_caps,
+            rolling_window_start,
             size_crypto_order,
             spread_bps,
         )
@@ -757,36 +759,22 @@ class MultiAssetAutopilotService:
         peak = max(float(mark.get("peak_wealth_usd") or mark.get("peak_crypto_usd") or 0), wealth)
         day = calendar_day_key()
         week = iso_week_key()
-        rolling_24h_start = float(mark.get("rolling_24h_wealth") or wealth)
-        rolling_7d_start = float(mark.get("rolling_7d_wealth") or wealth)
-        t24 = mark.get("rolling_24h_at")
-        t7 = mark.get("rolling_7d_at")
-        try:
-            if t24:
-                from datetime import datetime as _dt
-
-                age24 = (now - _dt.fromisoformat(str(t24).replace("Z", "+00:00"))).total_seconds()
-                if age24 > 24 * 3600:
-                    rolling_24h_start = wealth
-                    mark["rolling_24h_at"] = now.isoformat()
-            else:
-                mark["rolling_24h_at"] = now.isoformat()
-        except Exception:
-            mark["rolling_24h_at"] = now.isoformat()
-            rolling_24h_start = wealth
-        try:
-            if t7:
-                from datetime import datetime as _dt
-
-                age7 = (now - _dt.fromisoformat(str(t7).replace("Z", "+00:00"))).total_seconds()
-                if age7 > 7 * 24 * 3600:
-                    rolling_7d_start = wealth
-                    mark["rolling_7d_at"] = now.isoformat()
-            else:
-                mark["rolling_7d_at"] = now.isoformat()
-        except Exception:
-            mark["rolling_7d_at"] = now.isoformat()
-            rolling_7d_start = wealth
+        rolling_24h_start, stamp24, _ = rolling_window_start(
+            stamped_at=mark.get("rolling_24h_at"),
+            stamped_wealth=mark.get("rolling_24h_wealth"),
+            wealth=wealth,
+            now=now,
+            hours=24.0,
+        )
+        mark["rolling_24h_at"] = stamp24
+        rolling_7d_start, stamp7, _ = rolling_window_start(
+            stamped_at=mark.get("rolling_7d_at"),
+            stamped_wealth=mark.get("rolling_7d_wealth"),
+            wealth=wealth,
+            now=now,
+            hours=7 * 24.0,
+        )
+        mark["rolling_7d_at"] = stamp7
         day_pnl_pct = 0.0
         week_pnl_pct = 0.0
         if allocation > 0:
@@ -859,9 +847,7 @@ class MultiAssetAutopilotService:
             )
             n = last_px * float(t.qty or 0)
             stop_now = float((pos_state.get(t.symbol) or {}).get("stop_px") or t.stop_hint or 0)
-            r = 0.0
-            if last_px and stop_now and t.qty:
-                r = max(0.0, (last_px - stop_now) * float(t.qty))
+            r = open_risk_from_mark(qty=float(t.qty or 0), last=last_px, stop=stop_now)
             name_notional[t.symbol] = name_notional.get(t.symbol, 0.0) + n
             name_risk[t.symbol] = name_risk.get(t.symbol, 0.0) + r
             open_risk += r
