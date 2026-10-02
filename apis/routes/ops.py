@@ -210,11 +210,7 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
             "allowed": ok,
             "reason": reason,
             "entries_allowed": ok,
-            "exits_only": (not ok)
-            and (
-                reason in {"live_entries_disabled", "kill_switch_active"}
-                or "live_entries" in (reason or "")
-            ),
+            "exits_only": not bool(settings.live_entries_enabled),
             "policy": auto.policy().model_dump(mode="json"),
         },
         "paper_promotion": promo or {"promoted": False},

@@ -136,7 +136,7 @@ async def test_order_service_dry_run_builds_bracket():
     assert payload["take_profit"]["limit_price"] == "2.2"
     assert payload["stop_loss"]["stop_price"] == "1.5"
     assert payload["qty"] == "10"
-    assert payload["client_order_id"].startswith("nexbuy-")
+    assert payload["client_order_id"].startswith("autopilot-")
 
 
 @pytest.mark.asyncio
@@ -248,7 +248,13 @@ async def test_order_service_submit_one_maps_result():
         "_request_id": "rid-9",
     })
     svc = AlpacaOrderService(broker=broker)
-    result = await svc.submit_one(BrokerOrderRequest(symbol="F", qty=5))
+    from datetime import datetime
+    from utils.market_hours import US_EASTERN
+
+    # submit_one refuses buys after 16:00 ET — freeze inside the regular session.
+    session_now = datetime(2026, 10, 2, 11, 0, tzinfo=US_EASTERN)
+    with patch("utils.market_hours.now_et", return_value=session_now):
+        result = await svc.submit_one(BrokerOrderRequest(symbol="F", qty=5))
     assert result.id == "o1"
     assert result.symbol == "F"
     assert result.request_id == "rid-9"
