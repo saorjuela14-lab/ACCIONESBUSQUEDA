@@ -7,9 +7,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
-import numpy as np
 import pandas as pd
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from database.models import Base
 
 from services.multiasset.crypto_fills import (
     net_qty_from_fill_and_cfee,
@@ -40,6 +42,17 @@ from services.multiasset.paper_broker import MultiAssetNotPaperError
 from services.db_lease import run_owner, replica_id
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+@pytest.fixture
+async def session():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as s:
+        yield s
+    await engine.dispose()
 
 
 def _load(name: str) -> dict:
