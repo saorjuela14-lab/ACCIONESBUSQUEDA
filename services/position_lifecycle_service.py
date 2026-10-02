@@ -81,6 +81,22 @@ class PositionLifecycleService:
             if result is None:
                 return None
             if result.error:
+                from services.order_idempotency import is_insufficient_qty_error
+
+                if is_insufficient_qty_error(result.error):
+                    try:
+                        held = await self._broker.find_working_stop(mandate.symbol)
+                    except Exception:
+                        held = None
+                    if held:
+                        return (
+                            f"broker stop held intact id={held.id or '?'} "
+                            f"status={held.status} (insufficient qty ignored)"
+                        )
+                    return (
+                        "broker stop insufficient qty; recheck empty — "
+                        "posición intacta, no se cierra"
+                    )
                 return f"broker stop fail: {result.error}"
             return f"broker GTC stop @{stop:.4f} id={result.id or '?'}"
         except Exception as exc:

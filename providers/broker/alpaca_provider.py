@@ -70,17 +70,22 @@ class AlpacaBrokerProvider(BrokerProvider):
         if response.is_success:
             return
         detail = ""
+        code = None
         try:
             body = response.json()
             detail = body.get("message") or body.get("error") or str(body)
+            code = body.get("code")
         except Exception:
             detail = response.text[:300]
         rid = self.last_request_id or "n/a"
-        raise httpx.HTTPStatusError(
+        err = httpx.HTTPStatusError(
             f"Alpaca {response.status_code}: {detail} (X-Request-ID: {rid})",
             request=response.request,
             response=response,
         )
+        err.alpaca_code = code
+        err.alpaca_status = response.status_code
+        raise err
 
     async def _request(
         self,
@@ -133,6 +138,25 @@ class AlpacaBrokerProvider(BrokerProvider):
         )
         rows = data if isinstance(data, list) else []
         return flatten_orders_with_legs(rows)
+
+    async def get_order_by_client_order_id(self, client_order_id: str) -> dict[str, Any] | None:
+        """GET /v2/orders:by_client_order_id/{client_order_id}. None if missing."""
+        cid = (client_order_id or "").strip()
+        if not cid:
+            return None
+        from urllib.parse import quote
+
+        path = f"/v2/orders:by_client_order_id/{quote(cid, safe='')}"
+        try:
+            data = await self._request("GET", path)
+        except httpx.HTTPStatusError as exc:
+            status = getattr(exc, "alpaca_status", None) or getattr(
+                getattr(exc, "response", None), "status_code", None
+            )
+            if int(status or 0) == 404:
+                return None
+            raise
+        return data if isinstance(data, dict) else None
 
     async def replace_order(
         self,

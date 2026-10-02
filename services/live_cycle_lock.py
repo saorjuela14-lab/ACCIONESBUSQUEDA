@@ -22,15 +22,55 @@ def replica_id() -> str:
     return f"{host}:{os.getpid()}"
 
 
-def live_client_order_id(symbol: str, action: str, when: datetime | None = None) -> str:
-    """client_order_id ≤ 48: live-{sym}-{YYYYMMDD}-{action}."""
-    raw = (symbol or "X").upper().replace("/", "").replace("-", "")[:8]
-    clock = when or datetime.now(timezone.utc)
-    if clock.tzinfo is None:
-        clock = clock.replace(tzinfo=timezone.utc)
-    ts = clock.strftime("%Y%m%d")
-    act = "".join(c for c in (action or "x").lower() if c.isalnum())[:10] or "x"
-    return f"live-{raw}-{ts}-{act}"[:48]
+def live_client_order_id(
+    symbol: str,
+    action: str,
+    when: datetime | None = None,
+    attempt: int = 1,
+) -> str:
+    """client_order_id ≤ 48: live-{sym}-{YYYYMMDD}-{action}-{attempt}."""
+    from services.order_idempotency import build_client_order_id, cycle_key_date
+
+    return build_client_order_id("live", symbol, action, cycle_key_date(when), attempt)
+
+
+async def allocate_live_client_order_id(
+    flags: Any,
+    symbol: str,
+    action: str,
+    *,
+    when: datetime | None = None,
+    broker: Any = None,
+) -> tuple[str, int]:
+    """Read the persisted attempt (DB), bump if the last id was canceled/rejected."""
+    from services.order_idempotency import (
+        attempt_slot,
+        cycle_key_date,
+        is_dead_retryable_status,
+        read_attempt,
+        bump_attempt,
+    )
+
+    cycle = cycle_key_date(when)
+    slot = attempt_slot(symbol, action, cycle)
+    attempt = await read_attempt(flags, slot)
+    cid = live_client_order_id(symbol, action, when, attempt=attempt)
+    if broker is not None:
+        getter = getattr(broker, "get_order_by_client_order_id", None)
+        if getter is not None:
+            try:
+                existing = await getter(cid)
+            except Exception:
+                existing = None
+            status = ""
+            if isinstance(existing, dict):
+                status = str(existing.get("status") or "")
+            elif existing is not None:
+                status = str(getattr(existing, "status", "") or "")
+            if existing is not None and is_dead_retryable_status(status):
+                attempt = await bump_attempt(flags, slot)
+                cid = live_client_order_id(symbol, action, when, attempt=attempt)
+    return cid, attempt
 
 
 def _ts(value: datetime | str) -> datetime:

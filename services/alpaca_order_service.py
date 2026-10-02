@@ -220,6 +220,32 @@ class AlpacaOrderService:
         raw_list = await self._broker.list_orders(status=status, limit=limit)
         return [self._map_order(o) for o in raw_list]
 
+    async def get_order_by_client_order_id(self, client_order_id: str) -> BrokerOrderResult | None:
+        getter = getattr(self._broker, "get_order_by_client_order_id", None)
+        if getter is None:
+            return None
+        raw = await getter(client_order_id)
+        if not raw:
+            return None
+        return self._map_order(raw)
+
+    async def find_working_stop(self, symbol: str) -> BrokerOrderResult | None:
+        """Live protective stop, including bracket 'held'. Never uses status=open."""
+        from services.order_idempotency import order_is_live_stop
+
+        sym = (symbol or "").upper().strip()
+        try:
+            orders = await self.list_orders(status="all", limit=200)
+        except Exception as exc:
+            logger.warning("broker.stop_list_all_failed", symbol=sym, error=str(exc))
+            raise
+        for od in orders:
+            if (od.symbol or "").upper() != sym:
+                continue
+            if order_is_live_stop(od):
+                return od
+        return None
+
     async def cancel_order(self, order_id: str) -> dict[str, Any]:
         return await self._broker.cancel_order(order_id)
 
@@ -276,7 +302,7 @@ class AlpacaOrderService:
                 error="after_regular_close_no_orders",
             )
         try:
-            open_orders = await self.list_orders(status="open", limit=100)
+            existing = await self.find_working_stop(sym)
         except Exception as exc:
             logger.warning("broker.stop_list_orders_failed", symbol=sym, error=str(exc))
             return BrokerOrderResult(
@@ -287,19 +313,6 @@ class AlpacaOrderService:
                 status="failed",
                 error="list_orders_failed_stop_intact",
             )
-        existing = None
-        for od in open_orders:
-            if (od.symbol or "").upper() != sym:
-                continue
-            if (od.side or "").lower() != "sell":
-                continue
-            otype = (od.type or "").lower()
-            raw = od.raw if isinstance(getattr(od, "raw", None), dict) else {}
-            if otype not in ("stop", "stop_limit") and not raw.get("stop_price"):
-                continue
-            if od.id:
-                existing = od
-                break
         new_stop = round(float(stop_price), 2)
         if existing and existing.id:
             replace = getattr(self._broker, "replace_order", None)
@@ -352,7 +365,9 @@ class AlpacaOrderService:
             settings.intraday_only_enabled and settings.intraday_flat_winners_only
         )
         tif = "gtc" if (not settings.intraday_only_enabled or allow_overnight_carry) else "day"
-        return await self.submit_one(
+        from services.live_cycle_lock import live_client_order_id
+
+        placed = await self.submit_one(
             BrokerOrderRequest(
                 symbol=sym,
                 qty=float(qty),
@@ -360,9 +375,41 @@ class AlpacaOrderService:
                 order_type="stop",
                 time_in_force=tif,
                 stop_price=new_stop,
-                client_order_id=f"nexbuy-trail-{sym.lower()}-{uuid4().hex[:8]}",
+                client_order_id=live_client_order_id(sym, "stop"),
+                source_tag="desk",
             )
         )
+        if placed and placed.error:
+            from services.order_idempotency import is_insufficient_qty_error
+
+            if is_insufficient_qty_error(placed.error):
+                try:
+                    again = await self.find_working_stop(sym)
+                except Exception:
+                    again = None
+                if again:
+                    logger.info(
+                        "broker.stop_insufficient_qty_still_protected",
+                        symbol=sym,
+                        order_id=again.id,
+                        status=again.status,
+                    )
+                    raw = dict(again.raw or {})
+                    raw["rechecked_after_insufficient_qty"] = True
+                    return again.model_copy(update={"raw": raw, "error": None})
+                logger.warning(
+                    "broker.stop_insufficient_qty_recheck_empty",
+                    symbol=sym,
+                )
+                return BrokerOrderResult(
+                    symbol=sym,
+                    qty=float(qty),
+                    side="sell",
+                    type="stop",
+                    status="failed",
+                    error="insufficient_qty_stop_recheck_empty",
+                )
+        return placed
 
     async def latest_filled_sell(self, symbol: str) -> BrokerOrderResult | None:
         """Most recent filled sell for journal/cooldown (broker stop or close)."""
@@ -442,6 +489,103 @@ class AlpacaOrderService:
             return "deposited_brake_check_failed"
         return None
 
+    def _reconcile_existing_order(
+        self, req: BrokerOrderRequest, raw: dict[str, Any] | BrokerOrderResult
+    ) -> BrokerOrderResult:
+        """Map an already-accepted broker order. Never treat it as a new fill."""
+        if isinstance(raw, BrokerOrderResult):
+            mapped = raw
+            extra = dict(mapped.raw or {})
+        else:
+            mapped = self._map_order(raw)
+            extra = dict(mapped.raw or {})
+        extra["reconciled"] = True
+        extra["no_new_fill"] = True
+        return mapped.model_copy(update={"raw": extra, "error": None})
+
+    async def _lookup_by_client_order_id(self, client_id: str) -> BrokerOrderResult | None:
+        try:
+            return await self.get_order_by_client_order_id(client_id)
+        except Exception as exc:
+            logger.warning("broker.by_client_order_id_failed", client_order_id=client_id, error=str(exc))
+            return None
+
+    async def _submit_payload_idempotent(
+        self,
+        req: BrokerOrderRequest,
+        payload: dict[str, Any],
+        failed: BrokerOrderResult,
+    ) -> BrokerOrderResult:
+        from services.order_idempotency import (
+            is_duplicate_client_order_id_error,
+            is_timeout_or_network,
+            is_unrelated_422,
+        )
+
+        client_id = str(payload.get("client_order_id") or "")
+        try:
+            raw = await self._broker.submit_order(payload)
+            return self._map_order(raw)
+        except Exception as exc:
+            if is_unrelated_422(exc):
+                return failed.model_copy(
+                    update={
+                        "error": f"alpaca_422:{exc}",
+                        "client_order_id": client_id,
+                        "request_id": self._broker.last_request_id,
+                    }
+                )
+            if is_duplicate_client_order_id_error(exc):
+                existing = await self._lookup_by_client_order_id(client_id)
+                if existing:
+                    logger.info(
+                        "broker.duplicate_coid_reconciled",
+                        symbol=req.symbol,
+                        client_order_id=client_id,
+                        order_id=existing.id,
+                        status=existing.status,
+                    )
+                    return self._reconcile_existing_order(req, existing)
+                return failed.model_copy(
+                    update={
+                        "error": "duplicate_client_order_id_unresolved",
+                        "client_order_id": client_id,
+                        "request_id": self._broker.last_request_id,
+                    }
+                )
+            if is_timeout_or_network(exc):
+                existing = await self._lookup_by_client_order_id(client_id)
+                if existing:
+                    logger.info(
+                        "broker.timeout_order_exists_reconciled",
+                        symbol=req.symbol,
+                        client_order_id=client_id,
+                        order_id=existing.id,
+                    )
+                    return self._reconcile_existing_order(req, existing)
+                try:
+                    raw = await self._broker.submit_order(payload)
+                    return self._map_order(raw)
+                except Exception as retry_exc:
+                    if is_duplicate_client_order_id_error(retry_exc):
+                        again = await self._lookup_by_client_order_id(client_id)
+                        if again:
+                            return self._reconcile_existing_order(req, again)
+                    return failed.model_copy(
+                        update={
+                            "error": str(retry_exc),
+                            "client_order_id": client_id,
+                            "request_id": self._broker.last_request_id,
+                        }
+                    )
+            return failed.model_copy(
+                update={
+                    "error": str(exc),
+                    "client_order_id": client_id,
+                    "request_id": self._broker.last_request_id,
+                }
+            )
+
     async def submit_one(self, req: BrokerOrderRequest) -> BrokerOrderResult:
         from services.live_safety import (
             is_buy_side,
@@ -484,20 +628,7 @@ class AlpacaOrderService:
             if gate_err:
                 return failed.model_copy(update={"error": gate_err})
         payload = self._build_order_payload(req)
-        try:
-            raw = await self._broker.submit_order(payload)
-            return self._map_order(raw)
-        except Exception as exc:
-            return BrokerOrderResult(
-                symbol=req.symbol.upper(),
-                qty=req.qty,
-                side=req.side,
-                type=req.order_type,
-                status="failed",
-                client_order_id=str(payload.get("client_order_id") or ""),
-                request_id=self._broker.last_request_id,
-                error=str(exc),
-            )
+        return await self._submit_payload_idempotent(req, payload, failed)
 
     async def execute(self, request: ExecuteOrdersRequest) -> ExecuteOrdersResponse:
         warnings: list[str] = []
@@ -986,6 +1117,12 @@ class AlpacaOrderService:
                 request_ids.append(result.request_id)
             if result.error or result.status == "failed":
                 failed.append(result)
+            elif (result.raw or {}).get("reconciled"):
+                submitted.append(result)
+                warnings.append(
+                    f"{order_req.symbol}: orden existente reconciliada "
+                    f"(client_order_id={result.client_order_id}); sin fill nuevo."
+                )
             else:
                 submitted.append(result)
                 # Audit + lifecycle mandate for buys

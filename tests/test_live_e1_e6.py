@@ -504,10 +504,11 @@ async def test_replica_lease_and_deterministic_client_order_id():
     got_b, _ = await acquire_lease(flags, owner="replica-b", now=now, session=None)
     assert got_b is False
     cid = live_client_order_id("SNAP", "buy", when=now)
-    assert cid == "live-SNAP-20261002-buy"
+    assert cid == "live-SNAP-20261002-buy-1"
     assert len(cid) <= 48
     again = live_client_order_id("SNAP", "buy", when=now)
     assert again == cid
+    assert live_client_order_id("SNAP", "buy", when=now, attempt=2) == "live-SNAP-20261002-buy-2"
 
 
 @pytest.mark.asyncio

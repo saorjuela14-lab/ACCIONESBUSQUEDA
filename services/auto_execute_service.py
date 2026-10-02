@@ -324,8 +324,14 @@ class AutoExecuteService:
             if shares < 1:
                 skipped_risk += 1
                 continue
-            from services.live_cycle_lock import live_client_order_id
+            from services.live_cycle_lock import allocate_live_client_order_id
 
+            cid, _attempt = await allocate_live_client_order_id(
+                flags,
+                str(ticker),
+                "buy",
+                broker=self._broker,
+            )
             lines.append(
                 ExecuteLine(
                     ticker=str(ticker).upper(),
@@ -334,7 +340,7 @@ class AutoExecuteService:
                     order_type="market",
                     stop_loss=stop,
                     take_profit=tp,
-                    client_order_id=live_client_order_id(str(ticker), "buy"),
+                    client_order_id=cid,
                     source_tag="autopilot",
                 )
             )
