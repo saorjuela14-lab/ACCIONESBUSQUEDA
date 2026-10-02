@@ -39,11 +39,13 @@ from services.multiasset.crypto_risk import (
 from services.multiasset.strategy_a import (
     arm_post_stop_block,
     btc_regime_ok,
+    catch_up_exits,
     chandelier_stop_px,
     donchian_S,
     evaluate_chandelier_exit,
     hysteresis_channel,
     last_completed_frame,
+    rebuild_highest_close,
     should_rebalance,
     stop_is_tradable,
     strategy_a_signal,
@@ -212,8 +214,8 @@ def test_eligibility_empty_is_closed(tmp_path: Path):
     with pytest.raises(EligibilityClosed):
         load_eligibility(p)
     missing = tmp_path / "nope.json"
-    with pytest.raises(EligibilityClosed):
-        load_eligibility(missing)
+    fallback = load_eligibility(missing)
+    assert {r["symbol"] for r in fallback["approved"]} == {"BTC/USD", "ETH/USD"}
 
 
 def test_risk_btc_eth_vs_alt_caps():
@@ -230,14 +232,25 @@ def test_risk_btc_eth_vs_alt_caps():
 def test_daily_screen_liquidity_evidence_and_report():
     from services.multiasset.crypto_filters import build_gate_report, evidence_gate, liquidity_ok, screen_symbol
 
-    assert evidence_gate({"status": "seed_pending_strategy_backtest"}, min_trades=20)[0] is True
+    assert evidence_gate({"status": "seed_pending_strategy_backtest"}, min_trades=20)[0] is False
+    assert evidence_gate(
+        {"status": "seed", "on_approved_universe": True, "expectancy": None}, min_trades=20
+    )[0] is False
     assert evidence_gate({"expectancy": -0.1, "n_trades": 80}, min_trades=20)[0] is False
     assert evidence_gate({"expectancy": 0.4, "n_trades": 5}, min_trades=20)[0] is False
     assert evidence_gate({"expectancy": 0.4, "n_trades": 40}, min_trades=20)[0] is True
     assert liquidity_ok(500_000, min_adv_usd=1_000_000)[0] is False
     assert liquidity_ok(5_000_000, min_adv_usd=1_000_000)[0] is True
     btc = screen_symbol(
-        {"symbol": "BTC/USD", "status": "seed", "median_spread_bps": 8, "median_adv_usd": 2e10, "expectancy": None},
+        {
+            "symbol": "BTC/USD",
+            "status": "approved",
+            "on_approved_universe": True,
+            "median_spread_bps": 8,
+            "median_adv_usd": 2e10,
+            "expectancy": 0.4,
+            "n_trades": 40,
+        },
         min_adv_usd=1_000_000,
         min_trades=20,
         live_spread_bps=9.0,
@@ -313,6 +326,9 @@ def test_max_six_positions_and_ramp_half_size():
     assert ramp_mult(0) == 0.5
     assert ramp_mult(11) == 0.5
     assert ramp_mult(12) == 1.0
+    assert ramp_mult(0, symbol="BTC/USD") == 1.0
+    assert ramp_mult(0, symbol="ETH/USD") == 1.0
+    assert ramp_mult(0, symbol="SOL/USD") == 0.5
     eq = 10_000.0
     book = CryptoBook(
         equity=eq,
@@ -371,9 +387,9 @@ def test_kill_10pct_allocation_and_pauses():
     assert kill_from_allocation_peak(peak_crypto_usd=2000, crypto_usd=1749, allocation_usd=2500) is True
     assert kill_from_allocation_peak(peak_crypto_usd=2000, crypto_usd=1900, allocation_usd=2500) is False
     paused, why = daily_weekly_pause(day_pnl_pct=-1.51, week_pnl_pct=0)
-    assert paused and "daily" in why
+    assert paused and "24h" in why
     paused, why = daily_weekly_pause(day_pnl_pct=0, week_pnl_pct=-3.01)
-    assert paused and "weekly" in why
+    assert paused and "7d" in why
     assert daily_weekly_pause(day_pnl_pct=-1.0, week_pnl_pct=-2.0)[0] is False
 
 
@@ -556,7 +572,7 @@ def test_size_min_of_vol_risk_adv_btc_and_skip_min_lot():
 def test_size_ramp_applied_once_not_twice():
     eq = 10_000.0
     n, info = size_crypto_order(
-        symbol="BTC/USD",
+        symbol="SOL/USD",
         equity=eq,
         entry=100.0,
         stop=92.0,
@@ -566,8 +582,20 @@ def test_size_ramp_applied_once_not_twice():
         vol_30d=0.25,
     )
     assert info["ramp"] == 0.5
-    # Risk 0.5% = $50 vs 8% stop → $625; ×0.5 ramp once = $312.50 (twice would be $156.25)
-    assert n == pytest.approx(312.5)
+    # Alt risk 0.25% = $25 vs 8% stop + 25bp cost → ×0.5 ramp once (never twice).
+    assert n == pytest.approx(151.52)
+    n_btc, info_btc = size_crypto_order(
+        symbol="BTC/USD",
+        equity=eq,
+        entry=100.0,
+        stop=92.0,
+        book=_empty_book(eq),
+        n_trades=0,
+        s_signal=1.0,
+        vol_30d=0.25,
+    )
+    assert info_btc["ramp"] == 1.0
+    assert n_btc == pytest.approx(606.06)  # $50 / 8.25% (8 ATR + 25bp) * 100; no half-ramp
 
 
 def test_sanitize_crypto_order_refuses_stop_types():
@@ -673,7 +701,11 @@ async def test_last_cycle_and_desk_status_expose_stop_obs(session, monkeypatch):
 
     from apis.routes.multiasset import last_multiasset_cycle
 
-    body = await last_multiasset_cycle(session)
+    with patch(
+        "services.multiasset.autopilot.MultiAssetAutopilotService.crypto_catchup_on_wake",
+        AsyncMock(return_value={"skipped": "test"}),
+    ):
+        body = await last_multiasset_cycle(session)
     row = body["desks"]["crypto"]["open_positions"][0]
     assert row["symbol"] == "ETH/USD"
     assert row["stop_px"] == 3900.0
@@ -806,3 +838,262 @@ async def test_fetch_alpaca_crypto_daily_uses_data_api_not_trading():
     assert seen[0][1]["timeframe"] == "1Day"
     assert "BTC/USD" in frames
     assert len(frames["BTC/USD"]) == 28
+
+
+def _4h_fixture(n: int = 40, start: float = 100.0, end: float = 140.0) -> pd.DataFrame:
+    idx = pd.date_range("2026-01-01", periods=n, freq="4h", tz="UTC")
+    close = np.linspace(start, end, n)
+    return pd.DataFrame(
+        {"Open": close - 0.2, "High": close + 1.0, "Low": close - 1.0, "Close": close},
+        index=idx,
+    )
+
+
+def _engine_walk_missed(df: pd.DataFrame, last_eval, high: float, stop: float, now):
+    """Reference motor: one completed bar at a time, compare then raise."""
+    completed = last_completed_frame(df, now=now)
+    if last_eval is not None:
+        ts = pd.Timestamp(last_eval)
+        if ts.tzinfo is None:
+            ts = ts.tz_localize("UTC")
+        bars = completed.loc[completed.index > ts]
+    else:
+        bars = completed.iloc[-1:]
+    hit = False
+    hit_close = None
+    for i in range(len(bars)):
+        prefix = completed.loc[: bars.index[i]]
+        clock_i = pd.Timestamp(bars.index[i]) + pd.Timedelta(hours=4)
+        ch = evaluate_chandelier_exit(
+            prefix,
+            highest_close=high,
+            stop_px=stop,
+            pending_exit=False,
+            now=clock_i.to_pydatetime(),
+        )
+        if ch["hit"]:
+            hit = True
+            hit_close = ch["candle_close"]
+            high = float(ch["highest_close"])
+            stop = float(ch["stop_px"] or stop)
+            break
+        high = float(ch["highest_close"])
+        stop = float(ch["stop_px"] or stop)
+    return {"hit": hit, "highest_close": high, "stop_px": stop, "hit_close": hit_close}
+
+
+def test_catch_up_n_missed_candles_matches_engine_stop_and_exit():
+    """N velas perdidas: mismo stop/salida que el motor (evaluate_chandelier bar a bar)."""
+    n = 36
+    df = _4h_fixture(n, 100.0, 130.0)
+    # Dump on recovered bar n-5 (not the last closed).
+    dump_i = n - 5
+    df.iloc[dump_i, df.columns.get_loc("Close")] = 40.0
+    df.iloc[dump_i, df.columns.get_loc("Low")] = 39.0
+    last_eval = df.index[n - 10]  # 5 recovered + last closed
+    now = (df.index[-1] + pd.Timedelta(hours=4, minutes=20)).to_pydatetime()
+    high0, stop0 = 130.0, 120.0
+    engine = _engine_walk_missed(df, last_eval, high0, stop0, now)
+    cup = catch_up_exits(
+        df,
+        last_evaluated_open=last_eval,
+        highest_close=high0,
+        stop_px=stop0,
+        now=now,
+    )
+    assert cup["data_ok"] is True
+    assert cup["hit"] is True
+    assert engine["hit"] is True
+    assert cup["highest_close"] == pytest.approx(engine["highest_close"])
+    assert float(cup["stop_px"]) == pytest.approx(float(engine["stop_px"]))
+    assert cup["hit_bar"]["sell_now"] is True
+    assert cup["hit_bar"]["late"] is True
+    assert cup["signal_bar"] is None  # no entry/rebalance from recovered bars
+    assert cup["missed_candles"] >= 1
+
+    # No dump: N missed bars ratchet the same as the engine.
+    df2 = _4h_fixture(n, 100.0, 130.0)
+    now2 = (df2.index[-1] + pd.Timedelta(hours=4, minutes=5)).to_pydatetime()
+    engine2 = _engine_walk_missed(df2, last_eval, 110.0, 90.0, now2)
+    cup2 = catch_up_exits(
+        df2,
+        last_evaluated_open=last_eval,
+        highest_close=110.0,
+        stop_px=90.0,
+        now=now2,
+    )
+    assert cup2["hit"] is False
+    assert engine2["hit"] is False
+    assert cup2["highest_close"] == pytest.approx(engine2["highest_close"])
+    assert float(cup2["stop_px"]) == pytest.approx(float(engine2["stop_px"]))
+    assert cup2["signal_bar"] is not None
+    assert cup2["signal_bar"]["candle_open"] == cup2["evals"][-1]["candle_open"]
+
+
+def test_catch_up_entries_only_last_closed_bar():
+    df = _4h_fixture(20, 80.0, 100.0)
+    now = (df.index[-1] + pd.Timedelta(hours=4)).to_pydatetime()
+    cup = catch_up_exits(
+        df,
+        last_evaluated_open=df.index[10],
+        highest_close=90.0,
+        stop_px=50.0,
+        now=now,
+    )
+    assert cup["signal_bar"]["candle_open"] == cup["evals"][-1]["candle_open"]
+    assert all(not e.get("sell_now") for e in cup["evals"][:-1] if not e.get("hit"))
+
+
+def test_rebuild_highest_close_never_resets_to_entry():
+    df = _4h_fixture(20, 100.0, 150.0)
+    hist, src = rebuild_highest_close(df, entry_ts=df.index[5], persisted=120.0)
+    assert hist >= 150.0 - 1e-9
+    assert src in {"db", "rebuilt"}
+    kept, src2 = rebuild_highest_close(df, entry_ts=df.index[5], persisted=200.0)
+    assert kept == pytest.approx(200.0)
+    assert src2 == "db"
+
+
+def test_wealth_mark_to_market_sell_does_not_stick_kill():
+    from services.multiasset.crypto_risk import (
+        kill_from_allocation_peak,
+        reset_allocation_kill,
+        wealth_drawdown_pct,
+    )
+
+    allocation = 2500.0
+    mark_open = 2000.0
+    realized = 0.0
+    peak = 2000.0
+    # Sell a 2.5%+ name at the mark: wealth unchanged (mark↓ + realized↑).
+    sold_notional = 80.0  # 3.2% of allocation
+    sold_pnl = 5.0
+    wealth_after = (mark_open - sold_notional) + (realized + sold_pnl + sold_notional)
+    # wealth_after ≈ 2005 if we treat proceeds as realized notional+pnl
+    wealth_mtm = (mark_open - sold_notional) + realized + sold_pnl
+    # Correct wealth = remaining mark + realized including sale proceeds? Spec: mark+realized.
+    # Sale converts mark to realized at last; wealth = remaining_mark + prior_realized + exit_value - entry?
+    remaining = mark_open - sold_notional
+    realized_after = realized + sold_pnl
+    wealth = remaining + realized_after
+    dd = wealth_drawdown_pct(peak=peak, wealth=wealth, allocation=allocation)
+    assert kill_from_allocation_peak(
+        peak_crypto_usd=peak, crypto_usd=wealth, allocation_usd=allocation
+    ) is False
+    assert dd < 10.0
+    reset = reset_allocation_kill({"peak_wealth_usd": peak, "kill_active": True}, actor="ceo", reason="audit", current_wealth=wealth)
+    assert reset["kill_active"] is False
+    assert reset["kill_reset"]["actor"] == "ceo"
+
+
+@pytest.mark.asyncio
+async def test_replica_lease_one_lock_no_dup_orders(session):
+    from services.multiasset.crypto_cycle_lock import (
+        acquire_cycle_lease,
+        idempotency_key,
+        release_cycle_lease,
+    )
+    from database.repositories.ops_repository import OpsFlagRepository
+
+    flags = OpsFlagRepository(session)
+    now = pd.Timestamp("2026-10-02T16:00:00Z").to_pydatetime()
+    got_a, lease_a = await acquire_cycle_lease(flags, owner="replica-a", now=now, session=session)
+    got_b, _ = await acquire_cycle_lease(flags, owner="replica-b", now=now, session=session)
+    assert got_a is True
+    assert got_b is False
+    await release_cycle_lease(flags, "replica-a", session=session)
+    got_b2, _ = await acquire_cycle_lease(flags, owner="replica-b", now=now, session=session)
+    assert got_b2 is True
+    key = idempotency_key("BTC/USD", "2026-10-02T16:00:00+00:00", "buy")
+    assert key.startswith("sa9-BTCUSD-")
+    assert len(key) <= 48
+
+
+@pytest.mark.asyncio
+async def test_tracker_duplicate_client_order_id_does_not_double_qty(session):
+    from services.multiasset.trade_tracker import MultiAssetTradeTracker
+
+    tr = MultiAssetTradeTracker(session)
+    t1 = await tr.open_trade(
+        desk="crypto",
+        symbol="BTC/USD",
+        qty=0.01,
+        entry_price=100.0,
+        order_id="oid-1",
+        meta={"client_order_id": "sa9-BTCUSD-2026100216-buy"},
+    )
+    t2 = await tr.open_trade(
+        desk="crypto",
+        symbol="BTC/USD",
+        qty=0.01,
+        entry_price=110.0,
+        order_id="oid-2",
+        meta={"client_order_id": "sa9-BTCUSD-2026100216-buy"},
+    )
+    assert t2.qty == pytest.approx(0.01)
+    assert t2.id == t1.id
+    # Distinct id still adds (rebalance).
+    t3 = await tr.open_trade(
+        desk="crypto",
+        symbol="BTC/USD",
+        qty=0.02,
+        entry_price=120.0,
+        order_id="oid-3",
+        meta={"client_order_id": "sa9-BTCUSD-2026100220-rebup"},
+    )
+    assert t3.qty == pytest.approx(0.03)
+    closed = await tr.close_trade(desk="crypto", symbol="BTC/USD", exit_price=130.0, qty=0.01)
+    assert closed is not None
+    still = await tr.get_open("crypto", "BTC/USD")
+    assert still is not None
+    assert still.qty == pytest.approx(0.02)
+
+
+def test_corr_from_4h_90d_not_30_daily():
+    from services.multiasset.crypto_market_stats import CORR_4H_BARS, corr_from_4h, log_returns_4h
+
+    idx = pd.date_range("2026-01-01", periods=CORR_4H_BARS + 10, freq="4h", tz="UTC")
+    close_a = 100 + np.linspace(0, 20, len(idx)) + np.sin(np.arange(len(idx)) / 8.0)
+    close_b = close_a * 1.01
+    a = pd.DataFrame({"Open": close_a, "High": close_a + 1, "Low": close_a - 1, "Close": close_a}, index=idx)
+    b = pd.DataFrame({"Open": close_b, "High": close_b + 1, "Low": close_b - 1, "Close": close_b}, index=idx)
+    rr = log_returns_4h(a)
+    assert rr is not None and len(rr) >= 90 * 6 - 20
+    corr = corr_from_4h({"BTC/USD": a, "ETH/USD": b})
+    rho = corr.get("BTC/USD|ETH/USD") or corr.get("ETH/USD|BTC/USD")
+    assert rho is not None and rho >= 0.7
+
+
+def test_last_cycle_obs_exposes_catchup_fields():
+    from services.multiasset.crypto_obs import attach_last_cycle_obs
+
+    state = {
+        "positions": {
+            "BTC/USD": {
+                "stop_evaluated_at": "2026-10-01T16:00:00+00:00",
+                "candle_close": 65000.0,
+                "stop_px": 61000.0,
+                "highest_close": 67000.0,
+                "broker_stop": "none",
+                "state_source": "db",
+            }
+        },
+        "last_evaluated_candle": "2026-10-01T16:00:00+00:00",
+        "eval_history": [
+            {"candle_open": "2026-10-01T12:00:00+00:00", "late": True},
+            {"candle_open": "2026-10-01T16:00:00+00:00", "late": False},
+        ],
+        "missed_candles": 1,
+        "candles_behind": 1,
+        "replica_id": "host:1",
+    }
+    cycle = attach_last_cycle_obs({"desks": {"crypto": {}}}, state)
+    assert cycle["last_evaluated_candle"] == "2026-10-01T16:00:00+00:00"
+    assert cycle["missed_candles"] == 1
+    assert cycle["candles_behind"] == 1
+    assert cycle["replica_id"] == "host:1"
+    assert len(cycle["eval_history"]) == 2
+    pos = cycle["desks"]["crypto"]["open_positions"][0]
+    assert pos["max_close"] == 67000.0
+    assert pos["state_source"] == "db"
+    assert pos["broker_stop"] == "none"

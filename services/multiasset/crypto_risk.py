@@ -36,8 +36,15 @@ RAMP_TRADES = 12
 KILL_ALLOC_DD_PCT = 10.0
 PAUSE_DAILY_PCT = 1.5
 PAUSE_WEEKLY_PCT = 3.0
+ACCUM_BRAKE_PCT = 5.0  # pause buys; 10% remains the hard kill
+LOSS_STREAK_N = 3
+LOSS_STREAK_PAUSE_HOURS = 24.0
 MIN_NOTIONAL_USD = 50.0
+DESK_ORDER_CAP_USD = 5_000.0
+ALPACA_TAKER_BPS = 25.0
+DEFAULT_SLIP_BPS = 0.0
 VOL_TARGET = 0.25
+MIN_QTY = {"BTC/USD": 0.0001, "ETH/USD": 0.001}
 
 
 def _norm(symbol: str) -> str:
@@ -111,10 +118,20 @@ def per_name_caps(symbol: str, equity: float) -> tuple[float, float]:
     return eq * ALT_EQUITY_PCT / 100.0, eq * ALT_RISK_PCT / 100.0
 
 
-def ramp_mult(n_trades: int, ramp_until: int = RAMP_TRADES) -> float:
+def ramp_mult(n_trades: int, ramp_until: int = RAMP_TRADES, symbol: str | None = None) -> float:
+    if symbol and is_btc_eth(symbol):
+        return 1.0
     if int(n_trades or 0) >= int(ramp_until):
         return 1.0
     return 0.5
+
+
+def alpaca_min_qty(symbol: str) -> float | None:
+    return MIN_QTY.get(_norm(symbol))
+
+
+def cost_fraction_bps(*, live_spread_bps: float | None, taker_bps: float = ALPACA_TAKER_BPS, slip_bps: float = DEFAULT_SLIP_BPS) -> float:
+    return float(taker_bps) + float(live_spread_bps or 0) + float(slip_bps)
 
 
 def cluster_symbols(corr: dict[tuple[str, str], float], symbols: Iterable[str], *, thresh: float = CORR_THRESHOLD) -> list[set[str]]:
@@ -205,6 +222,8 @@ def size_crypto_order(
     s_signal: float = 1.0,
     vol_30d: float | None = None,
     min_qty: float | None = None,
+    live_spread_bps: float | None = None,
+    desk_cap_usd: float | None = None,
 ) -> tuple[float, dict[str, Any]]:
     """Return notional (0 = reject) and diagnostics. Paper 1x.
 
@@ -229,11 +248,11 @@ def size_crypto_order(
         info["reason"] = "vol_unknown"
         return 0.0, info
 
-    risk_per_unit = entry - stop
+    cost_bps = cost_fraction_bps(live_spread_bps=live_spread_bps)
+    risk_per_unit = (entry - stop) + entry * (cost_bps / 10_000.0)
     name_notional_cap, name_risk_cap = per_name_caps(symbol, equity)
     scale = min(1.0, VOL_TARGET / float(vol_30d))
     vol_notional = s * scale * name_notional_cap
-    # Risk vs chandelier distance (8 ATR at entry); ramp applied once at the end.
     raw_risk = name_risk_cap / risk_per_unit * entry if risk_per_unit > 0 else 0.0
 
     sleeve_cap = equity * MAX_CRYPTO_EQUITY_PCT / 100.0
@@ -242,8 +261,9 @@ def size_crypto_order(
     agg_risk_cap = equity * MAX_OPEN_RISK_PCT / 100.0
     agg_risk_room = max(0.0, agg_risk_cap - book.open_risk_usd)
     notional_from_agg_risk = agg_risk_room / risk_per_unit * entry if risk_per_unit > 0 else 0.0
+    desk_cap = float(desk_cap_usd if desk_cap_usd is not None else DESK_ORDER_CAP_USD)
 
-    notional = min(vol_notional, raw_risk, sleeve_room, name_room, notional_from_agg_risk)
+    notional = min(vol_notional, raw_risk, sleeve_room, name_room, notional_from_agg_risk, desk_cap)
 
     if median_adv_usd and median_adv_usd > 0:
         adv_cap = float(median_adv_usd) * ADV_PCT / 100.0
@@ -258,7 +278,7 @@ def size_crypto_order(
     g_not_from_risk = g_risk_room / risk_per_unit * entry if risk_per_unit > 0 else 0.0
     notional = min(notional, g_not_room, g_not_from_risk)
 
-    ramp = ramp_mult(n_trades)
+    ramp = ramp_mult(n_trades, symbol=symbol)
     notional *= ramp
     info.update(
         {
@@ -268,10 +288,13 @@ def size_crypto_order(
             "S": s,
             "ramp": ramp,
             "group": gid,
+            "cost_bps": round(cost_bps, 4),
+            "desk_cap": desk_cap,
             "stop_pct": round(risk_per_unit / entry * 100.0, 4),
         }
     )
-    if not min_lot_fits(notional, entry, min_qty=min_qty):
+    qty_floor = min_qty if min_qty is not None else alpaca_min_qty(symbol)
+    if not min_lot_fits(notional, entry, min_qty=qty_floor):
         info["reason"] = "too_small"
         info["sized"] = round(notional, 4)
         return 0.0, info
@@ -300,9 +323,71 @@ def daily_weekly_pause(
     week_pnl_pct: float,
     now: datetime | None = None,
 ) -> tuple[bool, str | None]:
+    """Rolling 24h / 7d PnL vs crypto allocation (not UTC calendar day)."""
     _ = now
     if float(day_pnl_pct) <= -PAUSE_DAILY_PCT:
-        return True, f"daily_loss {day_pnl_pct:.2f}%"
+        return True, f"rolling_24h_loss {day_pnl_pct:.2f}%"
     if float(week_pnl_pct) <= -PAUSE_WEEKLY_PCT:
-        return True, f"weekly_loss {week_pnl_pct:.2f}% pause_until_monday"
+        return True, f"rolling_7d_loss {week_pnl_pct:.2f}%"
     return False, None
+
+
+def wealth_drawdown_pct(*, peak: float, wealth: float, allocation: float) -> float:
+    alloc = float(allocation or 0)
+    if alloc <= 0:
+        return 0.0
+    return max(0.0, float(peak or 0) - float(wealth or 0)) / alloc * 100.0
+
+
+def accum_brake_triggered(dd_pct: float, *, brake_pct: float = ACCUM_BRAKE_PCT) -> bool:
+    return float(dd_pct) >= float(brake_pct)
+
+
+def loss_streak_pause(
+    losses: list[dict[str, Any]] | None,
+    *,
+    now: datetime | None = None,
+    n: int = LOSS_STREAK_N,
+    hours: float = LOSS_STREAK_PAUSE_HOURS,
+) -> tuple[bool, str | None]:
+    clock = now or datetime.now(timezone.utc)
+    if clock.tzinfo is None:
+        clock = clock.replace(tzinfo=timezone.utc)
+    rows = list(losses or [])
+    if len(rows) < int(n):
+        return False, None
+    tail = rows[-int(n) :]
+    if not all(float(r.get("pnl_usd") or 0) < 0 for r in tail):
+        return False, None
+    last_at = tail[-1].get("at")
+    try:
+        last = datetime.fromisoformat(str(last_at).replace("Z", "+00:00"))
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+    except Exception:
+        return True, f"loss_streak_{n}"
+    if (clock - last).total_seconds() <= float(hours) * 3600:
+        return True, f"loss_streak_{n}_rolling_{hours:g}h"
+    return False, None
+
+
+def reset_allocation_kill(
+    mark: dict[str, Any],
+    *,
+    actor: str,
+    reason: str,
+    current_wealth: float,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    clock = now or datetime.now(timezone.utc)
+    out = dict(mark or {})
+    out["kill_reset"] = {
+        "actor": actor,
+        "reason": reason,
+        "at": clock.isoformat(),
+        "prev_peak": out.get("peak_wealth_usd"),
+        "prev_kill": out.get("kill_active"),
+    }
+    out["kill_active"] = False
+    out["peak_wealth_usd"] = float(current_wealth or 0)
+    return out

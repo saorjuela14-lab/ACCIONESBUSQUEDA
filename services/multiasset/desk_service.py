@@ -330,6 +330,8 @@ class MultiAssetDeskService:
             order["qty"] = str(qty)
         else:
             raise ValueError("Para equity ETF usa qty; crypto puede usar notional")
+        if req.client_order_id:
+            order["client_order_id"] = str(req.client_order_id)[:48]
 
         # Alpaca crypto: never attach stop/bracket/OCO/trailing. Software chandelier only.
         if req.side == "buy" and not req.dry_run and not is_crypto:
@@ -450,16 +452,30 @@ class MultiAssetDeskService:
         except Exception as exc:
             logger.warning("multiasset.track_brief_failed", error=str(exc))
 
+        fill_qty = float(qty)
+        if isinstance(result.payload, dict):
+            for key in ("filled_qty", "filledQty", "qty"):
+                raw_q = result.payload.get(key)
+                try:
+                    if raw_q is not None and float(raw_q) > 0:
+                        fill_qty = float(raw_q)
+                        break
+                except (TypeError, ValueError):
+                    continue
         if req.side == "buy":
             trade = await tracker.open_trade(
                 desk=req.desk,
                 symbol=sym,
-                qty=float(qty),
+                qty=fill_qty,
                 entry_price=px,
                 brief=brief,
                 is_sim=is_sim,
                 order_id=result.order_id,
-                meta={"note": req.note, "dry_run": is_sim},
+                meta={
+                    "note": req.note,
+                    "dry_run": is_sim,
+                    "client_order_id": req.client_order_id,
+                },
             )
             result.payload = {
                 **(result.payload or {}),
@@ -474,6 +490,7 @@ class MultiAssetDeskService:
                 symbol=sym,
                 exit_price=px,
                 exit_reason=req.note or ("dry-run sell" if is_sim else "paper sell"),
+                qty=fill_qty,
             )
             if closed:
                 result.payload = {

@@ -11,6 +11,8 @@ from utils.logging import get_logger
 logger = get_logger(__name__)
 
 DEFAULT_PATH = Path(__file__).resolve().parents[2] / "data" / "multiasset" / "strategy_a_eligibility.json"
+UNIVERSE_PATH = Path(__file__).resolve().parents[2] / "data" / "multiasset" / "monedas_aprobadas_A.json"
+DEFAULT_UNIVERSE = ["BTC/USD", "ETH/USD"]
 
 
 class EligibilityClosed(RuntimeError):
@@ -31,10 +33,44 @@ def eligibility_path(override: str | None = None) -> Path:
     return DEFAULT_PATH
 
 
+def load_approved_universe(path: Path | None = None) -> list[str]:
+    """Read monedas_aprobadas_A.json. Missing file → BTC/USD, ETH/USD (keep trading)."""
+    p = path or UNIVERSE_PATH
+    if not p.is_file():
+        logger.warning("strategy_a.universe_missing_default_btc_eth", path=str(p))
+        return list(DEFAULT_UNIVERSE)
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.warning("strategy_a.universe_invalid_default_btc_eth", error=str(exc))
+        return list(DEFAULT_UNIVERSE)
+    raw = data.get("approved") if isinstance(data, dict) else data
+    out: list[str] = []
+    for item in raw or []:
+        if isinstance(item, dict):
+            sym = str(item.get("symbol") or "").upper().replace(" ", "")
+        else:
+            sym = str(item or "").upper().replace(" ", "")
+        if not sym:
+            continue
+        if "/" not in sym and sym.endswith("USD") and len(sym) > 3:
+            sym = f"{sym[:-3]}/USD"
+        if sym not in out:
+            out.append(sym)
+    return out or list(DEFAULT_UNIVERSE)
+
+
 def load_eligibility(path: Path | None = None) -> dict[str, Any]:
     p = path or eligibility_path()
     if not p.is_file():
-        raise EligibilityClosed(f"eligibility_missing:{p}")
+        # Universe file is the gate; eligibility JSON is optional metadata.
+        uni = load_approved_universe()
+        return {
+            "version": "default-btc-eth",
+            "strategy": "A",
+            "runtime_must_not_recompute": True,
+            "approved": [{"symbol": s, "status": "default_universe"} for s in uni],
+        }
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
@@ -67,6 +103,9 @@ def approved_rows(data: dict[str, Any] | None = None) -> list[dict[str, Any]]:
 
 
 def approved_symbols(data: dict[str, Any] | None = None) -> list[str]:
+    uni = load_approved_universe()
+    if uni:
+        return uni
     return [r["symbol"] for r in approved_rows(data)]
 
 

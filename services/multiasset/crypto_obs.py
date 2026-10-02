@@ -20,12 +20,18 @@ def position_stop_fields(
     candle_close: float | None,
     stop_px: float | None,
     broker_stop: str | None = "none",
+    max_close: float | None = None,
+    state_source: str | None = None,
+    clock_evaluated_at: str | None = None,
 ) -> dict[str, Any]:
     return {
         "stop_evaluated_at": stop_evaluated_at,
+        "clock_evaluated_at": clock_evaluated_at,
         "candle_close": candle_close,
         "stop_px": stop_px,
+        "max_close": max_close,
         "broker_stop": broker_stop or "none",
+        "state_source": state_source or "db",
     }
 
 
@@ -46,6 +52,9 @@ def overlay_open_positions(
                 candle_close=st.get("candle_close"),
                 stop_px=st.get("stop_px"),
                 broker_stop=st.get("broker_stop") or "none",
+                max_close=st.get("highest_close") or st.get("max_close"),
+                state_source=st.get("state_source"),
+                clock_evaluated_at=st.get("clock_evaluated_at"),
             )
         )
         out.append(item)
@@ -63,6 +72,9 @@ def open_positions_from_state(state: dict[str, Any] | None) -> list[dict[str, An
             candle_close=st.get("candle_close"),
             stop_px=st.get("stop_px"),
             broker_stop=st.get("broker_stop") or "none",
+            max_close=st.get("highest_close") or st.get("max_close"),
+            state_source=st.get("state_source"),
+            clock_evaluated_at=st.get("clock_evaluated_at"),
         )}
         rows.append(row)
     return rows
@@ -87,4 +99,15 @@ def attach_last_cycle_obs(cycle: dict[str, Any] | None, state: dict[str, Any] | 
     crypto["broker_stops_gtc"] = False
     crypto["broker_stop"] = "none"
     last["broker_stops_gtc"] = False
+    if state:
+        last["last_evaluated_candle"] = state.get("last_evaluated_candle")
+        last["eval_history"] = list(state.get("eval_history") or [])[-6:]
+        last["missed_candles"] = state.get("missed_candles")
+        last["replica_id"] = state.get("replica_id")
+        last["candles_behind"] = state.get("candles_behind")
+        crypto["last_evaluated_candle"] = last.get("last_evaluated_candle")
+        crypto["eval_history"] = last.get("eval_history")
+        crypto["missed_candles"] = last.get("missed_candles")
+        crypto["replica_id"] = last.get("replica_id")
+        crypto["candles_behind"] = last.get("candles_behind")
     return last

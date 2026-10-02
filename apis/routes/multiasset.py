@@ -74,9 +74,15 @@ async def desk_board(session: AsyncSession = Depends(get_session)):
 async def last_multiasset_cycle(session: AsyncSession = Depends(get_session)):
     _enabled()
     from database.repositories.ops_repository import OpsFlagRepository
+    from services.multiasset.autopilot import MultiAssetAutopilotService
     from services.multiasset.crypto_obs import attach_last_cycle_obs
     from services.multiasset.risk_engine import FLAG_CYCLE
 
+    # Scale-to-zero: GET may wake the app and must run catch-up first.
+    try:
+        await MultiAssetAutopilotService(session).crypto_catchup_on_wake(actor="last_cycle_get")
+    except Exception:
+        pass
     last = await OpsFlagRepository(session).get_json(FLAG_CYCLE)
     state = await OpsFlagRepository(session).get_json("crypto_strategy_a_state")
     return attach_last_cycle_obs(last, state)

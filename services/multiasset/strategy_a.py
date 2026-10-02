@@ -189,11 +189,18 @@ def evaluate_chandelier_exit(
     pending_exit: bool = False,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Stop vs completed 4h close; fill at next open. Never uses the in-progress print."""
+    """Compare close vs PREVIOUS stop, then ratchet. Fill at next open."""
     clock = now or datetime.now(timezone.utc)
     if clock.tzinfo is None:
         clock = clock.replace(tzinfo=timezone.utc)
     completed = last_completed_frame(df_4h, now=clock)
+    candle_open = None
+    if completed is not None and not completed.empty and isinstance(completed.index, pd.DatetimeIndex):
+        candle_open = pd.Timestamp(completed.index[-1])
+        if candle_open.tzinfo is None:
+            candle_open = candle_open.tz_localize("UTC")
+        else:
+            candle_open = candle_open.tz_convert("UTC")
     out: dict[str, Any] = {
         "hit": False,
         "execute_now": False,
@@ -202,19 +209,25 @@ def evaluate_chandelier_exit(
         "highest_close": float(highest_close or 0),
         "candle_close": None,
         "candle_ts": None,
-        "stop_evaluated_at": clock.isoformat(),
+        "candle_open": candle_open.isoformat() if candle_open is not None else None,
+        "stop_evaluated_at": candle_open.isoformat() if candle_open is not None else None,
+        "clock_evaluated_at": clock.isoformat(),
         "atr": 0.0,
         "broker_stop": "none",
         "reason": "no_completed_bar",
+        "data_ok": True,
     }
     if completed is None or completed.empty:
+        out["data_ok"] = False
+        out["reason"] = "data_insufficient"
         return out
     close = float(_col(completed, "Close").iloc[-1])
     a = atr(completed, ATR_PERIOD)
     atr_abs = float(a.iloc[-1]) if len(a) and pd.notna(a.iloc[-1]) else 0.0
+    prev = float(stop_px or 0)
+    hit = bool(prev > 0 and close <= prev)
     new_high = max(float(highest_close or 0), close)
     new_stop = chandelier_stop_px(new_high, atr_abs, prev_stop=stop_px)
-    hit = bool(atr_abs > 0 and new_stop > 0 and close <= new_stop)
     has_dt = isinstance(df_4h.index, pd.DatetimeIndex) and isinstance(completed.index, pd.DatetimeIndex)
     next_open_in_df = len(df_4h) > len(completed)
     next_open_by_clock = False
@@ -259,19 +272,29 @@ def evaluate_chandelier_exit(
 
 
 def update_post_stop_block(block: dict[str, Any] | None, s: float) -> dict[str, Any]:
-    """After a stop, stay blocked until S goes to 0 and then rises again."""
+    """Release when S goes through 0 then up, OR S rises above S-at-stop (engine)."""
     b = dict(block or {})
     if not b.get("blocked"):
-        return {"blocked": False, "seen_zero": False}
-    if float(s) <= 1e-12:
-        return {"blocked": True, "seen_zero": True}
-    if b.get("seen_zero") and float(s) > 1e-12:
-        return {"blocked": False, "seen_zero": False}
-    return {"blocked": True, "seen_zero": bool(b.get("seen_zero"))}
+        return {"blocked": False, "seen_zero": False, "s_at_stop": b.get("s_at_stop")}
+    s_f = float(s)
+    s_at = b.get("s_at_stop")
+    try:
+        s_at_f = float(s_at) if s_at is not None else None
+    except (TypeError, ValueError):
+        s_at_f = None
+    seen_zero = bool(b.get("seen_zero")) or s_f <= 1e-12
+    if s_f <= 1e-12:
+        return {"blocked": True, "seen_zero": True, "s_at_stop": s_at_f}
+    if seen_zero and s_f > 1e-12:
+        return {"blocked": False, "seen_zero": False, "s_at_stop": s_at_f}
+    if s_at_f is not None and s_f > s_at_f + 1e-12:
+        return {"blocked": False, "seen_zero": False, "s_at_stop": s_at_f}
+    return {"blocked": True, "seen_zero": seen_zero, "s_at_stop": s_at_f}
 
 
 def arm_post_stop_block(s: float) -> dict[str, Any]:
-    return {"blocked": True, "seen_zero": float(s) <= 1e-12}
+    s_f = float(s)
+    return {"blocked": True, "seen_zero": s_f <= 1e-12, "s_at_stop": s_f}
 
 
 def should_rebalance(
@@ -322,14 +345,27 @@ def strategy_a_signal(
         "btc_filter": bool(btc_filter_ok),
         "S": 0.0,
         "components": {str(L): 0 for L in DONCHIAN_L},
+        "data_ok": True,
     }
+    if btc_4h is not None and (btc_completed is None or btc_completed.empty):
+        extras["data_ok"] = False
+        return StrategyASignal("hold", None, 0.0, "data_insufficient", extras, S=float("nan"))
     if not btc_filter_ok:
+        # Missing BTC frame is no-op; a real below-SMA is S=0 (regime off).
+        if btc_why in {"btc_4h_missing", "btc_sma200_warmup", "btc_sma200_nan"}:
+            extras["data_ok"] = False
+            return StrategyASignal("hold", None, 0.0, "data_insufficient", extras, S=float("nan"))
         return StrategyASignal("hold", None, 0.0, btc_why, extras, S=0.0)
 
     need = max(DONCHIAN_L) + 2
-    if completed is None or completed.empty or len(completed) < need:
+    if completed is None or completed.empty:
+        extras["data_ok"] = False
         extras["need"] = need
-        return StrategyASignal("hold", None, 0.0, "warmup_4h", extras, S=0.0)
+        return StrategyASignal("hold", None, 0.0, "data_insufficient", extras, S=float("nan"))
+    if len(completed) < need:
+        extras["need"] = need
+        extras["data_ok"] = False
+        return StrategyASignal("hold", None, 0.0, "data_insufficient", extras, S=float("nan"))
 
     close = _col(completed, "Close")
     last = float(close.iloc[-1])
@@ -347,6 +383,7 @@ def strategy_a_signal(
             "vol_scale": vol_scale(vol),
             "candle_close": last,
             "candle_ts": _bar_ts(completed),
+            "data_ok": True,
             "btc_why": btc_why,
         }
     )
@@ -375,31 +412,185 @@ def to_yf_symbol(symbol: str) -> str:
 
 
 def load_ohlc(symbol: str, *, interval: str, period: str = "2y") -> pd.DataFrame:
-    """Best-effort yfinance OHLC. Tests should inject frames instead."""
-    try:
-        import yfinance as yf
+    """Deprecated sync path. Strategy A runtime uses Alpaca 1h → clean → 4h."""
+    del interval, period
+    logger.warning("strategy_a.load_ohlc_deprecated", symbol=symbol)
+    return pd.DataFrame()
 
-        ysym = to_yf_symbol(symbol)
-        df = yf.Ticker(ysym).history(period=period, interval=interval, auto_adjust=True)
-        if df is None or df.empty:
-            return pd.DataFrame()
-        if interval in {"60m", "1h", "1H"} and "Close" in df.columns:
-            ohlc = df[["Open", "High", "Low", "Close"]].copy()
-            if "Volume" in df.columns:
-                ohlc["Volume"] = df["Volume"]
-            return ohlc.resample("4h").agg(
-                {
-                    "Open": "first",
-                    "High": "max",
-                    "Low": "min",
-                    "Close": "last",
-                    **({"Volume": "sum"} if "Volume" in ohlc.columns else {}),
-                }
-            ).dropna(how="all")
-        return df
-    except Exception as exc:
-        logger.warning("strategy_a.ohlc_failed", symbol=symbol, interval=interval, error=str(exc))
-        return pd.DataFrame()
+
+def rebuild_highest_close(
+    df_4h: pd.DataFrame | None,
+    *,
+    entry_ts: datetime | str | None,
+    persisted: float | None,
+) -> tuple[float | None, str]:
+    """Max close since entry from history. Never reset to entry price alone."""
+    completed = last_completed_frame(df_4h) if df_4h is not None else pd.DataFrame()
+    if completed is None or completed.empty:
+        if persisted and float(persisted) > 0:
+            return float(persisted), "db"
+        return None, "missing"
+    close = _col(completed, "Close")
+    if entry_ts:
+        try:
+            ts = pd.Timestamp(entry_ts)
+            if ts.tzinfo is None:
+                ts = ts.tz_localize("UTC")
+            if isinstance(completed.index, pd.DatetimeIndex):
+                idx = completed.index
+                if idx.tz is None:
+                    ts = ts.tz_localize(None) if ts.tzinfo else ts
+                close = close.loc[idx >= ts]
+        except Exception:
+            pass
+    if close.empty:
+        if persisted and float(persisted) > 0:
+            return float(persisted), "db"
+        return None, "missing"
+    hist = float(close.max())
+    if persisted and float(persisted) > hist:
+        return float(persisted), "db"
+    source = "db" if persisted and float(persisted) > 0 else "rebuilt"
+    return hist, source
+
+
+def catch_up_exits(
+    df_4h: pd.DataFrame | None,
+    *,
+    last_evaluated_open: datetime | str | None,
+    highest_close: float | None,
+    stop_px: float | None,
+    now: datetime | None = None,
+    block: dict[str, Any] | None = None,
+    s_series: pd.Series | None = None,
+) -> dict[str, Any]:
+    """Walk every closed 4h bar since last_evaluated_open, in order.
+
+    Engine order per bar: compare close vs the *previous* chandelier stop,
+    then raise max_close / Wilder ATR / stop. A recovered bar that closed
+    under the stop → sell_now and late:true. Entries/rebalances use only
+    signal_bar (the last closed candle); recovered bars never emit a signal.
+    """
+    from services.multiasset.engine_bars import drop_forming_bar
+
+    clock = now or datetime.now(timezone.utc)
+    completed = drop_forming_bar(last_completed_frame(df_4h, now=clock), now=clock)
+    evals: list[dict[str, Any]] = []
+    high = float(highest_close or 0)
+    prev_stop = float(stop_px or 0) or None
+    hit_bar: dict[str, Any] | None = None
+    block_state = dict(block or {})
+    empty = {
+        "data_ok": False,
+        "missed_candles": 0,
+        "evals": [],
+        "highest_close": high,
+        "stop_px": prev_stop,
+        "hit": False,
+        "hit_bar": None,
+        "last_evaluated_candle": None,
+        "signal_bar": None,
+        "block": block_state,
+    }
+    if completed is None or completed.empty:
+        return empty
+    if not isinstance(completed.index, pd.DatetimeIndex):
+        bars = completed.iloc[-1:]
+    elif last_evaluated_open:
+        ts = pd.Timestamp(last_evaluated_open)
+        if ts.tzinfo is None:
+            ts = ts.tz_localize("UTC")
+        idx = completed.index
+        if idx.tz is None:
+            ts = ts.tz_localize(None)
+        bars = completed.loc[idx > ts]
+    else:
+        bars = completed.iloc[-1:]
+    if bars is None or getattr(bars, "empty", True):
+        empty["data_ok"] = True
+        empty["last_evaluated_candle"] = (
+            pd.Timestamp(last_evaluated_open).isoformat() if last_evaluated_open else None
+        )
+        return empty
+
+    n_bars = len(bars)
+    clock_ts = pd.Timestamp(clock)
+    if clock_ts.tzinfo is None:
+        clock_ts = clock_ts.tz_localize("UTC")
+    else:
+        clock_ts = clock_ts.tz_convert("UTC")
+
+    for i in range(n_bars):
+        row = bars.iloc[i : i + 1]
+        close = float(_col(row, "Close").iloc[-1])
+        hist = completed.loc[: row.index[-1]]
+        a = atr(hist, ATR_PERIOD)
+        atr_abs = float(a.iloc[-1]) if len(a) and pd.notna(a.iloc[-1]) else 0.0
+        # 1) compare vs previous stop  2) then raise max_close / chandelier
+        hit = bool(prev_stop and prev_stop > 0 and close <= float(prev_stop))
+        high = max(high, close)
+        new_stop = chandelier_stop_px(high, atr_abs, prev_stop=prev_stop)
+        open_ts = row.index[-1]
+        ts_open = pd.Timestamp(open_ts)
+        if ts_open.tzinfo is None:
+            ts_open = ts_open.tz_localize("UTC")
+        else:
+            ts_open = ts_open.tz_convert("UTC")
+        close_at = ts_open + pd.Timedelta(hours=BAR_HOURS)
+        is_last = i == n_bars - 1
+        recovered = (not is_last) or bool(clock_ts > close_at + pd.Timedelta(minutes=15))
+        if s_series is not None:
+            try:
+                s_now = float(s_series.loc[row.index[-1]])
+            except Exception:
+                s_now = float("nan")
+            if np.isfinite(s_now):
+                block_state = update_post_stop_block(block_state, s_now)
+        rec = {
+            "candle_open": ts_open.isoformat(),
+            "candle_close": close,
+            "stop_px": new_stop if new_stop > 0 else prev_stop,
+            "highest_close": high,
+            "hit": hit,
+            "atr": atr_abs,
+            "late": bool(recovered),
+            "evaluated_at": clock_ts.isoformat(),
+            "sell_now": False,
+        }
+        prev_stop = new_stop if new_stop and new_stop > 0 else prev_stop
+        evals.append(rec)
+        if hit:
+            rec["sell_now"] = True
+            # Missed candle under stop → market sell + late:true.
+            if recovered:
+                rec["late"] = True
+            hit_bar = rec
+            break
+
+    last_open = evals[-1]["candle_open"] if evals else (
+        pd.Timestamp(last_evaluated_open).isoformat() if last_evaluated_open else None
+    )
+    missed = 0
+    if last_evaluated_open:
+        missed = sum(1 for e in evals if e.get("late"))
+        if missed == 0 and len(evals) > 1:
+            missed = len(evals) - 1
+    # Entries / rebalances: last closed bar only, and never after a recovered stop hit.
+    signal_bar = None
+    if not hit_bar and evals:
+        signal_bar = evals[-1]
+    return {
+        "data_ok": True,
+        "missed_candles": int(missed),
+        "evals": evals,
+        "highest_close": (hit_bar or evals[-1])["highest_close"] if evals else high,
+        "stop_px": (hit_bar or evals[-1])["stop_px"] if evals else prev_stop,
+        "hit": bool(hit_bar),
+        "hit_bar": hit_bar,
+        "last_evaluated_candle": last_open,
+        "signal_bar": signal_bar,
+        "block": block_state,
+    }
 
 
 async def signal_for_symbol(
@@ -407,15 +598,16 @@ async def signal_for_symbol(
     *,
     frames: dict[str, pd.DataFrame] | None = None,
     btc_4h: pd.DataFrame | None = None,
+    now: datetime | None = None,
 ) -> StrategyASignal:
     """frames may provide '4h' and 'btc_4h' to avoid network in tests."""
-    import asyncio
+    from services.multiasset.engine_bars import load_strategy_a_4h
 
     frames = frames or {}
     df_4h = frames.get("4h")
     btc = frames.get("btc_4h", btc_4h)
     if df_4h is None:
-        df_4h = await asyncio.to_thread(load_ohlc, symbol, interval="60m", period="2y")
+        df_4h = await load_strategy_a_4h(symbol, now=now)
     if btc is None:
-        btc = await asyncio.to_thread(load_ohlc, "BTC/USD", interval="60m", period="2y")
-    return strategy_a_signal(df_4h, btc_4h=btc)
+        btc = await load_strategy_a_4h("BTC/USD", now=now)
+    return strategy_a_signal(df_4h, btc_4h=btc, now=now)

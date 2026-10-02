@@ -24,10 +24,15 @@ def evidence_gate(
     *,
     min_trades: int = 20,
 ) -> tuple[bool, str]:
-    """Expectancy > 0 and enough OOS trades. Seed rows may pass until Estrategia delivers."""
-    status = str(row.get("status") or "").lower()
-    if "seed" in status:
-        return True, "seed_pending_strategy_file"
+    """Expectancy > 0 and enough OOS trades. Seed status does not skip evidence.
+
+    The JSON universe is the list of names — not an evidence waiver.
+    """
+    if row.get("on_approved_universe") and row.get("status") not in {
+        "seed",
+        "seed_pending_strategy_backtest",
+    }:
+        return True, "approved_universe"
     try:
         exp = row.get("expectancy")
         n = row.get("n_trades") if row.get("n_trades") is not None else row.get("trades")

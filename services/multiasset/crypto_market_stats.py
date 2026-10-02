@@ -20,6 +20,8 @@ logger = get_logger(__name__)
 FLAG_WEEKLY = "crypto_strategy_a_weekly_market"
 MIN_DAILY_BARS = 30
 ADV_LOOKBACK_DAYS = 30
+CORR_4H_DAYS = 90
+CORR_4H_BARS = CORR_4H_DAYS * 6  # 4h × 6 / day
 ALPACA_CRYPTO_BARS_PATH = "/v1beta3/crypto/us/bars"
 
 
@@ -71,6 +73,19 @@ def median_adv_30d(daily: pd.DataFrame | None) -> tuple[float | None, str]:
     if not np.isfinite(med) or med <= 0:
         return None, "adv_invalid"
     return med, "ok"
+
+
+def log_returns_4h(df_4h: pd.DataFrame | None, *, bars: int = CORR_4H_BARS) -> pd.Series | None:
+    """90d of 4h log returns for ρ≥0.7 groups (not 30 daily prints)."""
+    if df_4h is None or getattr(df_4h, "empty", True):
+        return None
+    cols = {c.lower(): c for c in df_4h.columns}
+    close_k = cols.get("close")
+    if not close_k or len(df_4h) < 20:
+        return None
+    close = df_4h[close_k].astype(float).tail(int(bars) + 1)
+    r = np.log(close.replace(0, np.nan)).diff().dropna()
+    return r if len(r) >= 20 else None
 
 
 def daily_log_returns(daily: pd.DataFrame) -> pd.Series | None:
@@ -185,9 +200,19 @@ def build_weekly_snapshot_from_daily(
         "source": source,
         "note": (
             "1% ADV = mediana 30d del notional diario Alpaca; "
-            "recalculada semanal con la correlación. Sin 30 barras no entra."
+            "correlación de grupo usa 90d de velas 4h."
         ),
     }
+
+
+def corr_from_4h(frames_4h: dict[str, Any] | None) -> dict[str, float]:
+    rets: dict[str, pd.Series] = {}
+    for sym, df in (frames_4h or {}).items():
+        rr = log_returns_4h(df)
+        if rr is not None:
+            rets[_norm(sym)] = rr
+    corr = pairwise_corr(rets)
+    return {f"{a}|{b}": round(v, 4) for (a, b), v in corr.items()}
 
 
 def build_weekly_snapshot(

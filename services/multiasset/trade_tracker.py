@@ -171,12 +171,32 @@ class MultiAssetTradeTracker:
         if existing:
             row = await self._session.get(MultiAssetTradeORM, existing.id)
             assert row is not None
+            try:
+                meta_ex = json.loads(row.meta_json or "{}")
+            except json.JSONDecodeError:
+                meta_ex = {}
+            seen_ids = list(meta_ex.get("client_order_ids") or [])
+            first_cid = meta_ex.get("client_order_id")
+            if first_cid and first_cid not in seen_ids:
+                seen_ids.append(str(first_cid))
+            new_cid = None
+            if isinstance(meta, dict):
+                new_cid = meta.get("client_order_id") or order_id
+            if new_cid and (
+                new_cid == row.order_id or new_cid == first_cid or new_cid in seen_ids
+            ):
+                # Duplicate replica buy — do not double qty.
+                return self._to_domain(row)
             old_qty = float(row.qty or 0)
             old_px = float(row.entry_price or 0)
             new_qty = old_qty + float(qty)
             if new_qty > 0 and entry_price > 0:
                 row.entry_price = ((old_px * old_qty) + (float(entry_price) * float(qty))) / new_qty
             row.qty = new_qty
+            if new_cid:
+                seen_ids.append(str(new_cid))
+                meta_ex["client_order_ids"] = seen_ids[-12:]
+                row.meta_json = json.dumps(meta_ex, default=str)
             if brief:
                 row.recommendation = brief.recommendation
                 row.confidence = brief.confidence
@@ -252,6 +272,7 @@ class MultiAssetTradeTracker:
         symbol: str,
         exit_price: float,
         exit_reason: str | None = None,
+        qty: float | None = None,
     ) -> MultiAssetTrade | None:
         open_t = await self.get_open(desk, symbol)
         if not open_t:
@@ -260,8 +281,31 @@ class MultiAssetTradeTracker:
         if not row:
             return None
         entry = float(row.entry_price or 0)
-        qty = float(row.qty or 0)
+        open_qty = float(row.qty or 0)
+        fill_qty = float(qty) if qty is not None and float(qty) > 0 else open_qty
         exit_px = float(exit_price)
+        if fill_qty + 1e-12 < open_qty:
+            # Partial fill: reduce the open lot; do not close the remainder.
+            sold = fill_qty
+            row.qty = open_qty - sold
+            try:
+                meta = json.loads(row.meta_json or "{}")
+            except json.JSONDecodeError:
+                meta = {}
+            parts = list(meta.get("partial_exits") or [])
+            parts.append(
+                {
+                    "qty": sold,
+                    "exit_price": exit_px,
+                    "pnl_usd": (exit_px - entry) * sold if entry else None,
+                    "reason": exit_reason,
+                }
+            )
+            meta["partial_exits"] = parts[-20:]
+            row.meta_json = json.dumps(meta, default=str)
+            await self._session.commit()
+            return self._to_domain(row)
+        qty = open_qty
         pnl_usd = (exit_px - entry) * qty if entry and qty else None
         pnl_pct = ((exit_px - entry) / entry * 100.0) if entry > 0 else None
         r_mult = None

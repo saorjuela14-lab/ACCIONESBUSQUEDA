@@ -211,6 +211,9 @@ class Settings(BaseSettings):
     crypto_pause_daily_pct: float = 1.5
     crypto_pause_weekly_pct: float = 3.0
     crypto_kill_alloc_dd_pct: float = 10.0
+    crypto_accum_brake_pct: float = 5.0
+    crypto_loss_streak_n: int = 3
+    crypto_loss_streak_pause_hours: float = 24.0
 
     # Client bank transfer INTO the shared firm Alpaca / operating account.
     # Do NOT send clients to app.alpaca.markets login — they only need deposit destination details.

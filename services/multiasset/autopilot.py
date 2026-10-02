@@ -298,6 +298,39 @@ class MultiAssetAutopilotService:
         frac = 0.45 + 0.55 * (0.5 * conf + 0.5 * score_f)
         return round(max(15.0, min(cap, cap * frac)), 2)
 
+    async def _crypto_position_qty(self, symbol: str, trade: Any) -> float | None:
+        """Full Alpaca qty. Never invent a $25 notional."""
+        want = (symbol or "").upper().replace("/", "").replace("-", "")
+        try:
+            positions = await self._broker.get_positions()
+            for p in positions or []:
+                raw = str(p.get("symbol") if isinstance(p, dict) else getattr(p, "symbol", "") or "")
+                key = raw.upper().replace("/", "").replace("-", "")
+                if key == want or key.endswith(want):
+                    q = float(p.get("qty") if isinstance(p, dict) else getattr(p, "qty", 0) or 0)
+                    if q > 0:
+                        return q
+        except Exception as exc:
+            logger.warning("crypto_a.position_qty_failed", symbol=symbol, error=str(exc))
+        fallback = float(getattr(trade, "qty", 0) or 0)
+        return fallback if fallback > 0 else None
+
+    async def _crypto_alert(self, flags: Any, *, kind: str, symbol: str, detail: str) -> None:
+        payload = {
+            "at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+            "kind": kind,
+            "symbol": symbol,
+            "detail": str(detail)[:800],
+            "paper": True,
+        }
+        logger.warning("crypto_a.alert", **payload)
+        if flags is None:
+            return
+        try:
+            await flags.set_json("crypto_strategy_a_alert", payload)
+        except Exception:
+            pass
+
     async def _crypto_market_sell(
         self,
         symbol: str,
@@ -307,29 +340,48 @@ class MultiAssetAutopilotService:
         actor: str,
         reason: str,
         qty: float | None = None,
+        client_order_id: str | None = None,
     ) -> dict[str, Any]:
-        sell_qty = float(qty) if qty is not None else float(getattr(trade, "qty", 0) or 0) or None
+        sell_qty = float(qty) if qty is not None else await self._crypto_position_qty(symbol, trade)
+        if sell_qty is None or sell_qty <= 0:
+            return {
+                "symbol": symbol,
+                "reason": reason,
+                "ok": False,
+                "error": "qty_unknown",
+                "keep_state": True,
+            }
         req = MultiAssetOrderRequest(
             desk="crypto",
             symbol=symbol,
             side="sell",
             qty=sell_qty,
-            notional=None if qty else 25.0,
+            notional=None,
             dry_run=dry_run,
             confirm=not dry_run,
             note=f"autopilot:{reason}:{actor}",
+            client_order_id=client_order_id,
         )
         try:
             res = await self._desk.execute(req)
             return {
                 "symbol": symbol,
                 "reason": reason,
-                "ok": res.ok,
+                "ok": bool(res.ok),
                 "message": res.message,
+                "qty": sell_qty,
                 "software_stop": True,
+                "keep_state": not bool(res.ok),
             }
         except Exception as exc:
-            return {"symbol": symbol, "reason": reason, "error": str(exc)}
+            return {
+                "symbol": symbol,
+                "reason": reason,
+                "ok": False,
+                "error": str(exc),
+                "qty": sell_qty,
+                "keep_state": True,
+            }
 
     async def _run_crypto_strategy_a(
         self,
@@ -345,6 +397,7 @@ class MultiAssetAutopilotService:
         from services.multiasset.crypto_eligibility import (
             EligibilityClosed,
             approved_rows,
+            load_approved_universe,
             load_eligibility,
             median_spread_bps,
         )
@@ -365,8 +418,8 @@ class MultiAssetAutopilotService:
         from services.multiasset.crypto_universe import _normalize_alpaca_symbol
         from services.multiasset.strategy_a import (
             arm_post_stop_block,
-            evaluate_chandelier_exit,
-            load_ohlc,
+            catch_up_exits,
+            rebuild_highest_close,
             should_rebalance,
             signal_for_symbol,
             stop_is_tradable,
@@ -394,15 +447,19 @@ class MultiAssetAutopilotService:
                 "stop al cierre de cada vela 4h."
             ),
         }
+        approved = load_approved_universe()
         try:
             elig = load_eligibility()
             rows = approved_rows(elig)
-            approved = [r["symbol"] for r in rows]
-        except EligibilityClosed as exc:
-            out["skipped"] = "eligibility_closed"
-            out["error"] = str(exc)
-            logger.warning("crypto.a.eligibility_closed", error=str(exc))
-            return out
+        except EligibilityClosed:
+            elig = {"version": "default-universe", "approved": [{"symbol": s} for s in approved]}
+            rows = [{"symbol": s, "on_approved_universe": True} for s in approved]
+        row_by = {r.get("symbol"): r for r in rows}
+        rows = []
+        for s in approved:
+            item = dict(row_by.get(s) or {"symbol": s})
+            item["on_approved_universe"] = True
+            rows.append(item)
         out["eligibility_version"] = elig.get("version")
         out["approved"] = approved
         min_adv = float(getattr(self._settings, "crypto_min_adv_usd", 1_000_000) or 0)
@@ -421,43 +478,51 @@ class MultiAssetAutopilotService:
         except Exception as exc:
             logger.warning("crypto.a.assets_failed", error=str(exc))
 
+        open_trades = await self._tracker.list_open(desk="crypto")
+        open_by_sym = {t.symbol: t for t in open_trades}
+
         screened_rows: list[dict] = []
         quotes: dict[str, dict] = {}
-        for row in rows:
-            sym = row["symbol"]
-            live = None
-            last = None
+        quote_syms = [r["symbol"] for r in rows] if allow_buys else list(open_by_sym.keys())
+        for sym in quote_syms:
             try:
                 from agents.multiasset import quote_symbol
 
                 q = await quote_symbol(sym)
                 quotes[sym] = q or {}
-                last = float((q or {}).get("current_price") or 0) or None
-                live = spread_bps((q or {}).get("bid"), (q or {}).get("ask"), last)
             except Exception:
                 quotes[sym] = {}
-            adv = row.get("median_adv_usd") or row.get("adv_usd")
-            try:
-                adv_f = float(adv) if adv is not None else None
-            except (TypeError, ValueError):
-                adv_f = None
-            tradable_ok = (not tradable) or (sym in tradable)
-            screened_rows.append(
-                screen_symbol(
-                    row,
-                    min_adv_usd=min_adv,
-                    min_trades=min_oos,
-                    live_spread_bps=live,
-                    adv_usd=adv_f,
-                    tradable=tradable_ok,
+        if allow_buys:
+            for row in rows:
+                sym = row["symbol"]
+                q = quotes.get(sym) or {}
+                last = float(q.get("current_price") or 0) or None
+                live = spread_bps(q.get("bid"), q.get("ask"), last)
+                adv = row.get("median_adv_usd") or row.get("adv_usd")
+                try:
+                    adv_f = float(adv) if adv is not None else None
+                except (TypeError, ValueError):
+                    adv_f = None
+                tradable_ok = (not tradable) or (sym in tradable)
+                screened_rows.append(
+                    screen_symbol(
+                        row,
+                        min_adv_usd=min_adv,
+                        min_trades=min_oos,
+                        live_spread_bps=live,
+                        adv_usd=adv_f,
+                        tradable=tradable_ok,
+                    )
                 )
-            )
-        gate_report = build_gate_report(screened_rows)
+        gate_report = build_gate_report(screened_rows) if screened_rows else {
+            "paper": True,
+            "passed_symbols": [],
+            "passed": [],
+            "rejected": [],
+            "runtime_must_not_recompute_oos": True,
+        }
         out["gate_report"] = gate_report
         passed_set = set(gate_report["passed_symbols"])
-
-        open_trades = await self._tracker.list_open(desk="crypto")
-        open_by_sym = {t.symbol: t for t in open_trades}
 
         import asyncio
         from datetime import datetime, timezone
@@ -466,16 +531,34 @@ class MultiAssetAutopilotService:
         from database.repositories.ops_repository import OpsFlagRepository
         from services.multiasset.risk_engine import calendar_day_key, iso_week_key
 
+        from services.multiasset.crypto_cycle_lock import (
+            acquire_cycle_lease,
+            idempotency_key,
+            release_cycle_lease,
+            replica_id,
+        )
+
         flags = OpsFlagRepository(self._session)
         state = await flags.get_json("crypto_strategy_a_state")
         pos_state: dict[str, Any] = dict(state.get("positions") or {})
         blocks: dict[str, Any] = dict(state.get("blocks") or {})
         now = datetime.now(timezone.utc)
         ohlc_cache: dict[str, Any] = {}
+        owner = replica_id()
+        out["replica_id"] = owner
+        got_lease, lease = await acquire_cycle_lease(
+            flags, owner=owner, now=now, session=self._session
+        )
+        if not got_lease:
+            out["skipped"] = "cycle_lease_held"
+            out["lease"] = lease
+            return out
 
         async def _ohlc(sym: str):
             if sym not in ohlc_cache:
-                ohlc_cache[sym] = await asyncio.to_thread(load_ohlc, sym, interval="60m", period="2y")
+                from services.multiasset.engine_bars import load_strategy_a_4h
+
+                ohlc_cache[sym] = await load_strategy_a_4h(sym, now=now)
             return ohlc_cache[sym]
 
         def _obs_row(sym: str, st: dict[str, Any]) -> dict[str, Any]:
@@ -497,105 +580,228 @@ class MultiAssetAutopilotService:
                 "broker_stops_gtc": False,
                 "broker_stop": "none",
                 "combo": 9,
+                "last_evaluated_candle": out.get("last_evaluated_candle"),
+                "eval_history": list(out.get("eval_history") or [])[-6:],
+                "missed_candles": out.get("missed_candles") or 0,
+                "candles_behind": out.get("candles_behind") or 0,
+                "replica_id": out.get("replica_id"),
             }
             await flags.set_json("crypto_strategy_a_state", payload)
             out["open_positions"] = [_obs_row(k, v) for k, v in pos_state.items()]
 
-        # Software chandelier at completed 4h close → market next open. Never last print.
+        eval_history: list[dict[str, Any]] = list(state.get("eval_history") or [])
+        missed_total = 0
+        last_eval_cursor = state.get("last_evaluated_candle")
+        # Catch-up: every closed 4h since last_evaluated_candle, in order (engine.py).
         for sym, trade in list(open_by_sym.items()):
             delisted = bool(tradable) and (
                 _normalize_alpaca_symbol(sym) not in tradable and sym not in tradable
             )
             prev = dict(pos_state.get(sym) or {})
             if delisted:
+                cid = idempotency_key(sym, last_eval_cursor, "delist")
                 sold = await self._crypto_market_sell(
-                    sym, trade, dry_run=dry_run, actor=actor, reason="delisted_close_now"
+                    sym,
+                    trade,
+                    dry_run=dry_run,
+                    actor=actor,
+                    reason="delisted_close_now",
+                    client_order_id=cid,
                 )
                 out["sells"].append(sold)
-                open_by_sym.pop(sym, None)
-                pos_state.pop(sym, None)
+                if sold.get("ok"):
+                    open_by_sym.pop(sym, None)
+                    pos_state.pop(sym, None)
+                else:
+                    await self._crypto_alert(
+                        flags, kind="sell_failed", symbol=sym, detail=str(sold.get("error") or sold)
+                    )
                 continue
             try:
                 df = await _ohlc(sym)
-            except Exception:
+            except Exception as exc:
                 df = None
-            ch = evaluate_chandelier_exit(
-                df if df is not None else pd.DataFrame(),
-                highest_close=float(prev.get("highest_close") or trade.entry_price or 0),
-                stop_px=float(prev.get("stop_px") or trade.stop_hint or 0) or None,
-                pending_exit=bool(prev.get("pending_exit")),
-                now=now,
+                await self._crypto_alert(flags, kind="data_noop", symbol=sym, detail=str(exc))
+            if df is None or getattr(df, "empty", True):
+                await self._crypto_alert(
+                    flags, kind="data_noop", symbol=sym, detail="empty_4h_keep_state"
+                )
+                out["holds"].append(sym)
+                continue
+            persisted_high = prev.get("highest_close") or prev.get("max_close")
+            rebuilt, src = rebuild_highest_close(
+                df,
+                entry_ts=getattr(trade, "opened_at", None) or prev.get("opened_at"),
+                persisted=float(persisted_high) if persisted_high else None,
             )
+            high0 = float(rebuilt or persisted_high or trade.entry_price or 0)
+            cup = catch_up_exits(
+                df,
+                last_evaluated_open=last_eval_cursor or prev.get("last_evaluated_candle"),
+                highest_close=high0,
+                stop_px=float(prev.get("stop_px") or trade.stop_hint or 0) or None,
+                now=now,
+                block=blocks.get(sym),
+            )
+            if not cup.get("data_ok"):
+                await self._crypto_alert(
+                    flags, kind="data_noop", symbol=sym, detail="catch_up_data_insufficient"
+                )
+                out["holds"].append(sym)
+                continue
+            missed_total += int(cup.get("missed_candles") or 0)
+            for ev in cup.get("evals") or []:
+                eval_history.append({"symbol": sym, **ev})
+            if cup.get("last_evaluated_candle"):
+                last_eval_cursor = cup["last_evaluated_candle"]
+            last_ev = (cup.get("evals") or [{}])[-1] if cup.get("evals") else {}
             st = {
                 **prev,
-                "stop_evaluated_at": ch.get("stop_evaluated_at"),
-                "candle_close": ch.get("candle_close"),
-                "candle_ts": ch.get("candle_ts"),
-                "stop_px": ch.get("stop_px"),
-                "highest_close": ch.get("highest_close"),
-                "pending_exit": ch.get("pending_exit"),
+                "stop_evaluated_at": last_ev.get("candle_open") or cup.get("last_evaluated_candle"),
+                "clock_evaluated_at": now.isoformat(),
+                "candle_close": last_ev.get("candle_close"),
+                "stop_px": cup.get("stop_px"),
+                "highest_close": cup.get("highest_close"),
+                "max_close": cup.get("highest_close"),
                 "broker_stop": "none",
-                "atr": ch.get("atr"),
+                "atr": last_ev.get("atr"),
+                "state_source": src,
+                "last_evaluated_candle": cup.get("last_evaluated_candle"),
             }
             pos_state[sym] = st
-            if ch.get("stop_px"):
+            if cup.get("stop_px"):
                 try:
                     await self._tracker.update_stop(
                         desk="crypto",
                         symbol=sym,
-                        stop=float(ch["stop_px"]),
-                        peak=float(ch.get("highest_close") or 0) or None,
+                        stop=float(cup["stop_px"]),
+                        peak=float(cup.get("highest_close") or 0) or None,
                         extra_meta={
-                            "stop_evaluated_at": ch.get("stop_evaluated_at"),
-                            "candle_close": ch.get("candle_close"),
+                            "stop_evaluated_at": st.get("stop_evaluated_at"),
+                            "candle_close": st.get("candle_close"),
                             "broker_stop": "none",
-                            "pending_exit": ch.get("pending_exit"),
+                            "state_source": src,
                         },
                     )
                 except Exception:
                     pass
-            if ch.get("execute_now"):
+            hit_bar = cup.get("hit_bar")
+            if cup.get("hit") and hit_bar:
+                cid = idempotency_key(sym, hit_bar.get("candle_open"), "chand")
                 sold = await self._crypto_market_sell(
-                    sym, trade, dry_run=dry_run, actor=actor, reason="software_chandelier_stop"
+                    sym,
+                    trade,
+                    dry_run=dry_run,
+                    actor=actor,
+                    reason="software_chandelier_stop",
+                    client_order_id=cid,
                 )
+                sold["late"] = True
+                sold["eval"] = {k: hit_bar.get(k) for k in ("candle_open", "candle_close", "late", "stop_px")}
                 out["sells"].append(sold)
-                open_by_sym.pop(sym, None)
-                pos_state.pop(sym, None)
-                s_now = float(prev.get("S") or 0)
-                try:
-                    sig_s = await signal_for_symbol(sym)
-                    s_now = float(sig_s.S)
-                except Exception:
-                    pass
-                blocks[sym] = arm_post_stop_block(s_now)
+                if sold.get("ok"):
+                    open_by_sym.pop(sym, None)
+                    pos_state.pop(sym, None)
+                    s_now = float(prev.get("S") or 0)
+                    try:
+                        btc_df = await _ohlc("BTC/USD")
+                        sig_s = await signal_for_symbol(
+                            sym, frames={"4h": df, "btc_4h": btc_df}, now=now
+                        )
+                        s_now = float(sig_s.S) if sig_s.S == sig_s.S else s_now
+                    except Exception:
+                        pass
+                    blocks[sym] = arm_post_stop_block(s_now)
+                else:
+                    await self._crypto_alert(
+                        flags,
+                        kind="sell_failed_keep_state",
+                        symbol=sym,
+                        detail=str(sold.get("error") or sold.get("message") or sold),
+                    )
             else:
                 out["holds"].append(sym)
 
-        # Crypto sleeve mark for kill / pauses (10% of allocation from peak).
-        crypto_usd = sum(
-            float(t.entry_price or 0) * float(t.qty or 0) for t in open_by_sym.values()
-        )
+        out["last_evaluated_candle"] = last_eval_cursor
+        out["eval_history"] = eval_history[-6:]
+        out["missed_candles"] = missed_total
+        out["candles_behind"] = missed_total
+
+        # Mark-to-market + realized wealth (never cost). Selling a name must not stick kill.
+        crypto_usd = 0.0
+        for t in open_by_sym.values():
+            last_px = float((quotes.get(t.symbol) or {}).get("current_price") or 0) or float(
+                t.entry_price or 0
+            )
+            crypto_usd += last_px * float(t.qty or 0)
+        realized = 0.0
+        for sold in out["sells"]:
+            if not sold.get("ok"):
+                continue
+            try:
+                realized += float(sold.get("pnl_usd") or 0)
+            except (TypeError, ValueError):
+                pass
         eq = float(equity or desk_budget or 0)
         allocation = eq * MAX_CRYPTO_EQUITY_PCT / 100.0
         mark = await flags.get_json("crypto_strategy_a_risk")
-        peak = max(float(mark.get("peak_crypto_usd") or 0), crypto_usd)
+        realized += float(mark.get("realized_pnl_usd") or 0)
+        wealth = crypto_usd + realized
+        peak = max(float(mark.get("peak_wealth_usd") or mark.get("peak_crypto_usd") or 0), wealth)
         day = calendar_day_key()
         week = iso_week_key()
-        if mark.get("day_key") != day:
-            mark["day_key"] = day
-            mark["day_start_crypto"] = crypto_usd
-        if mark.get("week_key") != week:
-            mark["week_key"] = week
-            mark["week_start_crypto"] = crypto_usd
+        rolling_24h_start = float(mark.get("rolling_24h_wealth") or wealth)
+        rolling_7d_start = float(mark.get("rolling_7d_wealth") or wealth)
+        t24 = mark.get("rolling_24h_at")
+        t7 = mark.get("rolling_7d_at")
+        try:
+            if t24:
+                from datetime import datetime as _dt
+
+                age24 = (now - _dt.fromisoformat(str(t24).replace("Z", "+00:00"))).total_seconds()
+                if age24 > 24 * 3600:
+                    rolling_24h_start = wealth
+                    mark["rolling_24h_at"] = now.isoformat()
+            else:
+                mark["rolling_24h_at"] = now.isoformat()
+        except Exception:
+            mark["rolling_24h_at"] = now.isoformat()
+            rolling_24h_start = wealth
+        try:
+            if t7:
+                from datetime import datetime as _dt
+
+                age7 = (now - _dt.fromisoformat(str(t7).replace("Z", "+00:00"))).total_seconds()
+                if age7 > 7 * 24 * 3600:
+                    rolling_7d_start = wealth
+                    mark["rolling_7d_at"] = now.isoformat()
+            else:
+                mark["rolling_7d_at"] = now.isoformat()
+        except Exception:
+            mark["rolling_7d_at"] = now.isoformat()
+            rolling_7d_start = wealth
         day_pnl_pct = 0.0
         week_pnl_pct = 0.0
-        if eq > 0:
-            day_pnl_pct = (crypto_usd - float(mark.get("day_start_crypto") or crypto_usd)) / eq * 100.0
-            week_pnl_pct = (crypto_usd - float(mark.get("week_start_crypto") or crypto_usd)) / eq * 100.0
+        if allocation > 0:
+            day_pnl_pct = (wealth - rolling_24h_start) / allocation * 100.0
+            week_pnl_pct = (wealth - rolling_7d_start) / allocation * 100.0
+        from services.multiasset.crypto_risk import (
+            accum_brake_triggered,
+            loss_streak_pause,
+            wealth_drawdown_pct,
+        )
+
+        dd_pct = wealth_drawdown_pct(peak=peak, wealth=wealth, allocation=allocation)
+        mark["peak_wealth_usd"] = peak
         mark["peak_crypto_usd"] = peak
         mark["crypto_usd"] = crypto_usd
+        mark["realized_pnl_usd"] = realized
+        mark["wealth_usd"] = wealth
+        mark["dd_pct"] = round(dd_pct, 4)
         mark["day_pnl_pct"] = round(day_pnl_pct, 4)
         mark["week_pnl_pct"] = round(week_pnl_pct, 4)
+        mark["rolling_24h_wealth"] = rolling_24h_start
+        mark["rolling_7d_wealth"] = rolling_7d_start
         await flags.set_json("crypto_strategy_a_risk", mark)
         await flags.set_json(
             "crypto_strategy_a_daily_screen",
@@ -612,25 +818,43 @@ class MultiAssetAutopilotService:
         out["allocation_usd"] = round(allocation, 2)
 
         if kill_from_allocation_peak(
-            peak_crypto_usd=peak, crypto_usd=crypto_usd, allocation_usd=allocation
+            peak_crypto_usd=peak, crypto_usd=wealth, allocation_usd=allocation
         ):
             out["skipped"] = "crypto_kill_10pct_allocation"
             out["new_buys_blocked"] = True
-            await _persist_state()
-            return out
+            mark["kill_active"] = True
+            allow_buys = False
         paused, pause_why = daily_weekly_pause(day_pnl_pct=day_pnl_pct, week_pnl_pct=week_pnl_pct)
         if paused:
             out["buys_paused"] = pause_why
+            allow_buys = False
+        if accum_brake_triggered(
+            dd_pct, brake_pct=float(getattr(self._settings, "crypto_accum_brake_pct", 5.0) or 5.0)
+        ):
+            out["buys_paused"] = out.get("buys_paused") or f"accum_brake_{dd_pct:.2f}pct"
+            allow_buys = False
+        streak_paused, streak_why = loss_streak_pause(
+            mark.get("losses"),
+            now=now,
+            n=int(getattr(self._settings, "crypto_loss_streak_n", 3) or 3),
+            hours=float(getattr(self._settings, "crypto_loss_streak_pause_hours", 24) or 24),
+        )
+        if streak_paused:
+            out["buys_paused"] = streak_why
             allow_buys = False
 
         name_notional: dict[str, float] = {}
         name_risk: dict[str, float] = {}
         open_risk = 0.0
         for t in open_by_sym.values():
-            n = float(t.entry_price or 0) * float(t.qty or 0)
+            last_px = float((quotes.get(t.symbol) or {}).get("current_price") or 0) or float(
+                t.entry_price or 0
+            )
+            n = last_px * float(t.qty or 0)
+            stop_now = float((pos_state.get(t.symbol) or {}).get("stop_px") or t.stop_hint or 0)
             r = 0.0
-            if t.entry_price and t.stop_hint and t.qty:
-                r = max(0.0, (float(t.entry_price) - float(t.stop_hint)) * float(t.qty))
+            if last_px and stop_now and t.qty:
+                r = max(0.0, (last_px - stop_now) * float(t.qty))
             name_notional[t.symbol] = name_notional.get(t.symbol, 0.0) + n
             name_risk[t.symbol] = name_risk.get(t.symbol, 0.0) + r
             open_risk += r
@@ -638,6 +862,7 @@ class MultiAssetAutopilotService:
             FLAG_WEEKLY,
             adv_for_symbol,
             build_weekly_snapshot_from_daily,
+            corr_from_4h,
             corr_pairs_from_snapshot,
             fetch_alpaca_crypto_daily,
         )
@@ -655,9 +880,21 @@ class MultiAssetAutopilotService:
             else:
                 weekly["week_key"] = None
                 weekly["retry"] = True
+        frames_4h: dict[str, Any] = {}
+        for s in approved:
+            try:
+                frames_4h[s] = await _ohlc(s)
+            except Exception:
+                continue
+        corr4 = corr_from_4h(frames_4h)
+        if corr4:
+            weekly = dict(weekly or {})
+            weekly["corr"] = corr4
+            weekly["corr_source"] = "4h_90d"
         out["weekly_market"] = {
             "week_key": weekly.get("week_key"),
             "source": weekly.get("source"),
+            "corr_source": weekly.get("corr_source") or "daily_fallback",
             "adv_symbols": list((weekly.get("adv_usd") or {}).keys()),
             "rejected": weekly.get("rejected") or [],
         }
@@ -688,106 +925,160 @@ class MultiAssetAutopilotService:
             membership=membership,
         )
 
-        # Rebalance / S=0 flatten on open names (no TP).
-        if allow_buys:
-            for sym, trade in list(open_by_sym.items()):
-                try:
-                    sig = await signal_for_symbol(sym)
-                except Exception as exc:
-                    out["scanned"].append({"symbol": sym, "skip": f"signal_failed:{exc}"})
-                    continue
-                blocks[sym] = update_post_stop_block(blocks.get(sym), sig.S)
-                st = dict(pos_state.get(sym) or {})
-                st["S"] = sig.S
-                pos_state[sym] = st
-                last = float((quotes.get(sym) or {}).get("current_price") or 0) or float(trade.entry_price or 0)
-                if last <= 0:
-                    continue
-                current_n = float(trade.entry_price or 0) * float(trade.qty or 0)
-                name_cap, _ = per_name_caps(sym, eq)
-                target = vol_weight_notional(s=sig.S, vol_30d=sig.vol_30d, name_cap_notional=name_cap)
-                prev_s = st.get("last_S")
-                if sig.S <= 1e-12:
-                    sold = await self._crypto_market_sell(
-                        sym, trade, dry_run=dry_run, actor=actor, reason="S_zero_flatten"
-                    )
-                    out["sells"].append(sold)
+        # Exits (S=0 / rebalance-down) always run — last closed bar only.
+        # Rebalance-up and new entries: last bar + allow_buys. Never replay recovered signals.
+        pending_rebalance_up: list[tuple[str, Any, Any, float, float]] = []
+        for sym, trade in list(open_by_sym.items()):
+            try:
+                sig = await signal_for_symbol(
+                    sym,
+                    frames={"4h": frames_4h.get(sym), "btc_4h": frames_4h.get("BTC/USD")},
+                    now=now,
+                )
+            except Exception as exc:
+                out["scanned"].append({"symbol": sym, "skip": f"signal_failed:{exc}"})
+                continue
+            if not (sig.extras or {}).get("data_ok", True) or (sig.S != sig.S):
+                await self._crypto_alert(
+                    flags, kind="data_noop", symbol=sym, detail="signal_data_insufficient_no_flatten"
+                )
+                continue
+            blocks[sym] = update_post_stop_block(blocks.get(sym), sig.S)
+            st = dict(pos_state.get(sym) or {})
+            st["S"] = sig.S
+            pos_state[sym] = st
+            last = float((quotes.get(sym) or {}).get("current_price") or 0) or float(trade.entry_price or 0)
+            if last <= 0:
+                continue
+            current_n = last * float(trade.qty or 0)
+            name_cap, _ = per_name_caps(sym, eq)
+            target = vol_weight_notional(s=sig.S, vol_30d=sig.vol_30d, name_cap_notional=name_cap)
+            prev_s = st.get("last_S")
+            candle_open = (sig.extras or {}).get("candle_ts") or last_eval_cursor
+            if sig.S <= 1e-12:
+                cid = idempotency_key(sym, candle_open, "s0")
+                sold = await self._crypto_market_sell(
+                    sym,
+                    trade,
+                    dry_run=dry_run,
+                    actor=actor,
+                    reason="S_zero_flatten",
+                    client_order_id=cid,
+                )
+                out["sells"].append(sold)
+                if sold.get("ok"):
                     open_by_sym.pop(sym, None)
                     pos_state.pop(sym, None)
-                    continue
-                if not should_rebalance(current_n, target, prev_s, sig.S):
-                    st["last_S"] = sig.S
-                    pos_state[sym] = st
-                    continue
-                delta = target - current_n
+                else:
+                    await self._crypto_alert(
+                        flags, kind="sell_failed_keep_state", symbol=sym, detail=str(sold)
+                    )
+                continue
+            if not should_rebalance(current_n, target, prev_s, sig.S):
                 st["last_S"] = sig.S
                 pos_state[sym] = st
-                if delta < -1e-6 and abs(delta) >= 10:
-                    last_px = last
-                    sell_qty = abs(delta) / last_px if last_px > 0 else float(trade.qty or 0)
-                    full_qty = float(trade.qty or 0)
-                    flatten = sell_qty >= full_qty * 0.98 or (full_qty - sell_qty) * last_px < 10
-                    sold = await self._crypto_market_sell(
-                        sym,
-                        trade,
-                        dry_run=dry_run,
-                        actor=actor,
-                        reason="rebalance_down",
-                        qty=None if flatten else sell_qty,
+                continue
+            delta = target - current_n
+            st["last_S"] = sig.S
+            pos_state[sym] = st
+            if delta < -1e-6 and abs(delta) >= 10:
+                last_px = last
+                sell_qty = abs(delta) / last_px if last_px > 0 else float(trade.qty or 0)
+                full_qty = float(trade.qty or 0)
+                flatten = sell_qty >= full_qty * 0.98 or (full_qty - sell_qty) * last_px < 10
+                cid = idempotency_key(sym, candle_open, "rebdown")
+                sold = await self._crypto_market_sell(
+                    sym,
+                    trade,
+                    dry_run=dry_run,
+                    actor=actor,
+                    reason="rebalance_down",
+                    qty=None if flatten else sell_qty,
+                    client_order_id=cid,
+                )
+                out["sells"].append({"symbol": sym, "reason": "rebalance_down", "ok": sold.get("ok")})
+                if sold.get("ok") and flatten:
+                    open_by_sym.pop(sym, None)
+                    pos_state.pop(sym, None)
+                elif sold.get("ok"):
+                    book.crypto_notional = max(0.0, book.crypto_notional + delta)
+                else:
+                    await self._crypto_alert(
+                        flags, kind="sell_failed_keep_state", symbol=sym, detail=str(sold)
                     )
-                    out["sells"].append({"symbol": sym, "reason": "rebalance_down", "ok": sold.get("ok")})
-                    if flatten:
-                        open_by_sym.pop(sym, None)
-                        pos_state.pop(sym, None)
+            elif delta > 10:
+                pending_rebalance_up.append((sym, trade, sig, last, delta))
+
+        if allow_buys:
+            for sym, trade, sig, last, delta in pending_rebalance_up:
+                st = dict(pos_state.get(sym) or {})
+                stop_px = float(st.get("stop_px") or sig.stop_px or 0)
+                if stop_px <= 0 or not stop_is_tradable(last, stop_px):
+                    continue
+                med = median_spread_bps(sym, elig)
+                q = quotes.get(sym) or {}
+                live = spread_bps(q.get("bid"), q.get("ask"), last)
+                ok_sp, why_sp = entry_spread_ok(sym, live_bps=live, median_bps=med)
+                if not ok_sp:
+                    out["scanned"].append({"symbol": sym, "skip": why_sp})
+                    continue
+                adv_rebal, why_rebal = adv_for_symbol(weekly, sym)
+                if adv_rebal is None:
+                    out["scanned"].append({"symbol": sym, "skip": why_rebal or "history_lt_30d"})
+                    continue
+                n_trades = await self._tracker.count_symbol_trades(desk="crypto", symbol=sym)
+                add_risk = max(0.0, (last - stop_px) * (delta / last)) if last > 0 else 0.0
+                book.open_risk_usd += add_risk
+                add, info = size_crypto_order(
+                    symbol=sym,
+                    equity=eq,
+                    entry=last,
+                    stop=stop_px,
+                    book=book,
+                    n_trades=n_trades,
+                    median_adv_usd=adv_rebal,
+                    groups=groups,
+                    max_positions=max_pos + 1,
+                    s_signal=sig.S,
+                    vol_30d=sig.vol_30d,
+                    live_spread_bps=live,
+                )
+                add = min(add, delta)
+                if add < 50.0 - 1e-9:
+                    book.open_risk_usd = max(0.0, book.open_risk_usd - add_risk)
+                    out["scanned"].append({"symbol": sym, "skip": info.get("reason") or "rebalance_lt_50"})
+                    continue
+                if add <= 0:
+                    book.open_risk_usd = max(0.0, book.open_risk_usd - add_risk)
+                    out["scanned"].append({"symbol": sym, "skip": info.get("reason") or "rebalance_too_small"})
+                    continue
+                candle_open = (sig.extras or {}).get("candle_ts") or last_eval_cursor
+                req = MultiAssetOrderRequest(
+                    desk="crypto",
+                    symbol=sym,
+                    side="buy",
+                    notional=add,
+                    dry_run=dry_run,
+                    confirm=not dry_run,
+                    note=f"strategy_a:rebalance:{actor}",
+                    client_order_id=idempotency_key(sym, candle_open, "rebup"),
+                )
+                try:
+                    res = await self._desk.execute(req)
+                    out["buys"].append({"symbol": sym, "notional": add, "ok": res.ok, "reason": "rebalance_up"})
+                    if res.ok:
+                        book.crypto_notional += add
+                        book.name_notional[sym] = book.name_notional.get(sym, 0.0) + add
                     else:
-                        book.crypto_notional = max(0.0, book.crypto_notional + delta)
-                elif delta > 10:
-                    stop_px = float(st.get("stop_px") or sig.stop_px or 0)
-                    if stop_px <= 0 or not stop_is_tradable(last, stop_px):
-                        continue
-                    adv_rebal, why_rebal = adv_for_symbol(weekly, sym)
-                    if adv_rebal is None:
-                        out["scanned"].append({"symbol": sym, "skip": why_rebal or "history_lt_30d"})
-                        continue
-                    n_trades = await self._tracker.count_symbol_trades(desk="crypto", symbol=sym)
-                    add, info = size_crypto_order(
-                        symbol=sym,
-                        equity=eq,
-                        entry=last,
-                        stop=stop_px,
-                        book=book,
-                        n_trades=n_trades,
-                        median_adv_usd=adv_rebal,
-                        groups=groups,
-                        max_positions=max_pos + 1,
-                        s_signal=sig.S,
-                        vol_30d=sig.vol_30d,
-                    )
-                    add = min(add, delta)
-                    if add <= 0:
-                        out["scanned"].append({"symbol": sym, "skip": info.get("reason") or "rebalance_too_small"})
-                        continue
-                    req = MultiAssetOrderRequest(
-                        desk="crypto",
-                        symbol=sym,
-                        side="buy",
-                        notional=add,
-                        dry_run=dry_run,
-                        confirm=not dry_run,
-                        note=f"strategy_a:rebalance:{actor}",
-                    )
-                    try:
-                        res = await self._desk.execute(req)
-                        out["buys"].append({"symbol": sym, "notional": add, "ok": res.ok, "reason": "rebalance_up"})
-                        if res.ok:
-                            book.crypto_notional += add
-                            book.name_notional[sym] = book.name_notional.get(sym, 0.0) + add
-                    except Exception as exc:
-                        out["buys"].append({"symbol": sym, "error": str(exc), "reason": "rebalance_up"})
+                        book.open_risk_usd = max(0.0, book.open_risk_usd - add_risk)
+                except Exception as exc:
+                    book.open_risk_usd = max(0.0, book.open_risk_usd - add_risk)
+                    out["buys"].append({"symbol": sym, "error": str(exc), "reason": "rebalance_up"})
 
         if not allow_buys:
             out["reason"] = "new_buys_blocked"
             await _persist_state()
+            await release_cycle_lease(flags, owner, session=self._session)
             return out
 
         for row in rows:
@@ -853,6 +1144,9 @@ class MultiAssetAutopilotService:
                 dry_run=dry_run,
                 confirm=not dry_run,
                 note=f"strategy_a:{sig.reason}:{actor}",
+                client_order_id=idempotency_key(
+                    sym, (sig.extras or {}).get("candle_ts") or last_eval_cursor, "buy"
+                ),
             )
             try:
                 res = await self._desk.execute(req)
@@ -913,7 +1207,34 @@ class MultiAssetAutopilotService:
         await _persist_state()
         if not out["buys"] and not out["sells"]:
             out["reason"] = out.get("reason") or "no_buy_signal"
+        await release_cycle_lease(flags, owner, session=self._session)
         return out
+
+    async def crypto_catchup_on_wake(self, *, actor: str = "wake") -> dict[str, Any]:
+        """On wake / last-cycle GET: catch-up closed 4h bars (exits only)."""
+        if not getattr(self._settings, "crypto_strategy_a_enabled", True):
+            return {"skipped": "strategy_a_disabled"}
+        if not getattr(self._settings, "multiasset_beta_enabled", False):
+            return {"skipped": "multiasset_beta_disabled"}
+        equity = 0.0
+        cash = 0.0
+        try:
+            snap = await self._capital_snapshot(offhours_crypto=True)
+            equity = float(snap.get("equity_usd") or 0)
+            cash = float(snap.get("cash_usd") or 0)
+        except Exception:
+            pass
+        dry = bool(getattr(self._settings, "multiasset_autopilot_dry_run", False))
+        if not dry and not self._broker.is_configured():
+            dry = True
+        return await self._run_crypto_strategy_a(
+            desk_budget=0.0,
+            dry_run=dry,
+            allow_buys=False,
+            equity=equity,
+            cash=cash,
+            actor=actor,
+        )
 
     async def _run_desk(
         self,

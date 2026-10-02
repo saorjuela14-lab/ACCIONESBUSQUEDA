@@ -78,6 +78,7 @@ class MultiAssetOrderRequest(BaseModel):
     dry_run: bool = False
     confirm: bool = False
     note: str = ""
+    client_order_id: str | None = None
 
 
 class MultiAssetOrderResult(BaseModel):
