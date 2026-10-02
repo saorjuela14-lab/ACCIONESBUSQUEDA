@@ -88,6 +88,15 @@ class MultiAssetAutopilotService:
         out["leverage"] = 1.0
         out["paper"] = True
 
+        if not dry:
+            try:
+                from services.multiasset.paper_ops import cancel_stale_paper_market_buys
+
+                out["stale_market_buys"] = await cancel_stale_paper_market_buys(self._broker)
+            except Exception as exc:
+                logger.warning("multiasset.stale_buys.failed", error=str(exc))
+                out["stale_market_buys"] = {"skipped": "error", "error": str(exc), "cancelled": []}
+
         records = {}
         try:
             for d in ("gold", "forex", "crypto"):

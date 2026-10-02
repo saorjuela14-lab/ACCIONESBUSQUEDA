@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config.settings import get_settings
 from database.engine import get_session
+from apis.deps import OrgScope, get_org_scope
 from domain.ops import (
     AuditEvent,
     AutoExecutePolicy,
@@ -254,6 +255,67 @@ async def last_autopilot_cycle(session: AsyncSession = Depends(get_session)) -> 
     """Read-only snapshot of the last firm Autopilot cycle (hora, resultado, mensaje)."""
     data = await OpsFlagRepository(session).get_json("firm_autopilot_last_cycle")
     return data or {"at": None, "result": None, "message": "sin ciclo registrado"}
+
+
+@router.get("/ops/multiasset/activities")
+async def paper_multiasset_activities(
+    types: str = Query(default="FILL,CFEE", description="Alpaca activity types, comma-separated"),
+    after: str | None = Query(
+        default=None,
+        description=(
+            "Exclusive lower bound on created_at (after). "
+            "YYYY-MM-DD becomes 00:00:00Z; full timestamps are normalized to UTC Z."
+        ),
+    ),
+    until: str | None = Query(
+        default=None,
+        description=(
+            "Exclusive upper bound on created_at (before). "
+            "YYYY-MM-DD becomes the next UTC midnight so the requested day is included. "
+            "CFEE extends until one extra UTC day (until_effective)."
+        ),
+    ),
+    page_token: str | None = Query(default=None, description="Alpaca page_token (last activity id)"),
+    direction: str = Query(default="desc", description="asc | desc"),
+    page_size: int = Query(default=100, ge=1, le=100),
+    scope: OrgScope = Depends(get_org_scope),
+) -> dict:
+    """Read-only FILL/CFEE from the Multi-Asset PAPER account. Mesa session required."""
+    scope.require_desk()
+    from services.multiasset.paper_ops import normalize_activity_bound
+
+    for label, value in (("after", after), ("until", until)):
+        if value:
+            try:
+                normalize_activity_bound(value, kind=label)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{label} debe ser YYYY-MM-DD o un timestamp ISO UTC",
+                ) from exc
+    if (direction or "").strip().lower() not in {"asc", "desc"}:
+        raise HTTPException(status_code=400, detail="direction debe ser asc o desc")
+    from services.multiasset.paper_broker import MultiAssetNotPaperError, get_beta_broker_provider
+    from services.multiasset.paper_ops import list_paper_activities
+
+    try:
+        broker = get_beta_broker_provider()
+    except MultiAssetNotPaperError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    try:
+        return await list_paper_activities(
+            broker,
+            types=types,
+            after=after,
+            until=until,
+            page_size=page_size,
+            page_token=page_token,
+            direction=direction,
+        )
+    except MultiAssetNotPaperError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/ops/autopilot/run")

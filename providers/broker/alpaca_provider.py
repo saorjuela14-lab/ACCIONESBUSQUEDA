@@ -230,6 +230,8 @@ class AlpacaBrokerProvider(BrokerProvider):
         page_token: str | None = None,
         direction: str = "desc",
         category: str | None = None,
+        after: str | None = None,
+        until: str | None = None,
     ) -> list[dict[str, Any]]:
         """GET /v2/account/activities or /v2/account/activities/{type}."""
         params: dict[str, Any] = {
@@ -250,6 +252,10 @@ class AlpacaBrokerProvider(BrokerProvider):
                 params["activity_types"] = ",".join(types)
         if page_token:
             params["page_token"] = str(page_token)
+        if after:
+            params["after"] = str(after)
+        if until:
+            params["until"] = str(until)
         data = await self._request("GET", path, params=params)
         if isinstance(data, list):
             return data
