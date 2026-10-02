@@ -1,0 +1,49 @@
+{
+  "version": "2026-10-01.v1-seed",
+  "strategy": "A",
+  "generated_by": "mesa-seed",
+  "runtime_must_not_recompute": true,
+  "combo": 9,
+  "params": {
+    "timeframe": "4h",
+    "donchian_L": [120, 240, 480],
+    "chandelier_atr_mult": 8,
+    "btc_sma_4h_bars": 1200,
+    "vol_target": 0.25,
+    "vol_lookback_days": 30,
+    "rebalance_dev": 0.20,
+    "runtime_reads_hardcoded_not_this_block": true
+  },
+  "note": "Lista inicial BTC/ETH mientras Estrategia entrega el archivo OOS. El código solo LEE esta lista; no recalcula el gate con jul2024–sep2026. Combo #9 hardcoded. Alpaca paper no mide bien los gaps; la protección real es el stop al cierre de cada vela 4h.",
+  "selection_period": {"start": "2024-07-01", "end": "2025-09-30"},
+  "validation_period": {"start": "2025-10-01", "end": "2026-09-30"},
+  "multiple_testing_correction": "bonferroni",
+  "survivorship_bias": "El universo de validación solo incluye pares que Alpaca cotiza hoy. No reconstruye delistados ni el libro completo de 2024–2026; eso infla expectancy de supervivientes y debe documentarse en el informe de Estrategia.",
+  "costs": {
+    "spread": "per_symbol_measured_or_estimated",
+    "fixed_slippage": false,
+    "alpaca_maker_bps": 15,
+    "alpaca_taker_bps": 25,
+    "min_oos_trades": 20,
+    "expectancy_rule": "> 0 after per-symbol spread + Alpaca taker 0.15%/0.25%. El runtime NO recalcula este OOS.",
+    "comment": "Usar spread mediano por símbolo (medido o estimado). No slippage fijo."
+  },
+  "approved": [
+    {
+      "symbol": "BTC/USD",
+      "expectancy": null,
+      "n_trades": null,
+      "median_spread_bps": 8.0,
+      "median_adv_usd": 25000000000,
+      "status": "seed_pending_strategy_backtest"
+    },
+    {
+      "symbol": "ETH/USD",
+      "expectancy": null,
+      "n_trades": null,
+      "median_spread_bps": 8.0,
+      "median_adv_usd": 8000000000,
+      "status": "seed_pending_strategy_backtest"
+    }
+  ]
+}

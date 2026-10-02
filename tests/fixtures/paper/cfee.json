@@ -1,0 +1,130 @@
+{
+ "meta": [
+  {
+   "paper": true,
+   "host": "paper-api.alpaca.markets",
+   "types": "CFEE",
+   "after": "2026-07-01",
+   "until": null,
+   "until_effective": null,
+   "direction": "asc",
+   "page_token": null,
+   "page_size": 100,
+   "count": 10,
+   "truncated": false,
+   "next_page_token": null
+  }
+ ],
+ "items": [
+  {
+   "id": "20260817000000000::3d5a0d3b-1ae4-4004-bf03-ef151c3da03c",
+   "activity_type": "CFEE",
+   "date": "2026-08-17",
+   "symbol": "BONK/USD",
+   "qty": "-177671.835708299",
+   "price": "0",
+   "net_amount": "0",
+   "description": "Coin Pair Transaction Fee (Non USD)",
+   "status": "executed"
+  },
+  {
+   "id": "20260817000000000::460542d2-096f-4307-bd1a-db17e02cbebc",
+   "activity_type": "CFEE",
+   "date": "2026-08-17",
+   "symbol": "ARB/USD",
+   "qty": "-4.770794896",
+   "price": "0.0751",
+   "net_amount": "0",
+   "description": "Coin Pair Transaction Fee (Non USD)",
+   "status": "executed"
+  },
+  {
+   "id": "20260817000000000::73f8b7b2-f44b-4787-b4d7-5d6be3ffc94b",
+   "activity_type": "CFEE",
+   "date": "2026-08-17",
+   "symbol": "XTZ/USD",
+   "qty": "-1.70688448",
+   "price": "0.1992",
+   "net_amount": "0",
+   "description": "Coin Pair Transaction Fee (Non USD)",
+   "status": "executed"
+  },
+  {
+   "id": "20260817000000000::7707d6e6-30e4-454b-a149-931abab9477e",
+   "activity_type": "CFEE",
+   "date": "2026-08-17",
+   "symbol": "BTC/USD",
+   "qty": "-0.000002752",
+   "price": "64326.53",
+   "net_amount": "0",
+   "description": "Coin Pair Transaction Fee (Non USD)",
+   "status": "executed"
+  },
+  {
+   "id": "20260817000000000::83758018-5bf2-44c2-8355-4eb18ed362b9",
+   "activity_type": "CFEE",
+   "date": "2026-08-17",
+   "symbol": "SUSHI/USD",
+   "qty": "-2.2308655",
+   "price": "0.1617",
+   "net_amount": "0",
+   "description": "Coin Pair Transaction Fee (Non USD)",
+   "status": "executed"
+  },
+  {
+   "id": "20260817000000000::a63c08f8-79e7-4df6-a267-e8c9f21e4e46",
+   "activity_type": "CFEE",
+   "date": "2026-08-17",
+   "symbol": "BCH/USD",
+   "qty": "-0.001684489",
+   "price": "204.19",
+   "net_amount": "0",
+   "description": "Coin Pair Transaction Fee (Non USD)",
+   "status": "executed"
+  },
+  {
+   "id": "20260817000000000::aeda2029-23ad-47e3-9211-ed4d32a82958",
+   "activity_type": "CFEE",
+   "date": "2026-08-17",
+   "symbol": "ETH/USD",
+   "qty": "-0.000169252",
+   "price": "1904",
+   "net_amount": "0",
+   "description": "Coin Pair Transaction Fee (Non USD)",
+   "status": "executed"
+  },
+  {
+   "id": "20260817000000000::c393fbd7-f899-4fe7-8afd-e59c97b29ca4",
+   "activity_type": "CFEE",
+   "date": "2026-08-17",
+   "symbol": "DOGE/USD",
+   "qty": "-5.628784013",
+   "price": "0.0702",
+   "net_amount": "0",
+   "description": "Coin Pair Transaction Fee (Non USD)",
+   "status": "executed"
+  },
+  {
+   "id": "20260817000000000::cc1b55c9-8405-4a84-8234-9c7e89c45ba5",
+   "activity_type": "CFEE",
+   "date": "2026-08-17",
+   "symbol": "SOL/USD",
+   "qty": "-0.005341126",
+   "price": "75.69",
+   "net_amount": "0",
+   "description": "Coin Pair Transaction Fee (Non USD)",
+   "status": "executed"
+  },
+  {
+   "id": "20260818000000000::b6bb97fa-718f-4fe3-a3e9-492ece9ee95c",
+   "activity_type": "CFEE",
+   "date": "2026-08-18",
+   "symbol": "BAT/USD",
+   "qty": "-0.997124473",
+   "price": "0.0595",
+   "net_amount": "0",
+   "description": "Coin Pair Transaction Fee (Non USD)",
+   "status": "executed"
+  }
+ ]
+}

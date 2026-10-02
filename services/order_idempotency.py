@@ -351,3 +351,26 @@ async def bump_attempt(flags: Any, slot: str) -> int:
         return max(1, int(row[0]))
     current = await read_attempt(flags, slot)
     return await persist_attempt(flags, slot, current + 1)
+
+
+async def lookup_working_stop(broker: Any, symbol: str) -> Any | None:
+    """status=all + nested (provider) so bracket 'held' legs are visible."""
+    if broker is None:
+        return None
+    try:
+        orders = await broker.list_orders(status="all", limit=200)
+    except Exception as exc:
+        logger.warning("order_id.stop_list_all_failed", symbol=symbol, error=str(exc))
+        raise
+    want = (symbol or "").upper().replace("/", "").replace("-", "")
+    for od in orders or []:
+        if isinstance(od, dict):
+            raw_sym = str(od.get("symbol") or "")
+        else:
+            raw_sym = str(getattr(od, "symbol", "") or "")
+        key = raw_sym.upper().replace("/", "").replace("-", "")
+        if key != want and not key.endswith(want):
+            continue
+        if order_is_live_stop(od):
+            return od
+    return None
