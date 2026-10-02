@@ -255,7 +255,7 @@ class AlpacaOrderService:
                         return od
                 pages += 1
                 token = getattr(self._broker, "last_next_page_token", None) or None
-                if not token or len(orders) < 200:
+                if not token:
                     break
         except Exception as exc:
             logger.warning("broker.stop_list_all_failed", symbol=sym, error=str(exc))
