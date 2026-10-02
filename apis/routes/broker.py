@@ -129,7 +129,7 @@ async def close_all_broker_positions(
 
 @router.get("/broker/orders", response_model=list[BrokerOrderResult])
 async def broker_orders(
-    status: str = Query(default="open", description="open | closed | all"),
+    status: str = Query(default="all", description="open | closed | all"),
     limit: int = Query(default=50, ge=1, le=500),
 ) -> list[BrokerOrderResult]:
     svc = _svc()

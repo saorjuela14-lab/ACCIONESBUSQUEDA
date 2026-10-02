@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from typing import Any
 
 from config.settings import get_settings
 from domain.broker import ExecuteLine, ExecuteOrdersRequest
@@ -115,7 +116,13 @@ class AutoExecuteService:
             return True, "live via AUTO_EXECUTE_LIVE (promotion flag ausente)"
         return True, reason
 
-    async def run_from_picks(self, picks: list, *, actor: str = "scheduler") -> dict:
+    async def run_from_picks(
+        self,
+        picks: list,
+        *,
+        actor: str = "scheduler",
+        entry_lease_ok: Any = None,
+    ) -> dict:
         ok, reason = await self.can_auto_trade_async()
         if not ok:
             logger.info("auto_execute.skip", reason=reason)
@@ -135,6 +142,12 @@ class AutoExecuteService:
         )
         if not entries_ok:
             return {"skipped": True, "reason": entries_why}
+        if not self._broker.paper:
+            from services.deposited_capital_service import get_deposited_base
+
+            base_gate = await get_deposited_base()
+            if not base_gate.buy_allowed:
+                return {"skipped": True, "reason": "deposited_base_missing"}
 
         remaining = int(getattr(self._settings, "live_max_entries_per_day", 1) or 1)
         flags = None
@@ -154,6 +167,7 @@ class AutoExecuteService:
                 return {"skipped": True, "reason": "max_1_entry_per_day"}
         except Exception as exc:
             logger.warning("auto_execute.entry_budget_failed", error=str(exc))
+            return {"skipped": True, "reason": "entry_budget_read_failed"}
 
         # Risk desk OK
         if self.policy().require_risk_desk_ok:
@@ -205,6 +219,7 @@ class AutoExecuteService:
                 }
         except Exception as exc:
             logger.warning("auto_execute.cooldown_check_failed", error=str(exc))
+            return {"skipped": True, "reason": "cooldown_check_failed"}
 
         max_n = float(self._settings.auto_execute_max_notional)
         cash = 0.0
@@ -216,9 +231,9 @@ class AutoExecuteService:
         except Exception as exc:
             logger.warning("auto_execute.account_failed", error=str(exc))
 
-        from services.deposited_capital_service import resolve_trading_base
+        from services.deposited_capital_service import get_deposited_base
 
-        base_snap = await resolve_trading_base(equity=equity if equity > 0 else None)
+        base_snap = await get_deposited_base()
         capital_base = base_snap.amount if base_snap.amount and base_snap.amount > 0 else None
         if capital_base is None:
             return {"skipped": True, "reason": "no_trading_base"}
@@ -290,13 +305,16 @@ class AutoExecuteService:
                 from services.live_safety import FLAG_STOP_1R, buy_thesis_blocked
 
                 stop_flag = await OpsFlagRepository(self._session).get_json(FLAG_STOP_1R)
-                blocked_1r, why_1r = buy_thesis_blocked(stop_flag, str(ticker))
+                thesis_at = getattr(pick, "thesis_at", None) or getattr(pick, "generated_at", None)
+                blocked_1r, why_1r = buy_thesis_blocked(
+                    stop_flag, str(ticker), thesis_at=thesis_at
+                )
                 if blocked_1r:
                     skipped_avoid += 1
                     logger.info("auto_execute.skip_stop_1r", ticker=ticker, reason=why_1r)
                     continue
             except Exception:
-                pass
+                return {"skipped": True, "reason": "stop_1r_check_failed"}
             price_f = float(price)
             stop = getattr(pick, "stop_loss", None)
             if stop is None or float(stop) <= 0 or float(stop) >= price_f:
@@ -319,6 +337,14 @@ class AutoExecuteService:
             if shares < 1:
                 skipped_risk += 1
                 continue
+            from services.live_cycle_lock import allocate_live_client_order_id
+
+            cid, _attempt = await allocate_live_client_order_id(
+                flags,
+                str(ticker),
+                "buy",
+                broker=self._broker,
+            )
             lines.append(
                 ExecuteLine(
                     ticker=str(ticker).upper(),
@@ -327,10 +353,21 @@ class AutoExecuteService:
                     order_type="market",
                     stop_loss=stop,
                     take_profit=tp,
+                    client_order_id=cid,
+                    source_tag="autopilot",
                 )
             )
             if len(lines) >= remaining:
                 break
+        if entry_lease_ok is not None:
+            try:
+                still = await entry_lease_ok()
+            except Exception as exc:
+                logger.warning("auto_execute.lease_check_failed", error=str(exc))
+                still = False
+            if not still:
+                return {"skipped": True, "reason": "lease_lost_mid_cycle"}
+
         if not lines:
             if skipped_avoid and not skipped_no_committee and not skipped_risk:
                 reason_out = "avoid_or_already_open"
@@ -342,12 +379,30 @@ class AutoExecuteService:
                 reason_out = "no_affordable_lines"
             return {"skipped": True, "reason": reason_out}
 
+        reserved = False
+        if not self._broker.paper:
+            from services.live_safety import reserve_entry_slots
+
+            flags = flags or OpsFlagRepository(self._session)
+            ok_res, why_res, _ = await reserve_entry_slots(
+                flags,
+                n=len(lines),
+                max_entries=int(getattr(self._settings, "live_max_entries_per_day", 1) or 1),
+                symbols=[ln.ticker for ln in lines],
+                session=self._session,
+            )
+            if not ok_res:
+                return {"skipped": True, "reason": why_res or "entry_slot_reserve_failed"}
+            reserved = True
+
         result = await self._broker.execute(
             ExecuteOrdersRequest(
                 lines=lines,
                 dry_run=False,
                 confirm_live=not self._broker.paper,
-            )
+            ),
+            skip_daily_cap=reserved,
+            allow_entry=entry_lease_ok,
         )
         try:
             from database.repositories.ops_repository import OpsFlagRepository
@@ -360,7 +415,8 @@ class AutoExecuteService:
             )
 
             flags = OpsFlagRepository(self._session)
-            if result.submitted:
+            # LIVE slots were reserved atomically before submit — do not double-count.
+            if result.submitted and not reserved:
                 day_flag = await flags.get_json(FLAG_ENTRY_DAY)
                 _, _, day_flag = entry_day_allowed(
                     day_flag,

@@ -288,14 +288,34 @@ async def test_autopilot_kill_still_runs_lifecycle():
     flags.get_json = AsyncMock(return_value={})
     flags.set_json = AsyncMock()
 
+    class _HB:
+        lost = False
+
+        async def start(self) -> None:
+            return None
+
+        async def stop(self) -> None:
+            return None
+
+        async def still_mine(self) -> bool:
+            return True
+
     with patch("services.autopilot_service.KillSwitchService") as KS, \
          patch("services.autopilot_service.ReconcileService", return_value=recon), \
          patch("services.autopilot_service.PositionLifecycleService", return_value=life), \
          patch("services.autopilot_service.OpsFlagRepository", return_value=flags), \
+         patch("services.live_cycle_lock.acquire_lease", AsyncMock(return_value=(True, {"backend": "desk_lease"}))), \
+         patch("services.live_cycle_lock.release_lease", AsyncMock()), \
+         patch("services.db_lease.LeaseHeartbeat", return_value=_HB()), \
+         patch(
+             "services.db_lease.acquire_lease",
+             AsyncMock(return_value=SimpleNamespace(acquired=True, owner="t", misses_consecutive=0)),
+         ), \
+         patch("services.db_lease.release_lease", AsyncMock()), \
          patch("services.live_safety.arm_deposited_brake_if_needed", AsyncMock(return_value=None)), \
          patch(
-             "services.deposited_capital_service.resolve_trading_base",
-             AsyncMock(return_value=SimpleNamespace(amount=21.76)),
+             "services.deposited_capital_service.get_deposited_base",
+             AsyncMock(return_value=SimpleNamespace(amount=21.76, buy_allowed=True, source="env:DEPOSITED_BASE_USD", warnings=())),
          ), \
          patch("services.intraday_flat_service.IntradayFlatService") as Flat, \
          patch("services.risk_policy_service.RiskPolicyService") as Risk, \
@@ -430,7 +450,11 @@ def test_stop_1r_blocks_buy_thesis_next_session():
     blocked, _ = buy_thesis_blocked(flag, "SNAP", today="2026-10-03")
     assert blocked is False
     assert "SNAP" in blocked_buy_symbols(flag, today="2026-10-02")
-    assert buy_thesis_blocked(flag, "AAPL", today="2026-10-02")[0] is False
+    # E3: ≥1R freezes the whole session, not just the stopped symbol.
+    assert buy_thesis_blocked(flag, "AAPL", today="2026-10-02")[0] is True
+    flag["at"] = "2026-10-01T15:00:00-04:00"
+    later = datetime(2026, 10, 1, 16, 0, tzinfo=US_EASTERN)
+    assert buy_thesis_blocked(flag, "AAPL", today="2026-10-01", thesis_at=later)[0] is False
 
 
 def test_kill_switch_request_flatten_defaults_false():
@@ -452,7 +476,11 @@ async def test_submit_one_live_buy_blocked_sell_allowed(monkeypatch):
     inner.submit_order = AsyncMock(
         return_value={"id": "s1", "status": "accepted", "symbol": "SNAP", "side": "sell", "qty": "1"}
     )
+    inner.get_positions = AsyncMock(
+        return_value=[SimpleNamespace(symbol="SNAP", qty=1.0)]
+    )
     svc = AlpacaOrderService(broker=inner)
+    svc.get_positions = AsyncMock(return_value=[SimpleNamespace(symbol="SNAP", qty=1.0)])
     monkeypatch.setenv("LIVE_ENTRIES_ENABLED", "false")
     from config.settings import get_settings
 

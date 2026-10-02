@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from config.settings import get_settings
 from database.repositories.ops_repository import PositionMandateRepository
@@ -80,7 +81,30 @@ class PositionLifecycleService:
             if result is None:
                 return None
             if result.error:
+                from services.order_idempotency import is_insufficient_qty_error
+
+                if is_insufficient_qty_error(result.error):
+                    try:
+                        held = await self._broker.find_working_stop(mandate.symbol)
+                    except Exception:
+                        held = None
+                    if held:
+                        return (
+                            f"broker stop held intact id={held.id or '?'} "
+                            f"status={held.status} (insufficient qty ignored)"
+                        )
+                    return (
+                        "broker stop insufficient qty; recheck empty — "
+                        "posición intacta, no se cierra"
+                    )
                 return f"broker stop fail: {result.error}"
+            from services.order_idempotency import order_is_live_stop
+
+            if not order_is_live_stop(result):
+                return (
+                    f"broker stop not live: {result.status or '?'} "
+                    f"id={result.id or '?'}"
+                )
             return f"broker GTC stop @{stop:.4f} id={result.id or '?'}"
         except Exception as exc:
             return f"broker stop sync error: {exc}"
@@ -96,16 +120,18 @@ class PositionLifecycleService:
         thesis: str | None = None,
         sector: str | None = None,
         beta: float | None = None,
+        apply_defaults: bool = True,
     ) -> PositionMandate:
         params = await self._exit_params()
         trail = params["trailing_pct"]
         days = params["time_stop_days"]
         stop_pct = float(params["stop_pct"] or 0)
         target_pct = float(params["target_pct"] or 0)
-        if stop_loss is None and entry_price > 0 and stop_pct > 0:
-            stop_loss = round(entry_price * (1 - stop_pct), 4)
-        if take_profit is None and entry_price > 0 and target_pct > 0:
-            take_profit = round(entry_price * (1 + target_pct), 4)
+        if apply_defaults:
+            if stop_loss is None and entry_price > 0 and stop_pct > 0:
+                stop_loss = round(entry_price * (1 - stop_pct), 4)
+            if take_profit is None and entry_price > 0 and target_pct > 0:
+                take_profit = round(entry_price * (1 + target_pct), 4)
         mandate = PositionMandate(
             symbol=symbol.upper(),
             qty=qty,
@@ -211,15 +237,31 @@ class PositionLifecycleService:
                         )
                     except Exception as exc:
                         logger.warning("trade_journal.close_failed", symbol=sym, error=str(exc))
-                    if order_looks_like_stop(fill_od) or "stop" in (m.exit_reason or "").lower():
+                looks_stop = order_looks_like_stop(fill_od) or "stop" in (m.exit_reason or "").lower()
+                if not looks_stop:
+                    try:
+                        looks_stop = await self._exit_looks_like_stop(sym, fill_od, m)
+                    except Exception:
+                        looks_stop = bool(m.stop_loss)
+                if looks_stop:
+                    from services.live_safety import exit_px_from_order_state
+
+                    exit_px = fill_px or exit_px_from_order_state(fill_od, m)
+                    if exit_px and exit_px > 0:
                         await self._record_stop_cooldown(
                             sym,
                             m.exit_reason or "broker_stop",
-                            fill_px,
+                            float(exit_px),
                             entry=float(m.entry_price or 0) or None,
                             stop=float(m.stop_loss or 0) or None,
                         )
-                else:
+                    else:
+                        logger.info(
+                            "lifecycle.stop_cooldown_no_px",
+                            symbol=sym,
+                            reason="stop-like exit without usable price",
+                        )
+                elif not fill_px:
                     logger.info(
                         "lifecycle.absent_no_fill",
                         symbol=sym,
@@ -253,14 +295,67 @@ class PositionLifecycleService:
                 if latest and latest.status == "closed" and skip_reopen_after_hours_close(latest.closed_at):
                     logger.info("lifecycle.skip_reopen_after_hours", symbol=sym)
                     continue
+                stop_px, tp_px, thesis_txt = await self._deferred_levels_from_order(
+                    sym, latest
+                )
                 out.append(
                     await self.register_from_fill(
                         symbol=sym,
                         qty=float(p.qty),
                         entry_price=float(p.avg_entry_price or p.current_price or 0),
+                        stop_loss=stop_px,
+                        take_profit=tp_px,
+                        thesis=thesis_txt,
+                        apply_defaults=False,
                     )
                 )
         return out
+
+    async def _exit_looks_like_stop(self, symbol: str, fill_od: Any, mandate: PositionMandate) -> bool:
+        """True when order/position state says the book left via a protective stop."""
+        from services.live_safety import order_looks_like_stop
+
+        if order_looks_like_stop(fill_od):
+            return True
+        if "stop" in (getattr(mandate, "exit_reason", None) or "").lower():
+            return True
+        try:
+            orders = await self._broker.list_orders(status="all", limit=50)
+            for od in orders or []:
+                raw_sym = getattr(od, "symbol", "") or ""
+                if str(raw_sym).upper() != symbol.upper():
+                    continue
+                if order_looks_like_stop(od):
+                    return True
+        except Exception:
+            pass
+        return bool(getattr(mandate, "stop_loss", None))
+
+    async def _deferred_levels_from_order(
+        self, symbol: str, latest: PositionMandate | None
+    ) -> tuple[float | None, float | None, str | None]:
+        """Keep the real order stop/TP/thesis. Never fall back to 8%/16% defaults."""
+        from services.live_safety import protective_levels_from_order
+
+        stop = float(latest.stop_loss) if latest and latest.stop_loss else None
+        tp = float(latest.take_profit) if latest and latest.take_profit else None
+        thesis = latest.thesis if latest else None
+        try:
+            orders = await self._broker.list_orders(status="all", limit=50)
+            for od in orders or []:
+                raw_sym = getattr(od, "symbol", "") or ""
+                if str(raw_sym).upper() != symbol.upper():
+                    continue
+                s, t = protective_levels_from_order(od)
+                if s:
+                    stop = s
+                if t:
+                    tp = t
+                if stop or tp:
+                    return stop, tp, thesis
+        except Exception as exc:
+            logger.warning("lifecycle.deferred_levels_failed", symbol=symbol, error=str(exc))
+        return stop, tp, thesis
 
     def _evaluate(self, mandate: PositionMandate, price: float, now: datetime) -> LifecycleAction:
         peak = mandate.peak_price or mandate.entry_price or price
@@ -511,9 +606,7 @@ class PositionLifecycleService:
                 )
                 decision.executed = executed
                 decision.detail = detail
-                # Broker may have already filled the protective stop (403 qty=0) — still cool down
-                already_flat = "insufficient qty" in (detail or "").lower()
-                if executed or already_flat:
+                if executed:
                     exits.append(m.symbol)
                     protective = any(
                         k in (decision.reason or "")

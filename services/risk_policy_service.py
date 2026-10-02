@@ -97,7 +97,7 @@ class RiskPolicyService:
     async def snapshot_from_account(self, account: Any, positions: Sequence[Any] | None = None) -> PortfolioRiskSnapshot:
         """Live Alpaca book + deposited capital base (never silent $20)."""
         from domain.firm_capital import loss_pct_vs_base
-        from services.deposited_capital_service import resolve_trading_base
+        from services.deposited_capital_service import get_deposited_base
 
         equity = float(getattr(account, "equity", 0) or getattr(account, "portfolio_value", 0) or 0)
         cash = float(getattr(account, "cash", 0) or 0)
@@ -111,7 +111,7 @@ class RiskPolicyService:
                 last_eq = None
         except (TypeError, ValueError):
             last_eq = None
-        base_snap = await resolve_trading_base(equity=equity)
+        base_snap = await get_deposited_base()
         base = base_snap.amount if base_snap.amount and base_snap.amount > 0 else None
         day_pct = loss_pct_vs_base(equity, base, last_equity=last_eq)
         return self.portfolio_from_broker(

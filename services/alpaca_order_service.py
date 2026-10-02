@@ -216,9 +216,51 @@ class AlpacaOrderService:
         raw_list = await self._broker.get_positions()
         return [self._map_position(p) for p in raw_list]
 
-    async def list_orders(self, status: str = "open", limit: int = 50) -> list[BrokerOrderResult]:
-        raw_list = await self._broker.list_orders(status=status, limit=limit)
+    async def list_orders(
+        self, status: str = "all", limit: int = 50, page_token: str | None = None
+    ) -> list[BrokerOrderResult]:
+        kwargs: dict[str, Any] = {"status": status, "limit": limit}
+        if page_token:
+            kwargs["page_token"] = page_token
+        try:
+            raw_list = await self._broker.list_orders(**kwargs)
+        except TypeError:
+            raw_list = await self._broker.list_orders(status=status, limit=limit)
         return [self._map_order(o) for o in raw_list]
+
+    async def get_order_by_client_order_id(self, client_order_id: str) -> BrokerOrderResult | None:
+        getter = getattr(self._broker, "get_order_by_client_order_id", None)
+        if getter is None:
+            return None
+        raw = await getter(client_order_id)
+        if not raw:
+            return None
+        return self._map_order(raw)
+
+    async def find_working_stop(self, symbol: str) -> BrokerOrderResult | None:
+        """Live protective stop, including bracket 'held'. Never uses status=open."""
+        from services.order_idempotency import order_is_live_stop
+
+        sym = (symbol or "").upper().strip()
+        token: str | None = None
+        pages = 0
+        max_pages = 8
+        try:
+            while pages < max_pages:
+                orders = await self.list_orders(status="all", limit=200, page_token=token)
+                for od in orders:
+                    if (od.symbol or "").upper() != sym:
+                        continue
+                    if order_is_live_stop(od):
+                        return od
+                pages += 1
+                token = getattr(self._broker, "last_next_page_token", None) or None
+                if not token:
+                    break
+        except Exception as exc:
+            logger.warning("broker.stop_list_all_failed", symbol=sym, error=str(exc))
+            raise
+        return None
 
     async def cancel_order(self, order_id: str) -> dict[str, Any]:
         return await self._broker.cancel_order(order_id)
@@ -276,7 +318,7 @@ class AlpacaOrderService:
                 error="after_regular_close_no_orders",
             )
         try:
-            open_orders = await self.list_orders(status="open", limit=100)
+            existing = await self.find_working_stop(sym)
         except Exception as exc:
             logger.warning("broker.stop_list_orders_failed", symbol=sym, error=str(exc))
             return BrokerOrderResult(
@@ -287,19 +329,6 @@ class AlpacaOrderService:
                 status="failed",
                 error="list_orders_failed_stop_intact",
             )
-        existing = None
-        for od in open_orders:
-            if (od.symbol or "").upper() != sym:
-                continue
-            if (od.side or "").lower() != "sell":
-                continue
-            otype = (od.type or "").lower()
-            raw = od.raw if isinstance(getattr(od, "raw", None), dict) else {}
-            if otype not in ("stop", "stop_limit") and not raw.get("stop_price"):
-                continue
-            if od.id:
-                existing = od
-                break
         new_stop = round(float(stop_price), 2)
         if existing and existing.id:
             replace = getattr(self._broker, "replace_order", None)
@@ -352,17 +381,154 @@ class AlpacaOrderService:
             settings.intraday_only_enabled and settings.intraday_flat_winners_only
         )
         tif = "gtc" if (not settings.intraday_only_enabled or allow_overnight_carry) else "day"
-        return await self.submit_one(
+        return await self._place_standalone_stop(
+            symbol=sym, qty=float(qty), stop_price=new_stop, tif=tif
+        )
+
+    async def _allocate_stop_client_order_id(self, symbol: str) -> str:
+        """Persisted attempt, or UUID if the counter is unavailable. Never a daily -1."""
+        from uuid import uuid4
+
+        from services.live_cycle_lock import allocate_live_client_order_id
+        from services.order_idempotency import AttemptUnavailable
+
+        try:
+            from database.engine import get_session
+            from database.repositories.ops_repository import OpsFlagRepository
+
+            async for session in get_session():
+                flags = OpsFlagRepository(session)
+                cid, _ = await allocate_live_client_order_id(
+                    flags, symbol, "stop", broker=self
+                )
+                return cid
+        except AttemptUnavailable:
+            logger.warning("broker.stop_attempt_unavailable_uuid", symbol=symbol)
+        except Exception as exc:
+            logger.warning("broker.stop_allocate_fallback_uuid", symbol=symbol, error=str(exc))
+        return f"stop-{uuid4().hex[:12]}"
+
+    async def _place_standalone_stop(
+        self,
+        *,
+        symbol: str,
+        qty: float,
+        stop_price: float,
+        tif: str,
+        retry: bool = True,
+    ) -> BrokerOrderResult:
+        from services.desk_ops_alert import (
+            KIND_STOP_NOT_LIVE,
+            KIND_STOP_RECHECK_EMPTY,
+            emit_desk_ops_alert,
+        )
+        from services.order_idempotency import (
+            is_insufficient_qty_error,
+            is_stale_stop_status,
+            order_is_live_stop,
+        )
+
+        cid = await self._allocate_stop_client_order_id(symbol)
+        placed = await self.submit_one(
             BrokerOrderRequest(
-                symbol=sym,
+                symbol=symbol,
                 qty=float(qty),
                 side="sell",
                 order_type="stop",
                 time_in_force=tif,
-                stop_price=new_stop,
-                client_order_id=f"nexbuy-trail-{sym.lower()}-{uuid4().hex[:8]}",
+                stop_price=stop_price,
+                client_order_id=cid,
+                source_tag="desk",
             )
         )
+        if placed and not placed.error and order_is_live_stop(placed):
+            return placed
+
+        err = (placed.error if placed else None) or ""
+        status = str((placed.status if placed else "") or "").lower()
+        stale = bool(
+            (placed.raw or {}).get("not_live_stop")
+            or err.startswith("stale_order:")
+            or err.startswith("stop_not_live:")
+            or is_stale_stop_status(status)
+        )
+        if retry and placed and stale:
+            try:
+                from database.engine import get_session
+                from database.repositories.ops_repository import OpsFlagRepository
+                from services.order_idempotency import (
+                    AttemptUnavailable,
+                    attempt_slot,
+                    bump_attempt,
+                    cycle_key_date,
+                )
+
+                async for session in get_session():
+                    flags = OpsFlagRepository(session)
+                    await bump_attempt(flags, attempt_slot(symbol, "stop", cycle_key_date()))
+                    break
+            except AttemptUnavailable:
+                logger.warning("broker.stop_bump_unavailable", symbol=symbol)
+            except Exception as exc:
+                logger.warning("broker.stop_bump_failed", symbol=symbol, error=str(exc))
+            return await self._place_standalone_stop(
+                symbol=symbol, qty=qty, stop_price=stop_price, tif=tif, retry=False
+            )
+
+        if placed and is_insufficient_qty_error(placed.error):
+            try:
+                again = await self.find_working_stop(symbol)
+            except Exception:
+                again = None
+            if again:
+                logger.info(
+                    "broker.stop_insufficient_qty_still_protected",
+                    symbol=symbol,
+                    order_id=again.id,
+                    status=again.status,
+                )
+                raw = dict(again.raw or {})
+                raw["rechecked_after_insufficient_qty"] = True
+                return again.model_copy(update={"raw": raw, "error": None})
+            logger.warning("broker.stop_insufficient_qty_recheck_empty", symbol=symbol)
+            await emit_desk_ops_alert(
+                KIND_STOP_RECHECK_EMPTY,
+                detail=f"{symbol} second find_working_stop empty after insufficient qty",
+            )
+            return BrokerOrderResult(
+                symbol=symbol,
+                qty=float(qty),
+                side="sell",
+                type="stop",
+                status="failed",
+                error="insufficient_qty_stop_recheck_empty",
+            )
+
+        if placed and (placed.error or not order_is_live_stop(placed)):
+            not_live = status or (placed.error or "unknown")
+            await emit_desk_ops_alert(
+                KIND_STOP_NOT_LIVE,
+                detail=f"{symbol} status={not_live} id={getattr(placed, 'id', '')} cid={cid}",
+            )
+            extra = dict(placed.raw or {})
+            extra["not_live_stop"] = True
+            return placed.model_copy(
+                update={
+                    "raw": extra,
+                    "status": "failed",
+                    "error": placed.error or f"stop_not_live:{status}",
+                }
+            )
+        if placed is None:
+            return BrokerOrderResult(
+                symbol=symbol,
+                qty=float(qty),
+                side="sell",
+                type="stop",
+                status="failed",
+                error="stop_place_empty",
+            )
+        return placed
 
     async def latest_filled_sell(self, symbol: str) -> BrokerOrderResult | None:
         """Most recent filled sell for journal/cooldown (broker stop or close)."""
@@ -385,60 +551,311 @@ class AlpacaOrderService:
     async def close_all_positions(self, *, cancel_orders: bool = True) -> list[dict[str, Any]]:
         return await self._broker.close_all_positions(cancel_orders=cancel_orders)
 
-    async def submit_one(self, req: BrokerOrderRequest) -> BrokerOrderResult:
-        from services.live_safety import live_entry_blocked, production_trading_unconfigured
+    async def _live_buy_central_gates(
+        self, settings: Any, *, skip_daily_cap: bool = False
+    ) -> str | None:
+        """Same LIVE buy filters as execute(): kill, deposited brake, daily cap, cooldown.
+
+        ``skip_daily_cap`` is for the autopilot reservation already consumed this cycle.
+        Returns an error tag or None if the buy may proceed. Fail-closed.
+        """
+        from services.live_safety import FLAG_ENTRY_DAY, remaining_entry_slots
+
+        try:
+            from database.engine import get_session
+            from services.kill_switch_service import KillSwitchService
+
+            kill_active = False
+            checked = False
+            async for session in get_session():
+                kill_active = await KillSwitchService(session, self).is_active()
+                flags = None
+                try:
+                    from database.repositories.ops_repository import OpsFlagRepository
+
+                    flags = OpsFlagRepository(session)
+                    cool = await flags.get_json("post_stop_cooldown")
+                    until = float((cool or {}).get("until") or 0)
+                    if until and __import__("time").time() < until:
+                        return "post_stop_cooldown"
+                    day_flag = await flags.get_json(FLAG_ENTRY_DAY)
+                    if not skip_daily_cap and remaining_entry_slots(
+                        day_flag,
+                        max_entries=int(getattr(settings, "live_max_entries_per_day", 1) or 1),
+                    ) <= 0:
+                        return "max_1_entry_per_day"
+                except Exception:
+                    return "entry_gate_read_failed"
+                checked = True
+                break
+            if not checked:
+                return "kill_switch_check_failed"
+            if kill_active:
+                return "kill_switch_entries_blocked"
+        except Exception:
+            return "kill_switch_check_failed"
+        try:
+            from services.deposited_capital_service import resolve_trading_base
+            from services.live_safety import deposited_brake_triggered
+
+            acct = await self.get_account()
+            eq = float(acct.equity or 0)
+            snap = await resolve_trading_base(equity=eq)
+            base = snap.amount if snap.amount and snap.amount > 0 else None
+            if base is None:
+                return "deposited_base_missing"
+            pct = float(getattr(settings, "deposited_brake_pct", 5.0) or 5.0)
+            if deposited_brake_triggered(eq, base, pct):
+                return "deposited_brake"
+        except Exception:
+            return "deposited_brake_check_failed"
+        return None
+
+    def _reconcile_existing_order(
+        self, req: BrokerOrderRequest, raw: dict[str, Any] | BrokerOrderResult
+    ) -> BrokerOrderResult:
+        """Map an already-accepted broker order. Never treat dead/mismatch as a fill."""
+        from services.order_idempotency import (
+            is_dead_retryable_status,
+            is_protective_stop_request,
+            order_is_live_stop,
+        )
+
+        if isinstance(raw, BrokerOrderResult):
+            mapped = raw
+            extra = dict(mapped.raw or {})
+        else:
+            mapped = self._map_order(raw)
+            extra = dict(mapped.raw or {})
+        extra["reconciled"] = True
+        extra["no_new_fill"] = True
+        status = str(mapped.status or "").lower()
+        if is_dead_retryable_status(status):
+            extra["stale"] = True
+            extra["not_live_stop"] = True if is_protective_stop_request(req) else extra.get(
+                "not_live_stop"
+            )
+            return mapped.model_copy(
+                update={"raw": extra, "status": "failed", "error": f"stale_order:{status}"}
+            )
+        if is_protective_stop_request(req) and not order_is_live_stop(mapped):
+            extra["stale"] = True
+            extra["not_live_stop"] = True
+            return mapped.model_copy(
+                update={"raw": extra, "status": "failed", "error": f"stale_order:{status}"}
+            )
+        if (mapped.symbol or "").upper() != (req.symbol or "").upper():
+            return mapped.model_copy(
+                update={"raw": extra, "status": "failed", "error": "reconcile_symbol_mismatch"}
+            )
+        if (mapped.side or "").lower() != (req.side or "").lower():
+            return mapped.model_copy(
+                update={"raw": extra, "status": "failed", "error": "reconcile_side_mismatch"}
+            )
+        try:
+            want = float(req.qty or 0)
+            have = float(mapped.qty or 0)
+        except (TypeError, ValueError):
+            want, have = 0.0, -1.0
+        if want > 0 and have > 0 and abs(want - have) > 1e-6:
+            return mapped.model_copy(
+                update={"raw": extra, "status": "failed", "error": "reconcile_qty_mismatch"}
+            )
+        return mapped.model_copy(update={"raw": extra, "error": None})
+
+    async def _alert_order_uncertain(self, symbol: str, client_id: str) -> None:
+        try:
+            from services.desk_ops_alert import KIND_ORDER_UNCERTAIN, emit_desk_ops_alert
+
+            await emit_desk_ops_alert(
+                KIND_ORDER_UNCERTAIN,
+                detail=f"{symbol} client_order_id={client_id}",
+            )
+        except Exception as exc:
+            logger.warning("broker.uncertain_alert_failed", symbol=symbol, error=str(exc))
+
+    async def _lookup_by_client_order_id(self, client_id: str) -> dict[str, Any]:
+        """404 = missing (retry same id). 5xx/network = uncertain (do not POST)."""
+        from services.order_idempotency import alpaca_http_status, is_timeout_or_network
+
+        try:
+            order = await self.get_order_by_client_order_id(client_id)
+        except Exception as exc:
+            status = alpaca_http_status(exc)
+            if status == 404:
+                return {"missing": True, "uncertain": False, "order": None}
+            logger.warning(
+                "broker.by_client_order_id_uncertain",
+                client_order_id=client_id,
+                error=str(exc),
+            )
+            return {
+                "missing": False,
+                "uncertain": True,
+                "order": None,
+                "error": str(exc),
+                "network": is_timeout_or_network(exc),
+            }
+        if order is None:
+            return {"missing": True, "uncertain": False, "order": None}
+        return {"missing": False, "uncertain": False, "order": order}
+
+    async def _submit_payload_idempotent(
+        self,
+        req: BrokerOrderRequest,
+        payload: dict[str, Any],
+        failed: BrokerOrderResult,
+    ) -> BrokerOrderResult:
+        from services.order_idempotency import (
+            is_duplicate_client_order_id_error,
+            is_timeout_or_network,
+            is_unrelated_422,
+        )
+
+        client_id = str(payload.get("client_order_id") or "")
+        try:
+            raw = await self._broker.submit_order(payload)
+            return self._map_order(raw)
+        except Exception as exc:
+            if is_unrelated_422(exc):
+                return failed.model_copy(
+                    update={
+                        "error": f"alpaca_422:{exc}",
+                        "client_order_id": client_id,
+                        "request_id": self._broker.last_request_id,
+                    }
+                )
+            if is_duplicate_client_order_id_error(exc):
+                looked = await self._lookup_by_client_order_id(client_id)
+                existing = looked.get("order")
+                if existing:
+                    logger.info(
+                        "broker.duplicate_coid_reconciled",
+                        symbol=req.symbol,
+                        client_order_id=client_id,
+                        order_id=existing.id,
+                        status=existing.status,
+                    )
+                    return self._reconcile_existing_order(req, existing)
+                if looked.get("uncertain"):
+                    await self._alert_order_uncertain(req.symbol, client_id)
+                    return failed.model_copy(
+                        update={
+                            "error": "order_uncertain_no_retry",
+                            "client_order_id": client_id,
+                            "request_id": self._broker.last_request_id,
+                        }
+                    )
+                return failed.model_copy(
+                    update={
+                        "error": "duplicate_client_order_id_unresolved",
+                        "client_order_id": client_id,
+                        "request_id": self._broker.last_request_id,
+                    }
+                )
+            if is_timeout_or_network(exc):
+                looked = await self._lookup_by_client_order_id(client_id)
+                existing = looked.get("order")
+                if existing:
+                    logger.info(
+                        "broker.timeout_order_exists_reconciled",
+                        symbol=req.symbol,
+                        client_order_id=client_id,
+                        order_id=existing.id,
+                    )
+                    return self._reconcile_existing_order(req, existing)
+                if looked.get("uncertain"):
+                    logger.warning(
+                        "broker.timeout_lookup_uncertain_no_post",
+                        symbol=req.symbol,
+                        client_order_id=client_id,
+                    )
+                    await self._alert_order_uncertain(req.symbol, client_id)
+                    return failed.model_copy(
+                        update={
+                            "error": "order_uncertain_no_retry",
+                            "client_order_id": client_id,
+                            "request_id": self._broker.last_request_id,
+                        }
+                    )
+                try:
+                    raw = await self._broker.submit_order(payload)
+                    return self._map_order(raw)
+                except Exception as retry_exc:
+                    if is_duplicate_client_order_id_error(retry_exc):
+                        again = await self._lookup_by_client_order_id(client_id)
+                        if again.get("order"):
+                            return self._reconcile_existing_order(req, again["order"])
+                    return failed.model_copy(
+                        update={
+                            "error": str(retry_exc),
+                            "client_order_id": client_id,
+                            "request_id": self._broker.last_request_id,
+                        }
+                    )
+            return failed.model_copy(
+                update={
+                    "error": str(exc),
+                    "client_order_id": client_id,
+                    "request_id": self._broker.last_request_id,
+                }
+            )
+
+    async def submit_one(
+        self, req: BrokerOrderRequest, *, skip_daily_cap: bool = False
+    ) -> BrokerOrderResult:
+        from services.live_safety import (
+            is_buy_side,
+            live_entry_blocked,
+            long_qty_from_positions,
+            production_trading_unconfigured,
+            sell_qty_exceeds_long,
+        )
         from utils.market_hours import eod_may_submit_orders
 
         settings = get_settings()
+        failed = BrokerOrderResult(
+            symbol=req.symbol.upper(),
+            qty=req.qty,
+            side=req.side,
+            type=req.order_type,
+            status="failed",
+        )
         if production_trading_unconfigured():
-            return BrokerOrderResult(
-                symbol=req.symbol.upper(),
-                qty=req.qty,
-                side=req.side,
-                type=req.order_type,
-                status="failed",
-                error="trading_mode_unconfigured",
-            )
+            return failed.model_copy(update={"error": "trading_mode_unconfigured"})
+        if not is_buy_side(req.side):
+            try:
+                positions = await self.get_positions()
+            except Exception:
+                positions = []
+            have = long_qty_from_positions(positions, req.symbol)
+            if sell_qty_exceeds_long(req.qty, have):
+                return failed.model_copy(update={"error": "sell_qty_exceeds_long"})
         blocked, why = live_entry_blocked(
             side=req.side,
             paper=self._broker.paper,
             live_entries_enabled=bool(getattr(settings, "live_entries_enabled", False)),
         )
         if blocked:
-            return BrokerOrderResult(
-                symbol=req.symbol.upper(),
-                qty=req.qty,
-                side=req.side,
-                type=req.order_type,
-                status="failed",
-                error=why,
+            return failed.model_copy(update={"error": why})
+        if is_buy_side(req.side) and not eod_may_submit_orders():
+            return failed.model_copy(update={"error": "after_regular_close_no_orders"})
+        if is_buy_side(req.side) and not self._broker.paper:
+            gate_err = await self._live_buy_central_gates(
+                settings, skip_daily_cap=bool(skip_daily_cap)
             )
-        if (req.side or "").lower() == "buy" and not eod_may_submit_orders():
-            return BrokerOrderResult(
-                symbol=req.symbol.upper(),
-                qty=req.qty,
-                side=req.side,
-                type=req.order_type,
-                status="failed",
-                error="after_regular_close_no_orders",
-            )
+            if gate_err:
+                return failed.model_copy(update={"error": gate_err})
         payload = self._build_order_payload(req)
-        try:
-            raw = await self._broker.submit_order(payload)
-            return self._map_order(raw)
-        except Exception as exc:
-            return BrokerOrderResult(
-                symbol=req.symbol.upper(),
-                qty=req.qty,
-                side=req.side,
-                type=req.order_type,
-                status="failed",
-                client_order_id=str(payload.get("client_order_id") or ""),
-                request_id=self._broker.last_request_id,
-                error=str(exc),
-            )
+        return await self._submit_payload_idempotent(req, payload, failed)
 
-    async def execute(self, request: ExecuteOrdersRequest) -> ExecuteOrdersResponse:
+    async def execute(
+        self,
+        request: ExecuteOrdersRequest,
+        *,
+        skip_daily_cap: bool = False,
+        allow_entry: Any = None,
+    ) -> ExecuteOrdersResponse:
         warnings: list[str] = []
         from services.live_safety import production_trading_unconfigured
 
@@ -475,6 +892,7 @@ class AlpacaOrderService:
 
         # --- Kill switch: block entries, allow exits (brackets stay). ---
         kill_active = False
+        has_buy = any((ln.side or "").lower() == "buy" for ln in request.lines)
         try:
             from database.engine import get_session
             from services.kill_switch_service import KillSwitchService
@@ -484,6 +902,12 @@ class AlpacaOrderService:
                 break
         except Exception as exc:
             warnings.append(f"Kill switch check falló ({exc})")
+            if has_buy and not self._broker.paper and not request.dry_run:
+                return ExecuteOrdersResponse(
+                    paper=self._broker.paper,
+                    dry_run=request.dry_run,
+                    warnings=["kill_switch_check_failed_fail_closed"],
+                )
         if kill_active:
             warnings.append(
                 "KILL SWITCH ACTIVO — entradas bloqueadas; stops/TP/salidas permitidos."
@@ -522,12 +946,18 @@ class AlpacaOrderService:
         # Accumulated 5% vs deposited — arm kill without flatten; allow exits.
         if account and not self._broker.paper and not request.dry_run:
             try:
-                from services.deposited_capital_service import resolve_trading_base
+                from services.deposited_capital_service import get_deposited_base
                 from services.live_safety import arm_deposited_brake_if_needed
 
                 eq = float(account.equity or 0)
-                base_snap = await resolve_trading_base(equity=eq)
+                base_snap = await get_deposited_base()
                 base = base_snap.amount if base_snap.amount and base_snap.amount > 0 else None
+                if has_buy and base is None:
+                    return ExecuteOrdersResponse(
+                        paper=self._broker.paper,
+                        dry_run=request.dry_run,
+                        warnings=["deposited_base_missing"],
+                    )
                 pct = float(getattr(get_settings(), "deposited_brake_pct", 5.0) or 5.0)
                 from database.engine import get_session as _gsess
 
@@ -549,6 +979,18 @@ class AlpacaOrderService:
                     break
             except Exception as exc:
                 warnings.append(f"deposited_brake check falló ({exc})")
+                if has_buy and not self._broker.paper and not request.dry_run:
+                    return ExecuteOrdersResponse(
+                        paper=self._broker.paper,
+                        dry_run=request.dry_run,
+                        warnings=["deposited_brake_check_failed_fail_closed"],
+                    )
+        elif has_buy and not self._broker.paper and not request.dry_run:
+            return ExecuteOrdersResponse(
+                paper=self._broker.paper,
+                dry_run=request.dry_run,
+                warnings=["deposited_base_missing"],
+            )
 
         # --- Risk desk + macro gate ---
         policy = self._risk.policy_from_settings()
@@ -595,9 +1037,9 @@ class AlpacaOrderService:
                 from services.portfolio_risk_metrics_service import PortfolioRiskMetricsService
 
                 equity = float(account.equity or account.portfolio_value or 0.0)
-                from services.deposited_capital_service import resolve_trading_base
+                from services.deposited_capital_service import get_deposited_base
 
-                base_snap = await resolve_trading_base(equity=equity)
+                base_snap = await get_deposited_base()
                 capital_base = base_snap.amount if base_snap.amount and base_snap.amount > 0 else None
                 risk_metrics = await PortfolioRiskMetricsService().compute(
                     positions,
@@ -677,6 +1119,24 @@ class AlpacaOrderService:
 
         for line in request.lines:
             if is_buy_side(line.side) and not request.dry_run:
+                if allow_entry is not None:
+                    try:
+                        lease_ok = await allow_entry()
+                    except Exception as exc:
+                        logger.warning("broker.entry_lease_check_failed", error=str(exc))
+                        lease_ok = False
+                    if not lease_ok:
+                        failed.append(
+                            BrokerOrderResult(
+                                symbol=line.ticker.upper(),
+                                qty=line.shares,
+                                side=line.side,
+                                type=line.order_type,
+                                status="failed",
+                                error="lease_lost_mid_cycle",
+                            )
+                        )
+                        continue
                 if not eod_may_submit_orders():
                     failed.append(
                         BrokerOrderResult(
@@ -705,6 +1165,12 @@ class AlpacaOrderService:
                     paper=self._broker.paper,
                     live_entries_enabled=bool(getattr(settings, "live_entries_enabled", False)),
                 )
+                if ok_buy and not self._broker.paper:
+                    from services.deposited_capital_service import get_deposited_base
+
+                    base_gate = await get_deposited_base()
+                    if not base_gate.buy_allowed:
+                        ok_buy, buy_why = False, "deposited_base_missing"
                 if not ok_buy:
                     failed.append(
                         BrokerOrderResult(
@@ -853,7 +1319,7 @@ class AlpacaOrderService:
                 take_profit=line.take_profit,
                 stop_loss=line.stop_loss,
                 client_order_id=line.client_order_id,
-                source_tag=getattr(line, "source_tag", None) or "autopilot",
+                source_tag=getattr(line, "source_tag", None) or "desk",
             )
             if not request.dry_run:
                 try:
@@ -895,11 +1361,17 @@ class AlpacaOrderService:
                 )
                 continue
 
-            result = await self.submit_one(order_req)
+            result = await self.submit_one(order_req, skip_daily_cap=bool(skip_daily_cap))
             if result.request_id:
                 request_ids.append(result.request_id)
             if result.error or result.status == "failed":
                 failed.append(result)
+            elif (result.raw or {}).get("reconciled"):
+                submitted.append(result)
+                warnings.append(
+                    f"{order_req.symbol}: orden existente reconciliada "
+                    f"(client_order_id={result.client_order_id}); sin fill nuevo."
+                )
             else:
                 submitted.append(result)
                 # Audit + lifecycle mandate for buys
@@ -1023,7 +1495,12 @@ class AlpacaOrderService:
         client_id = (req.client_order_id or "").strip()
         if not client_id:
             tag = "".join(c for c in (getattr(req, "source_tag", None) or "desk").lower() if c.isalnum())[:12] or "desk"
-            client_id = f"{tag}-{uuid4().hex[:12]}"
+            if tag == "autopilot":
+                from services.live_cycle_lock import live_client_order_id
+
+                client_id = live_client_order_id(req.symbol, req.side)
+            else:
+                client_id = f"{tag}-{uuid4().hex[:12]}"
         payload: dict[str, Any] = {
             "symbol": req.symbol.upper(),
             "qty": qty_str,

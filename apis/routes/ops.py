@@ -30,6 +30,21 @@ from domain.ops import utc_now
 router = APIRouter()
 
 
+def _ops_db_host() -> str | None:
+    from database.engine import db_snapshot
+
+    return db_snapshot().get("host")
+
+
+async def _lease_status(session: AsyncSession) -> dict:
+    from services.db_lease import snapshot_leases
+
+    try:
+        return await snapshot_leases(session)
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 class KillSwitchRequest(BaseModel):
     confirm: bool = False
     reason: str = "panic flat"
@@ -203,6 +218,20 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
     auto = AutoExecuteService(session)
     ok, reason = await auto.can_auto_trade_async()
     promo = await OpsFlagRepository(session).get_json("paper_promotion")
+    from services.deposited_capital_service import deposited_base_status, get_deposited_base
+
+    pf_init = None
+    try:
+        from database.repositories.portfolio_repository import PortfolioRepository
+
+        rows = await PortfolioRepository(session).list_all()
+        if rows:
+            pf_init = getattr(rows[0], "initial_capital", None)
+    except Exception:
+        pf_init = None
+    deposited = await get_deposited_base(portfolio_initial=pf_init)
+    deposited_payload = deposited_base_status(deposited)
+    warnings = list(deposited_payload.get("warnings") or [])
     return {
         "kill_switch": ks.model_dump(mode="json"),
         "firm_autonomy": settings.firm_autonomy,
@@ -228,7 +257,9 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
         "live_entries_enabled": bool(settings.live_entries_enabled),
         "live_max_entries_per_day": settings.live_max_entries_per_day,
         "live_submit_fail_pause": settings.live_submit_fail_pause,
+        "deposited_base": deposited_payload,
         "deposited_brake_pct": settings.deposited_brake_pct,
+        "warnings": warnings,
         "app_env": settings.app_env,
         "trading_mode": trading_mode_label(settings),
         "risk_discipline": {
@@ -247,6 +278,8 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
             "max_beta": settings.risk_max_portfolio_beta,
             "max_sector_pct": settings.risk_max_sector_pct,
         },
+        "db_host": _ops_db_host(),
+        "leases": await _lease_status(session),
     }
 
 
@@ -254,7 +287,18 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
 async def last_autopilot_cycle(session: AsyncSession = Depends(get_session)) -> dict:
     """Read-only snapshot of the last firm Autopilot cycle (hora, resultado, mensaje)."""
     data = await OpsFlagRepository(session).get_json("firm_autopilot_last_cycle")
-    return data or {"at": None, "result": None, "message": "sin ciclo registrado"}
+    body = data or {"at": None, "result": None, "message": "sin ciclo registrado"}
+    try:
+        from services.db_lease import LEASE_LIVE_STOCKS, snapshot_lease
+
+        lease = (await snapshot_lease(session, LEASE_LIVE_STOCKS)).as_dict()
+        body["lease"] = lease
+        body["lease_owner"] = lease.get("lease_owner")
+        body["lease_expires_at"] = lease.get("lease_expires_at")
+        body["lease_misses_consecutive"] = lease.get("lease_misses_consecutive")
+    except Exception:
+        body.setdefault("lease", {"name": "live_stocks", "error": "snapshot_failed"})
+    return body
 
 
 @router.get("/ops/multiasset/activities")

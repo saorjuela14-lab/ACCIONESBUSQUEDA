@@ -7,7 +7,7 @@ from httpx import ASGITransport, AsyncClient
 
 from apis.app import create_app
 from config.settings import get_settings
-from database.url import NEON_DIRECT_HOST
+from database.url import NEON_DIRECT_HOST  # used in the mocked snapshot host
 
 
 @pytest.fixture(autouse=True)
@@ -42,7 +42,7 @@ async def test_health_200_reports_db_down():
     body = r.json()
     assert body["status"] == "healthy"
     assert body["db"] == "down"
-    assert body["db_host"] == NEON_DIRECT_HOST
+    assert "db_host" not in body
     assert "name resolution" in body["db_error"]
     assert "password" not in body["db_error"].lower()
 

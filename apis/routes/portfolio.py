@@ -99,11 +99,11 @@ async def sync_portfolio_from_alpaca(
         account = await alpaca.get_account()
         broker_positions = await alpaca.get_positions()
         from domain.entities import PortfolioPosition
-        from services.deposited_capital_service import resolve_trading_base
+        from services.deposited_capital_service import get_deposited_base
 
         cash = float(account.cash or 0)
         equity = float(account.equity or account.portfolio_value or cash or 0)
-        snap = await resolve_trading_base(equity=equity)
+        snap = await get_deposited_base()
         initial = snap.amount if snap.amount and snap.amount > 0 else None
         positions = []
         for pos in broker_positions:

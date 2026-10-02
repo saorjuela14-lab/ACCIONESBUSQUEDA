@@ -1,17 +1,15 @@
-"""Net deposited capital from Alpaca account activities.
+"""Single deposited base for P&L, brake/kill, dashboard and initial_capital.
 
-Used as the reporting P&L base AND the trading/risk/sizing denominator
-(bootstrap, reconcile, sync-Alpaca, initial_capital lock, VaR $, kill-switch
-and drawdown %). Cached with TTL. If Alpaca fails, fall back to
-DEPOSITED_BASE_USD, then last cache, then conservative equity — never
-silently to $20.
+Canonical value: DEPOSITED_BASE_USD (Sergio: 21.76; 5% floor = 20.67).
+Alpaca activities and portfolios.initial_capital are comparison sources only.
+If the env var is missing, buys fail closed — never invent $20 or use equity.
 """
 
 from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from config.settings import get_settings
@@ -23,15 +21,23 @@ logger = get_logger(__name__)
 TRANSFER_ACTIVITY_TYPES = ("CSD", "CSW", "JNLC", "TRANS", "OCT", "ACATC", "FOPT")
 _SKIP_STATUS = frozenset({"canceled", "cancelled", "pending", "rejected", "queued", "failed"})
 _MAX_PAGES = 50
+CANONICAL_SOURCE = "env:DEPOSITED_BASE_USD"
+MISSING_SOURCE = "missing:DEPOSITED_BASE_USD"
+DISCREPANCY_USD = 0.02
 
 
 @dataclass(frozen=True)
 class DepositedBase:
     amount: float | None
-    source: str  # alpaca | cache | env | unavailable
+    source: str  # env:DEPOSITED_BASE_USD | missing:DEPOSITED_BASE_USD
     deposits: float = 0.0
     withdrawals: float = 0.0
     activity_count: int = 0
+    floor_5pct: float | None = None
+    buy_allowed: bool = True
+    warnings: tuple[str, ...] = ()
+    alpaca_amount: float | None = None
+    portfolio_initial: float | None = None
 
 
 _lock = asyncio.Lock()
@@ -107,7 +113,7 @@ def net_transfers_from_activities(rows: list[dict[str, Any]]) -> tuple[float, fl
     return net, round(deposits, 2), round(withdrawals, 2), counted
 
 
-def _env_fallback() -> DepositedBase | None:
+def _env_amount() -> float | None:
     raw = get_settings().deposited_base_usd
     if raw is None:
         return None
@@ -117,7 +123,39 @@ def _env_fallback() -> DepositedBase | None:
         return None
     if amount <= 0:
         return None
-    return DepositedBase(amount=round(amount, 2), source="env")
+    return round(amount, 2)
+
+
+def _floor_5pct(amount: float | None, pct: float = 5.0) -> float | None:
+    if amount is None or float(amount) <= 0:
+        return None
+    return round(float(amount) * (1.0 - abs(float(pct)) / 100.0), 2)
+
+
+def _env_fallback() -> DepositedBase | None:
+    """Back-compat helper — prefer get_deposited_base()."""
+    amount = _env_amount()
+    if amount is None:
+        return None
+    return DepositedBase(
+        amount=amount,
+        source=CANONICAL_SOURCE,
+        floor_5pct=_floor_5pct(amount),
+        buy_allowed=True,
+    )
+
+
+def deposited_base_status(snap: DepositedBase) -> dict[str, Any]:
+    """ops/status payload: value, source, floor, warnings."""
+    return {
+        "amount": snap.amount,
+        "source": snap.source,
+        "floor_5pct": snap.floor_5pct,
+        "buy_allowed": bool(snap.buy_allowed),
+        "warnings": list(snap.warnings or ()),
+        "alpaca_amount": snap.alpaca_amount,
+        "portfolio_initial": snap.portfolio_initial,
+    }
 
 
 async def _paginate(
@@ -266,102 +304,115 @@ async def _from_alpaca() -> DepositedBase:
     )
 
 
-async def get_deposited_base(*, force: bool = False) -> DepositedBase:
-    """Reporting denominator: Alpaca net deposits, else env, else unavailable.
+def _with_portfolio(snap: DepositedBase, portfolio_initial: float | None) -> DepositedBase:
+    if portfolio_initial is None:
+        return snap
+    try:
+        pf = float(portfolio_initial)
+    except (TypeError, ValueError):
+        return snap
+    if pf <= 0:
+        return replace(snap, portfolio_initial=None)
+    warns = list(snap.warnings or ())
+    if snap.amount and abs(pf - float(snap.amount)) > DISCREPANCY_USD:
+        warns.append(
+            f"discrepancy portfolios.initial_capital={pf:.2f} vs {snap.source}={float(snap.amount):.2f}"
+        )
+    return replace(snap, portfolio_initial=round(pf, 2), warnings=tuple(warns))
 
-    Never returns the silent $20 trading stamp.
+
+async def get_deposited_base(
+    *,
+    force: bool = False,
+    portfolio_initial: float | None = None,
+) -> DepositedBase:
+    """Canonical deposited base: DEPOSITED_BASE_USD only.
+
+    Alpaca / portfolio stamps are compared for warnings. Missing env →
+    amount=None and buy_allowed=False.
     """
     global _cache, _cache_at
     ttl = float(get_settings().deposited_base_cache_ttl_seconds or 600)
     now = time.monotonic()
-    if (
-        not force
-        and _cache is not None
-        and _cache.source == "alpaca"
-        and _cache.amount
-        and (now - _cache_at) < ttl
-    ):
-        return _cache
+    if not force and _cache is not None and (now - _cache_at) < ttl:
+        return _with_portfolio(_cache, portfolio_initial)
 
     async with _lock:
         now = time.monotonic()
-        if (
-            not force
-            and _cache is not None
-            and _cache.source == "alpaca"
-            and _cache.amount
-            and (now - _cache_at) < ttl
-        ):
-            return _cache
+        if not force and _cache is not None and (now - _cache_at) < ttl:
+            return _with_portfolio(_cache, portfolio_initial)
+
+        env_amt = _env_amount()
+        pct = float(getattr(get_settings(), "deposited_brake_pct", 5.0) or 5.0)
+        alpaca_amt = None
+        deposits = 0.0
+        withdrawals = 0.0
+        counted = 0
         try:
-            snap = await _from_alpaca()
+            alp = await _from_alpaca()
+            alpaca_amt = alp.amount if alp.amount and alp.amount > 0 else None
+            deposits = alp.deposits
+            withdrawals = alp.withdrawals
+            counted = alp.activity_count
         except Exception as exc:
-            logger.warning("deposited_capital.alpaca_failed", error=str(exc))
-            snap = DepositedBase(amount=None, source=f"unavailable:{exc}"[:80])
-        if snap.amount and snap.amount > 0:
+            logger.warning("deposited_capital.alpaca_compare_failed", error=str(exc))
+
+        warnings: list[str] = []
+        if env_amt is None:
+            warnings.append("DEPOSITED_BASE_USD missing — compras fail-closed")
+            if alpaca_amt:
+                warnings.append(
+                    f"alpaca_observed={alpaca_amt:.2f} ignored (canonical is DEPOSITED_BASE_USD)"
+                )
+            snap = DepositedBase(
+                amount=None,
+                source=MISSING_SOURCE,
+                deposits=deposits,
+                withdrawals=withdrawals,
+                activity_count=counted,
+                floor_5pct=None,
+                buy_allowed=False,
+                warnings=tuple(warnings),
+                alpaca_amount=alpaca_amt,
+            )
+            logger.error("deposited_capital.missing_env", alpaca=alpaca_amt)
             _cache = snap
             _cache_at = time.monotonic()
-            logger.info(
-                "deposited_capital.alpaca",
-                amount=snap.amount,
-                deposits=snap.deposits,
-                withdrawals=snap.withdrawals,
-                activities=snap.activity_count,
+            return _with_portfolio(snap, portfolio_initial)
+
+        if alpaca_amt is not None and abs(float(alpaca_amt) - env_amt) > DISCREPANCY_USD:
+            warnings.append(
+                f"discrepancy alpaca={float(alpaca_amt):.2f} vs {CANONICAL_SOURCE}={env_amt:.2f}"
             )
-            return snap
-        if _cache is not None and _cache.amount and _cache.amount > 0:
-            stale = DepositedBase(
-                amount=_cache.amount,
-                source="cache",
-                deposits=_cache.deposits,
-                withdrawals=_cache.withdrawals,
-                activity_count=_cache.activity_count,
-            )
-            logger.warning("deposited_capital.stale_cache", amount=stale.amount)
-            return stale
-        env = _env_fallback()
-        if env is not None:
-            logger.warning("deposited_capital.env_fallback", amount=env.amount)
-            return env
-        logger.error("deposited_capital.unavailable", source=snap.source if snap else None)
-        return snap if snap is not None else DepositedBase(amount=None, source="unavailable")
-
-
-async def resolve_trading_base(*, equity: float | None = None) -> DepositedBase:
-    """Denominator for sizing/risk/DB stamp.
-
-    alpaca → cache → env → min(equity, last known) → equity → unavailable.
-    Never invents $20.
-    """
-    snap = await get_deposited_base()
-    src = str(snap.source or "")
-    # Fresh Alpaca or explicit env override are the real deposited denominator.
-    if snap.amount and snap.amount > 0 and src in ("alpaca", "env", "cache"):
-        return snap
-    last = _cache
-    eq = float(equity or 0.0)
-    last_amt = float(last.amount) if last is not None and last.amount and last.amount > 0 else 0.0
-    if snap.amount and snap.amount > 0:
-        last_amt = max(last_amt, float(snap.amount))
-        last = snap
-    if last_amt > 0 and eq > 0:
-        amt = round(min(eq, last_amt), 2)
-        logger.warning("trading_base.conservative_min", amount=amt, equity=eq, last=last_amt)
-        return DepositedBase(
-            amount=amt,
-            source="conservative:min_equity_cache",
-            deposits=last.deposits if last else 0.0,
-            withdrawals=last.withdrawals if last else 0.0,
-            activity_count=last.activity_count if last else 0,
+        snap = DepositedBase(
+            amount=env_amt,
+            source=CANONICAL_SOURCE,
+            deposits=deposits,
+            withdrawals=withdrawals,
+            activity_count=counted,
+            floor_5pct=_floor_5pct(env_amt, pct),
+            buy_allowed=True,
+            warnings=tuple(warnings),
+            alpaca_amount=alpaca_amt,
         )
-    if last_amt > 0:
-        logger.warning("trading_base.conservative_cache", amount=last_amt)
-        return DepositedBase(
-            amount=round(last_amt, 2),
-            source="cache",
-            deposits=last.deposits if last else 0.0,
-            withdrawals=last.withdrawals if last else 0.0,
-            activity_count=last.activity_count if last else 0,
+        _cache = snap
+        _cache_at = time.monotonic()
+        logger.info(
+            "deposited_capital.canonical",
+            amount=snap.amount,
+            source=snap.source,
+            floor_5pct=snap.floor_5pct,
+            alpaca=alpaca_amt,
+            warnings=list(snap.warnings),
         )
-    logger.error("trading_base.fail_closed_no_deposited_base", equity=eq)
-    return DepositedBase(amount=None, source="unavailable:no_deposited_base")
+        return _with_portfolio(snap, portfolio_initial)
+
+
+async def resolve_trading_base(
+    *,
+    equity: float | None = None,
+    portfolio_initial: float | None = None,
+) -> DepositedBase:
+    """Same as get_deposited_base — single deposited denominator. equity unused."""
+    del equity
+    return await get_deposited_base(portfolio_initial=portfolio_initial)

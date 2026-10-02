@@ -25,8 +25,6 @@ async def health_check() -> dict:
         "service": "monarch-capital",
         "db": "up" if snap["ready"] else "down",
     }
-    if snap.get("host"):
-        out["db_host"] = snap["host"]
     if not snap["ready"] and snap.get("error"):
         out["db_error"] = snap["error"]
     settings = get_settings()

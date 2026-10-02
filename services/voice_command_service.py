@@ -1060,6 +1060,20 @@ class VoiceCommandService:
                     speech="La cantidad pendiente no es válida. Reformula el comando.",
                 )
 
+            from services.live_safety import eod_may_submit_orders
+
+            if not eod_may_submit_orders():
+                _clear_pending(portfolio_id)
+                return VoiceCommandResult(
+                    intent="confirm",
+                    success=False,
+                    speech=(
+                        "Mercado cerrado (después de las 16:00 ET). "
+                        "No envío la orden ahora. Vuelve a pedirla en sesión."
+                    ),
+                    params={"ticker": ticker, "blocked": "after_regular_close_no_orders"},
+                )
+
             side = "buy" if kind == "buy" else "sell"
             result = await svc.execute(
                 ExecuteOrdersRequest(

@@ -1,8 +1,7 @@
 """Firm-book capital helpers.
 
-Trading / risk / sizing / DB `initial_capital` use the **deposited** Alpaca
-base (`services.deposited_capital_service.resolve_trading_base`) — never a
-silent $20.
+Trading / risk / sizing / DB `initial_capital` use `get_deposited_base()`
+(canonical `DEPOSITED_BASE_USD`) — never a silent $20.
 
 `FIRM_RETURN_BASE_USD` is a legacy micro-book stamp kept only so the unrelated
 price-band copy ("presupuesto bajo $20", discovery under $20) stays stable.

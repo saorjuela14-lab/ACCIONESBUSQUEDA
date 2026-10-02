@@ -123,7 +123,7 @@ class ExecuteLine(BaseModel):
     stop_loss: float | None = None
     take_profit: float | None = None
     client_order_id: str | None = None
-    source_tag: str = "autopilot"
+    source_tag: str = "desk"
 
 
 class ExecuteOrdersRequest(BaseModel):

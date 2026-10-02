@@ -99,10 +99,7 @@ class PortfolioBootstrapService:
             except Exception:
                 equity = None
         snap = await resolve_trading_base(equity=equity)
-        cash = float(default_cash) if default_cash and default_cash > 0 else None
-        if cash is None:
-            cash = float(snap.amount) if snap.amount and snap.amount > 0 else None
-        if cash is None or cash <= 0:
+        if snap.amount is None or float(snap.amount) <= 0:
             logger.error("portfolio.bootstrap.no_base", source=snap.source)
             created = await self._portfolios.create(
                 name=default_name,
@@ -113,10 +110,11 @@ class PortfolioBootstrapService:
                 org_id=org_id,
             )
             return created, "default"
+        cash = float(default_cash) if default_cash and default_cash > 0 else float(snap.amount)
         created = await self._portfolios.create(
             name=default_name,
             strategy=StrategyType.GROWTH,
-            initial_capital=float(snap.amount or cash),
+            initial_capital=float(snap.amount),
             cash=cash,
             mode=PortfolioMode.REAL,
             org_id=org_id,
@@ -140,11 +138,12 @@ class PortfolioBootstrapService:
         snap = await resolve_trading_base(equity=equity)
         if snap.amount and snap.amount > 0:
             initial = snap.amount
-        elif equity > 0:
-            initial = round(equity, 2)
-            logger.warning("portfolio.bootstrap.conservative_equity", amount=initial)
         else:
-            logger.error("portfolio.bootstrap.sync_no_base")
+            logger.error(
+                "portfolio.bootstrap.sync_no_base",
+                source=getattr(snap, "source", None),
+                equity=equity,
+            )
             return None
         positions: list[PortfolioPosition] = []
         for pos in broker_positions:

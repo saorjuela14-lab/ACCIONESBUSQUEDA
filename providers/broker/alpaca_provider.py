@@ -40,6 +40,7 @@ class AlpacaBrokerProvider(BrokerProvider):
         else:
             self._base_url = PAPER_BASE_URL if paper else LIVE_BASE_URL
         self.last_request_id: str | None = None
+        self.last_next_page_token: str | None = None
 
     def is_configured(self) -> bool:
         return bool(self._api_key and self._secret_key)
@@ -70,17 +71,22 @@ class AlpacaBrokerProvider(BrokerProvider):
         if response.is_success:
             return
         detail = ""
+        code = None
         try:
             body = response.json()
             detail = body.get("message") or body.get("error") or str(body)
+            code = body.get("code")
         except Exception:
             detail = response.text[:300]
         rid = self.last_request_id or "n/a"
-        raise httpx.HTTPStatusError(
+        err = httpx.HTTPStatusError(
             f"Alpaca {response.status_code}: {detail} (X-Request-ID: {rid})",
             request=response.request,
             response=response,
         )
+        err.alpaca_code = code
+        err.alpaca_status = response.status_code
+        raise err
 
     async def _request(
         self,
@@ -106,6 +112,11 @@ class AlpacaBrokerProvider(BrokerProvider):
                 json=json_body,
             )
             self._raise_for_alpaca(response)
+            self.last_next_page_token = (
+                response.headers.get("next-page-token")
+                or response.headers.get("x-next-page-token")
+                or None
+            )
             if response.status_code == 204 or not response.content:
                 return {"ok": True, "request_id": self.last_request_id}
             data = response.json()
@@ -120,19 +131,43 @@ class AlpacaBrokerProvider(BrokerProvider):
         data = await self._request("GET", "/v2/positions")
         return data if isinstance(data, list) else []
 
-    async def list_orders(self, status: str = "open", limit: int = 50) -> list[dict[str, Any]]:
-        data = await self._request(
-            "GET",
-            "/v2/orders",
-            params={
-                "status": status,
-                "limit": limit,
-                "direction": "desc",
-                "nested": "true",
-            },
-        )
+    async def list_orders(
+        self, status: str = "all", limit: int = 50, page_token: str | None = None
+    ) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {
+            "status": status,
+            "limit": limit,
+            "direction": "desc",
+            "nested": "true",
+        }
+        if page_token:
+            params["page_token"] = str(page_token)
+        data = await self._request("GET", "/v2/orders", params=params)
         rows = data if isinstance(data, list) else []
-        return flatten_orders_with_legs(rows)
+        flat = flatten_orders_with_legs(rows)
+        if not self.last_next_page_token and len(rows) >= int(limit or 0) and rows:
+            last = rows[-1] if isinstance(rows[-1], dict) else {}
+            self.last_next_page_token = str(last.get("id") or "") or None
+        return flat
+
+    async def get_order_by_client_order_id(self, client_order_id: str) -> dict[str, Any] | None:
+        """GET /v2/orders:by_client_order_id/{client_order_id}. None if missing."""
+        cid = (client_order_id or "").strip()
+        if not cid:
+            return None
+        from urllib.parse import quote
+
+        path = f"/v2/orders:by_client_order_id/{quote(cid, safe='')}"
+        try:
+            data = await self._request("GET", path)
+        except httpx.HTTPStatusError as exc:
+            status = getattr(exc, "alpaca_status", None) or getattr(
+                getattr(exc, "response", None), "status_code", None
+            )
+            if int(status or 0) == 404:
+                return None
+            raise
+        return data if isinstance(data, dict) else None
 
     async def replace_order(
         self,

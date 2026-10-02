@@ -382,3 +382,25 @@ class MultiAssetTradeORM(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     meta_json: Mapped[str] = mapped_column(Text, default="{}")
+
+
+class DeskLeaseORM(Base):
+    """Single-row cycle lease (PgBouncer transaction-mode safe; no session advisory locks)."""
+
+    __tablename__ = "desk_leases"
+
+    name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    acquired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    misses_consecutive: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class OrderAttemptORM(Base):
+    """Atomic client_order_id attempt counter (fail-closed; never a silent 1)."""
+
+    __tablename__ = "order_id_attempts"
+
+    slot: Mapped[str] = mapped_column(String(80), primary_key=True)
+    attempt: Mapped[int] = mapped_column(Integer, default=1)
