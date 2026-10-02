@@ -1006,7 +1006,9 @@ async def test_replica_lease_one_lock_no_dup_orders(session):
     assert got_b2 is True
     key = idempotency_key("BTC/USD", "2026-10-02T16:00:00+00:00", "buy")
     assert key.startswith("sa9-BTCUSD-")
+    assert key.endswith("-1")
     assert len(key) <= 48
+    assert idempotency_key("BTC/USD", "2026-10-02T16:00:00+00:00", "buy", attempt=2).endswith("-2")
 
 
 @pytest.mark.asyncio
@@ -1097,3 +1099,147 @@ def test_last_cycle_obs_exposes_catchup_fields():
     assert pos["max_close"] == 67000.0
     assert pos["state_source"] == "db"
     assert pos["broker_stop"] == "none"
+
+
+def _http_err(status: int, *, code: int | None = None, message: str = "nope"):
+    import httpx
+
+    req = httpx.Request("POST", "https://paper-api.alpaca.markets/v2/orders")
+    resp = httpx.Response(status, json={"code": code, "message": message}, request=req)
+    err = httpx.HTTPStatusError(f"Alpaca {status}: {message}", request=req, response=resp)
+    err.alpaca_code = code
+    err.alpaca_status = status
+    return err
+
+
+@pytest.mark.asyncio
+async def test_crypto_422_duplicate_reconciles_without_new_fill():
+    from services.multiasset.desk_service import MultiAssetDeskService
+    from services.order_idempotency import ALPACA_DUPLICATE_COID_CODE
+
+    svc = MultiAssetDeskService(session=None)
+    inner = MagicMock()
+    inner.submit_order = AsyncMock(
+        side_effect=_http_err(422, code=ALPACA_DUPLICATE_COID_CODE, message="client_order_id must be unique")
+    )
+    inner.get_order_by_client_order_id = AsyncMock(
+        return_value={
+            "id": "ord-1",
+            "status": "filled",
+            "filled_qty": "0.01",
+            "client_order_id": "sa9-BTCUSD-2026100216-buy-1",
+        }
+    )
+    svc._broker = inner
+    payload = {"symbol": "BTC/USD", "side": "buy", "client_order_id": "sa9-BTCUSD-2026100216-buy-1"}
+    out = await svc._submit_with_idempotency(payload)
+    assert out.get("reconciled") is True
+    assert out.get("no_new_fill") is True
+    assert out["id"] == "ord-1"
+    inner.submit_order.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_crypto_timeout_existing_and_missing_same_id():
+    import httpx
+    from services.multiasset.desk_service import MultiAssetDeskService
+
+    cid = "sa9-BTCUSD-2026100216-buy-1"
+    payload = {"symbol": "BTC/USD", "side": "buy", "client_order_id": cid}
+    svc = MultiAssetDeskService(session=None)
+    inner = MagicMock()
+    inner.submit_order = AsyncMock(side_effect=httpx.ReadTimeout("no reply"))
+    inner.get_order_by_client_order_id = AsyncMock(
+        return_value={"id": "ex-1", "status": "accepted", "client_order_id": cid}
+    )
+    svc._broker = inner
+    out = await svc._submit_with_idempotency(payload)
+    assert out.get("reconciled") is True
+    inner.submit_order.assert_awaited_once()
+
+    inner2 = MagicMock()
+    inner2.submit_order = AsyncMock(
+        side_effect=[
+            httpx.ReadTimeout("no reply"),
+            {"id": "new-1", "status": "accepted", "client_order_id": cid},
+        ]
+    )
+    inner2.get_order_by_client_order_id = AsyncMock(return_value=None)
+    svc._broker = inner2
+    out2 = await svc._submit_with_idempotency(payload)
+    assert out2["id"] == "new-1"
+    assert inner2.submit_order.await_count == 2
+    assert inner2.submit_order.await_args_list[0].args[0]["client_order_id"] == cid
+    assert inner2.submit_order.await_args_list[1].args[0]["client_order_id"] == cid
+
+
+@pytest.mark.asyncio
+async def test_crypto_retry_after_cancel_attempt_plus_one():
+    from services.multiasset.crypto_cycle_lock import allocate_sa9_client_order_id, idempotency_key
+
+    flags = MagicMock()
+    store = {"order_client_id_attempts": {"BTCUSD:buy:2026100216": 1}}
+
+    async def _get(name):
+        return dict(store.get(name) or {})
+
+    async def _set(name, val):
+        store[name] = dict(val)
+
+    flags.get_json = AsyncMock(side_effect=_get)
+    flags.set_json = AsyncMock(side_effect=_set)
+    broker = MagicMock()
+    broker.get_order_by_client_order_id = AsyncMock(
+        return_value={"status": "canceled", "id": "old"}
+    )
+    cid, n = await allocate_sa9_client_order_id(
+        flags, "BTC/USD", "buy", "2026-10-02T16:00:00+00:00", broker=broker
+    )
+    assert n == 2
+    assert cid == idempotency_key("BTC/USD", "2026-10-02T16:00:00+00:00", "buy", attempt=2)
+
+
+@pytest.mark.asyncio
+async def test_crypto_other_422_is_not_duplicate():
+    from services.multiasset.desk_service import MultiAssetDeskService
+
+    svc = MultiAssetDeskService(session=None)
+    inner = MagicMock()
+    inner.submit_order = AsyncMock(side_effect=_http_err(422, code=40010000, message="invalid notional"))
+    inner.get_order_by_client_order_id = AsyncMock(side_effect=AssertionError("no lookup"))
+    svc._broker = inner
+    with pytest.raises(Exception):
+        await svc._submit_with_idempotency({"symbol": "BTC/USD", "side": "buy"})
+    inner.get_order_by_client_order_id.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_crypto_held_stop_via_status_all_not_open():
+    from services.order_idempotency import lookup_working_stop, order_is_live_stop
+
+    broker = MagicMock()
+    broker.list_orders = AsyncMock(
+        return_value=[
+            {"symbol": "BTCUSD", "side": "sell", "type": "stop", "status": "held", "id": "leg-1"}
+        ]
+    )
+    found = await lookup_working_stop(broker, "BTC/USD")
+    assert found["id"] == "leg-1"
+    assert order_is_live_stop(found) is True
+    assert broker.list_orders.await_args.kwargs.get("status") == "all"
+
+
+@pytest.mark.asyncio
+async def test_crypto_insufficient_qty_does_not_flatten():
+    from services.order_idempotency import is_insufficient_qty_error, lookup_working_stop
+
+    broker = MagicMock()
+    broker.list_orders = AsyncMock(
+        return_value=[{"symbol": "BTCUSD", "side": "sell", "type": "stop", "status": "held", "id": "h1"}]
+    )
+    broker.close_position = AsyncMock(side_effect=AssertionError("must not flatten"))
+    assert is_insufficient_qty_error("insufficient qty available") is True
+    held = await lookup_working_stop(broker, "BTC/USD")
+    assert held["id"] == "h1"
+    broker.close_position.assert_not_called()
+    assert broker.list_orders.await_args.kwargs.get("status") == "all"

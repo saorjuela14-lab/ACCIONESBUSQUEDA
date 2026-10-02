@@ -533,12 +533,19 @@ class MultiAssetAutopilotService:
 
         from services.multiasset.crypto_cycle_lock import (
             acquire_cycle_lease,
-            idempotency_key,
+            allocate_sa9_client_order_id,
             release_cycle_lease,
             replica_id,
         )
 
         flags = OpsFlagRepository(self._session)
+
+        async def _cid(sym: str, candle, action: str) -> str:
+            key, _n = await allocate_sa9_client_order_id(
+                flags, sym, action, candle, broker=self._broker
+            )
+            return key
+
         state = await flags.get_json("crypto_strategy_a_state")
         pos_state: dict[str, Any] = dict(state.get("positions") or {})
         blocks: dict[str, Any] = dict(state.get("blocks") or {})
@@ -599,7 +606,7 @@ class MultiAssetAutopilotService:
             )
             prev = dict(pos_state.get(sym) or {})
             if delisted:
-                cid = idempotency_key(sym, last_eval_cursor, "delist")
+                cid = await _cid(sym, last_eval_cursor, "delist")
                 sold = await self._crypto_market_sell(
                     sym,
                     trade,
@@ -687,7 +694,7 @@ class MultiAssetAutopilotService:
                     pass
             hit_bar = cup.get("hit_bar")
             if cup.get("hit") and hit_bar:
-                cid = idempotency_key(sym, hit_bar.get("candle_open"), "chand")
+                cid = await _cid(sym, hit_bar.get("candle_open"), "chand")
                 sold = await self._crypto_market_sell(
                     sym,
                     trade,
@@ -956,7 +963,7 @@ class MultiAssetAutopilotService:
             prev_s = st.get("last_S")
             candle_open = (sig.extras or {}).get("candle_ts") or last_eval_cursor
             if sig.S <= 1e-12:
-                cid = idempotency_key(sym, candle_open, "s0")
+                cid = await _cid(sym, candle_open, "s0")
                 sold = await self._crypto_market_sell(
                     sym,
                     trade,
@@ -986,7 +993,7 @@ class MultiAssetAutopilotService:
                 sell_qty = abs(delta) / last_px if last_px > 0 else float(trade.qty or 0)
                 full_qty = float(trade.qty or 0)
                 flatten = sell_qty >= full_qty * 0.98 or (full_qty - sell_qty) * last_px < 10
-                cid = idempotency_key(sym, candle_open, "rebdown")
+                cid = await _cid(sym, candle_open, "rebdown")
                 sold = await self._crypto_market_sell(
                     sym,
                     trade,
@@ -1061,7 +1068,7 @@ class MultiAssetAutopilotService:
                     dry_run=dry_run,
                     confirm=not dry_run,
                     note=f"strategy_a:rebalance:{actor}",
-                    client_order_id=idempotency_key(sym, candle_open, "rebup"),
+                    client_order_id=await _cid(sym, candle_open, "rebup"),
                 )
                 try:
                     res = await self._desk.execute(req)
@@ -1144,7 +1151,7 @@ class MultiAssetAutopilotService:
                 dry_run=dry_run,
                 confirm=not dry_run,
                 note=f"strategy_a:{sig.reason}:{actor}",
-                client_order_id=idempotency_key(
+                client_order_id=await _cid(
                     sym, (sig.extras or {}).get("candle_ts") or last_eval_cursor, "buy"
                 ),
             )

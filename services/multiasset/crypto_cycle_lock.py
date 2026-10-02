@@ -24,19 +24,60 @@ def replica_id() -> str:
     return f"{host}:{os.getpid()}"
 
 
-def idempotency_key(symbol: str, candle_open: datetime | str | None, action: str) -> str:
-    """client_order_id ≤ 48: sa9-{sym}-{YYYYMMDDHH}-{action}."""
-    raw = (symbol or "X").upper().replace("/", "").replace("-", "")[:8]
-    if candle_open is None:
-        ts = "na"
-    else:
+def idempotency_key(
+    symbol: str,
+    candle_open: datetime | str | None,
+    action: str,
+    attempt: int = 1,
+) -> str:
+    """client_order_id ≤ 48: sa9-{sym}-{YYYYMMDDHH}-{action}-{attempt}."""
+    from services.order_idempotency import build_client_order_id, cycle_key_candle
+
+    cycle = "na"
+    if candle_open is not None:
         try:
-            t = pd_ts(candle_open)
-            ts = t.strftime("%Y%m%d%H")
+            cycle = cycle_key_candle(candle_open)
         except Exception:
-            ts = "na"
-    act = "".join(c for c in (action or "x").lower() if c.isalnum())[:10] or "x"
-    return f"sa9-{raw}-{ts}-{act}"[:48]
+            cycle = "na"
+    return build_client_order_id("sa9", symbol, action, cycle, attempt)
+
+
+async def allocate_sa9_client_order_id(
+    flags: Any,
+    symbol: str,
+    action: str,
+    candle_open: datetime | str | None,
+    *,
+    broker: Any = None,
+) -> tuple[str, int]:
+    from services.order_idempotency import (
+        attempt_slot,
+        bump_attempt,
+        cycle_key_candle,
+        is_dead_retryable_status,
+        read_attempt,
+    )
+
+    cycle = cycle_key_candle(candle_open) if candle_open is not None else "na"
+    slot = attempt_slot(symbol, action, cycle)
+    attempt = await read_attempt(flags, slot)
+    cid = idempotency_key(symbol, candle_open, action, attempt=attempt)
+    if broker is not None:
+        getter = getattr(broker, "get_order_by_client_order_id", None)
+        if getter is not None:
+            try:
+                existing = await getter(cid)
+            except Exception:
+                existing = None
+            status = ""
+            if isinstance(existing, dict):
+                status = str(existing.get("status") or "")
+            elif existing is not None:
+                status = str(getattr(existing, "status", "") or "")
+            if existing is not None and is_dead_retryable_status(status):
+                attempt = await bump_attempt(flags, slot)
+                cid = idempotency_key(symbol, candle_open, action, attempt=attempt)
+    return cid, attempt
 
 
 def pd_ts(value: datetime | str) -> datetime:

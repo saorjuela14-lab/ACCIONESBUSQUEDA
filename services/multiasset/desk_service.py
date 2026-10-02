@@ -104,12 +104,18 @@ class MultiAssetDeskService:
             except Exception as exc:
                 logger.warning("multiasset.positions_failed", desk=desk, error=str(exc))
             try:
-                orders = await self._broker.list_orders(status="open", limit=40)
+                orders = await self._broker.list_orders(status="all", limit=80)
+                # filter loosely by desk symbols
                 wanted = desk_symbols(desk)
+                wanted_flat = {w.replace("/", "") for w in wanted} | wanted
+                from services.order_idempotency import is_working_status
+
                 orders = [
                     o
                     for o in orders
-                    if any(same_symbol(str(o.get("symbol") or ""), w) for w in wanted)
+                    if str(o.get("symbol") or "").upper().replace("/", "")
+                    in {x.replace("/", "") for x in wanted_flat}
+                    and is_working_status(str(o.get("status") or ""))
                 ]
             except Exception:
                 orders = []
@@ -375,12 +381,27 @@ class MultiAssetDeskService:
             return result
 
         try:
-            raw = await self._broker.submit_order(order)
+            raw = await self._submit_with_idempotency(order)
         except Exception as exc:
             if is_crypto:
                 from services.multiasset.crypto_orders import is_stop_like, record_rejected_crypto_stop
+                from services.order_idempotency import is_insufficient_qty_error, lookup_working_stop
 
                 if is_stop_like(order):
+                    if is_insufficient_qty_error(exc):
+                        try:
+                            held = await lookup_working_stop(self._broker, sym)
+                        except Exception:
+                            held = None
+                        if held:
+                            logger.info(
+                                "crypto.stop_insufficient_qty_still_protected",
+                                symbol=sym,
+                                order_id=(held.get("id") if isinstance(held, dict) else None),
+                            )
+                            raise ValueError(
+                                "crypto stop insufficient qty; live stop still present — no flatten"
+                            ) from exc
                     await record_rejected_crypto_stop(
                         self._session, symbol=sym, detail=str(exc), raw={"error": str(exc)}
                     )
@@ -389,7 +410,7 @@ class MultiAssetDeskService:
             if "stop_loss" in order:
                 logger.warning("multiasset.oto_failed_retry_plain", error=str(exc), symbol=sym)
                 plain = {k: v for k, v in order.items() if k not in {"order_class", "stop_loss"}}
-                raw = await self._broker.submit_order(plain)
+                raw = await self._submit_with_idempotency(plain)
             else:
                 raise
         if isinstance(raw, dict) and str(raw.get("status") or "") in {"rejected", "canceled"}:
@@ -402,7 +423,7 @@ class MultiAssetDeskService:
             elif "stop_loss" in order:
                 logger.warning("multiasset.oto_rejected_retry_plain", symbol=sym)
                 plain = {k: v for k, v in order.items() if k not in {"order_class", "stop_loss"}}
-                raw = await self._broker.submit_order(plain)
+                raw = await self._submit_with_idempotency(plain)
         result = MultiAssetOrderResult(
             ok=True,
             desk=req.desk,
@@ -415,10 +436,56 @@ class MultiAssetDeskService:
             message=f"Orden paper enviada ({req.side} {sym})",
             payload=raw if isinstance(raw, dict) else {"raw": raw},
         )
-        if self._session is not None:
+        reconciled = isinstance(raw, dict) and bool(raw.get("reconciled"))
+        if self._session is not None and not reconciled:
             await self._journal_write(req, result)
             await self._track_fill(req, result, sym, is_sim=False)
+        elif reconciled:
+            result.message = f"Orden paper reconciliada ({req.side} {sym}); sin fill nuevo"
+            result.payload = {**(result.payload or {}), "reconciled": True, "no_new_fill": True}
         return result
+
+    async def _lookup_by_client_order_id(self, client_id: str) -> dict | None:
+        getter = getattr(self._broker, "get_order_by_client_order_id", None)
+        if getter is None or not client_id:
+            return None
+        try:
+            raw = await getter(client_id)
+        except Exception as exc:
+            logger.warning("multiasset.by_client_order_id_failed", error=str(exc))
+            return None
+        return raw if isinstance(raw, dict) else None
+
+    async def _submit_with_idempotency(self, order: dict) -> dict:
+        from services.order_idempotency import (
+            is_duplicate_client_order_id_error,
+            is_timeout_or_network,
+            is_unrelated_422,
+        )
+
+        cid = str(order.get("client_order_id") or "")
+        try:
+            raw = await self._broker.submit_order(order)
+            return raw if isinstance(raw, dict) else {"raw": raw}
+        except Exception as exc:
+            if is_unrelated_422(exc):
+                raise
+            if is_duplicate_client_order_id_error(exc):
+                existing = await self._lookup_by_client_order_id(cid)
+                if existing:
+                    existing["reconciled"] = True
+                    existing["no_new_fill"] = True
+                    return existing
+                raise
+            if is_timeout_or_network(exc):
+                existing = await self._lookup_by_client_order_id(cid)
+                if existing:
+                    existing["reconciled"] = True
+                    existing["no_new_fill"] = True
+                    return existing
+                raw = await self._broker.submit_order(order)
+                return raw if isinstance(raw, dict) else {"raw": raw}
+            raise
 
     async def _track_fill(
         self,

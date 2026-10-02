@@ -169,6 +169,24 @@ class AlpacaBrokerProvider(BrokerProvider):
             raise
         return data if isinstance(data, dict) else None
 
+    async def get_order_by_client_order_id(self, client_order_id: str) -> dict[str, Any] | None:
+        cid = (client_order_id or "").strip()
+        if not cid:
+            return None
+        from urllib.parse import quote
+
+        path = f"/v2/orders:by_client_order_id/{quote(cid, safe='')}"
+        try:
+            data = await self._request("GET", path)
+        except httpx.HTTPStatusError as exc:
+            status = getattr(exc, "alpaca_status", None) or getattr(
+                getattr(exc, "response", None), "status_code", None
+            )
+            if int(status or 0) == 404:
+                return None
+            raise
+        return data if isinstance(data, dict) else None
+
     async def replace_order(
         self,
         order_id: str,
