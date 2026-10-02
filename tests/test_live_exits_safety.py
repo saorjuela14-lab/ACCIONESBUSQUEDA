@@ -294,8 +294,8 @@ async def test_autopilot_kill_still_runs_lifecycle():
          patch("services.autopilot_service.OpsFlagRepository", return_value=flags), \
          patch("services.live_safety.arm_deposited_brake_if_needed", AsyncMock(return_value=None)), \
          patch(
-             "services.deposited_capital_service.resolve_trading_base",
-             AsyncMock(return_value=SimpleNamespace(amount=21.76)),
+             "services.deposited_capital_service.get_deposited_base",
+             AsyncMock(return_value=SimpleNamespace(amount=21.76, buy_allowed=True, source="env:DEPOSITED_BASE_USD", warnings=())),
          ), \
          patch("services.intraday_flat_service.IntradayFlatService") as Flat, \
          patch("services.risk_policy_service.RiskPolicyService") as Risk, \

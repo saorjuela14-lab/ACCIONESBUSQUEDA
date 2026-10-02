@@ -105,10 +105,10 @@ class ReconcileService:
                 )
                 for p in broker_positions
             ]
-            from services.deposited_capital_service import resolve_trading_base
+            from services.deposited_capital_service import get_deposited_base
 
             equity = float(account.equity or account.portfolio_value or account.cash or 0)
-            snap = await resolve_trading_base(equity=equity)
+            snap = await get_deposited_base()
             initial = snap.amount if snap.amount and snap.amount > 0 else None
             updated = await self._portfolios.mirror_positions(
                 pf.id,

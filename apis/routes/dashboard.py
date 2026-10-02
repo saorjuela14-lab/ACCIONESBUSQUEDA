@@ -156,6 +156,9 @@ async def get_terminal_dashboard(
         p = sorted(portfolios, key=lambda x: x.updated_at, reverse=True)[0] if portfolios else None
         source = "existing" if p else "none"
 
+    if p:
+        deposited_snap = await get_deposited_base(portfolio_initial=p.initial_capital)
+        reporting_base = deposited_snap.amount if deposited_snap.amount and deposited_snap.amount > 0 else None
     if p and scope.is_desk:
         from services.portfolio_bootstrap_service import stamp_initial_from_deposits
 

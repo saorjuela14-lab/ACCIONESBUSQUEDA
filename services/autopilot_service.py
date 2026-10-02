@@ -147,7 +147,7 @@ class AutopilotService:
 
         # Deposited 5% brake — arm kill WITHOUT flatten; keep SNAP brackets.
         try:
-            from services.deposited_capital_service import resolve_trading_base
+            from services.deposited_capital_service import get_deposited_base
             from services.live_safety import arm_deposited_brake_if_needed
 
             eq = None
@@ -157,8 +157,15 @@ class AutopilotService:
                     eq = float(acct.equity or acct.cash or 0) or None
                 except Exception:
                     eq = None
-            base_snap = await resolve_trading_base(equity=eq)
+            base_snap = await get_deposited_base()
             base = base_snap.amount if base_snap.amount and base_snap.amount > 0 else None
+            if not base_snap.buy_allowed:
+                steps["deposited_base"] = {
+                    "source": base_snap.source,
+                    "buy_allowed": False,
+                    "warnings": list(base_snap.warnings),
+                }
+                steps["buys_blocked"] = "deposited_base_missing"
             pct = float(getattr(settings, "deposited_brake_pct", 5.0) or 5.0)
             armed = await arm_deposited_brake_if_needed(
                 self._session,

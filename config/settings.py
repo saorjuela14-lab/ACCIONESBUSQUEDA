@@ -151,8 +151,8 @@ class Settings(BaseSettings):
     alpaca_base_url: str = ""  # override; empty → api.alpaca.markets (live) or paper-api
     alpaca_data_base_url: str = "https://data.alpaca.markets"
     alpaca_data_feed: str = "iex"  # iex (free) | sip (paid) | delayed_sip
-    # Deposited Alpaca base for P&L and trading/risk/sizing if activities API is down.
-    # Never silent $20.
+    # Canonical deposited base (Sergio: 21.76). Single source for brake, dashboard,
+    # portfolios.initial_capital and ops/status. Missing → fail-closed for buys.
     deposited_base_usd: float | None = None
     deposited_base_cache_ttl_seconds: int = 600
 

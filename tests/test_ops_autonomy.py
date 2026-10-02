@@ -324,7 +324,7 @@ async def test_auto_execute_skips_picks_without_committee_consensus():
          patch("services.risk_policy_service.RiskPolicyService") as RS, \
          patch("database.repositories.ops_repository.OpsFlagRepository", return_value=flags), \
          patch(
-             "services.deposited_capital_service.resolve_trading_base",
+             "services.deposited_capital_service.get_deposited_base",
              AsyncMock(return_value=MagicMock(amount=21.76, source="alpaca")),
          ):
         s = MagicMock()
@@ -384,7 +384,7 @@ async def test_auto_execute_skips_second_line_on_micro_book():
          patch("services.risk_policy_service.RiskPolicyService") as RS, \
          patch("database.repositories.ops_repository.OpsFlagRepository", return_value=flags), \
          patch(
-             "services.deposited_capital_service.resolve_trading_base",
+             "services.deposited_capital_service.get_deposited_base",
              AsyncMock(return_value=MagicMock(amount=21.76, source="alpaca")),
          ):
         s = MagicMock()
@@ -443,7 +443,7 @@ async def test_auto_execute_skips_when_trading_base_unavailable():
          patch("services.risk_policy_service.RiskPolicyService") as RS, \
          patch("database.repositories.ops_repository.OpsFlagRepository", return_value=flags), \
          patch(
-             "services.deposited_capital_service.resolve_trading_base",
+             "services.deposited_capital_service.get_deposited_base",
              AsyncMock(return_value=MagicMock(amount=None, source="unavailable")),
          ):
         s = MagicMock()
