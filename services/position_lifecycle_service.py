@@ -212,7 +212,13 @@ class PositionLifecycleService:
                     except Exception as exc:
                         logger.warning("trade_journal.close_failed", symbol=sym, error=str(exc))
                     if order_looks_like_stop(fill_od) or "stop" in (m.exit_reason or "").lower():
-                        await self._record_stop_cooldown(sym, m.exit_reason or "broker_stop", fill_px)
+                        await self._record_stop_cooldown(
+                            sym,
+                            m.exit_reason or "broker_stop",
+                            fill_px,
+                            entry=float(m.entry_price or 0) or None,
+                            stop=float(m.stop_loss or 0) or None,
+                        )
                 else:
                     logger.info(
                         "lifecycle.absent_no_fill",
@@ -362,24 +368,40 @@ class PositionLifecycleService:
 
         return LifecycleAction(symbol=mandate.symbol, action="hold", reason="OK", new_stop=effective_stop)
 
-    async def _record_stop_cooldown(self, symbol: str, reason: str, price: float) -> None:
+    async def _record_stop_cooldown(
+        self,
+        symbol: str,
+        reason: str,
+        price: float,
+        *,
+        entry: float | None = None,
+        stop: float | None = None,
+    ) -> None:
         """Block revenge re-entries (investor discipline / prop-desk cool-off)."""
         mins = int(self._settings.auto_execute_post_stop_cooldown_minutes or 0)
-        if mins <= 0:
-            return
         from database.repositories.ops_repository import OpsFlagRepository
+        from services.live_safety import FLAG_STOP_1R, r_multiple_loss, record_stop_1r_block
 
-        await OpsFlagRepository(self._session).set_json(
-            "post_stop_cooldown",
-            {
-                "symbol": symbol.upper(),
-                "reason": reason[:240],
-                "price": price,
-                "until": (utc_now().timestamp() + mins * 60),
-                "minutes": mins,
-                "set_at": utc_now().isoformat(),
-            },
-        )
+        flags = OpsFlagRepository(self._session)
+        if mins > 0:
+            await flags.set_json(
+                "post_stop_cooldown",
+                {
+                    "symbol": symbol.upper(),
+                    "reason": reason[:240],
+                    "price": price,
+                    "until": (utc_now().timestamp() + mins * 60),
+                    "minutes": mins,
+                    "set_at": utc_now().isoformat(),
+                },
+            )
+        r_mult = r_multiple_loss(entry, stop, price)
+        if r_mult is not None and r_mult >= 1.0 - 1e-9:
+            prev = await flags.get_json(FLAG_STOP_1R)
+            await flags.set_json(
+                FLAG_STOP_1R,
+                record_stop_1r_block(prev, symbol, r_mult=r_mult),
+            )
 
     async def scan(self, *, execute_exits: bool = True) -> LifecycleScanReport:
         now = utc_now()
@@ -439,6 +461,14 @@ class PositionLifecycleService:
                 if broker_detail:
                     decision.detail = broker_detail
             elif decision.action == "exit" and execute_exits:
+                from services.live_safety import eod_may_submit_orders
+
+                if not eod_may_submit_orders():
+                    warnings.append(f"{m.symbol}: after_regular_close_no_orders")
+                    decision.detail = "after_regular_close_no_orders"
+                    actions.append(decision)
+                    await self._mandates.save(m)
+                    continue
                 executed = False
                 detail = None
                 if self._broker.is_configured():
@@ -490,7 +520,13 @@ class PositionLifecycleService:
                         for k in ("Stop", "trailing", "Tesis invalidada", "Time-stop", "perdida")
                     )
                     if protective and "Take-profit" not in (decision.reason or ""):
-                        await self._record_stop_cooldown(m.symbol, decision.reason, price)
+                        await self._record_stop_cooldown(
+                            m.symbol,
+                            decision.reason,
+                            price,
+                            entry=float(m.entry_price or 0) or None,
+                            stop=float(m.stop_loss or 0) or None,
+                        )
             else:
                 await self._mandates.save(m)
 

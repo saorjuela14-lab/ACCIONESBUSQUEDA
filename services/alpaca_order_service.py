@@ -277,8 +277,16 @@ class AlpacaOrderService:
             )
         try:
             open_orders = await self.list_orders(status="open", limit=100)
-        except Exception:
-            open_orders = []
+        except Exception as exc:
+            logger.warning("broker.stop_list_orders_failed", symbol=sym, error=str(exc))
+            return BrokerOrderResult(
+                symbol=sym,
+                qty=float(qty),
+                side="sell",
+                type="stop",
+                status="failed",
+                error="list_orders_failed_stop_intact",
+            )
         existing = None
         for od in open_orders:
             if (od.symbol or "").upper() != sym:
@@ -378,6 +386,42 @@ class AlpacaOrderService:
         return await self._broker.close_all_positions(cancel_orders=cancel_orders)
 
     async def submit_one(self, req: BrokerOrderRequest) -> BrokerOrderResult:
+        from services.live_safety import live_entry_blocked, production_trading_unconfigured
+        from utils.market_hours import eod_may_submit_orders
+
+        settings = get_settings()
+        if production_trading_unconfigured():
+            return BrokerOrderResult(
+                symbol=req.symbol.upper(),
+                qty=req.qty,
+                side=req.side,
+                type=req.order_type,
+                status="failed",
+                error="trading_mode_unconfigured",
+            )
+        blocked, why = live_entry_blocked(
+            side=req.side,
+            paper=self._broker.paper,
+            live_entries_enabled=bool(getattr(settings, "live_entries_enabled", False)),
+        )
+        if blocked:
+            return BrokerOrderResult(
+                symbol=req.symbol.upper(),
+                qty=req.qty,
+                side=req.side,
+                type=req.order_type,
+                status="failed",
+                error=why,
+            )
+        if (req.side or "").lower() == "buy" and not eod_may_submit_orders():
+            return BrokerOrderResult(
+                symbol=req.symbol.upper(),
+                qty=req.qty,
+                side=req.side,
+                type=req.order_type,
+                status="failed",
+                error="after_regular_close_no_orders",
+            )
         payload = self._build_order_payload(req)
         try:
             raw = await self._broker.submit_order(payload)
@@ -809,6 +853,7 @@ class AlpacaOrderService:
                 take_profit=line.take_profit,
                 stop_loss=line.stop_loss,
                 client_order_id=line.client_order_id,
+                source_tag=getattr(line, "source_tag", None) or "autopilot",
             )
             if not request.dry_run:
                 try:
@@ -975,7 +1020,10 @@ class AlpacaOrderService:
         qty = req.qty
         qty_str = str(int(qty)) if float(qty).is_integer() else str(qty)
         # Idempotency — same idea as alpaca CLI --client-order-id
-        client_id = (req.client_order_id or "").strip() or f"nexbuy-{uuid4()}"
+        client_id = (req.client_order_id or "").strip()
+        if not client_id:
+            tag = "".join(c for c in (getattr(req, "source_tag", None) or "desk").lower() if c.isalnum())[:12] or "desk"
+            client_id = f"{tag}-{uuid4().hex[:12]}"
         payload: dict[str, Any] = {
             "symbol": req.symbol.upper(),
             "qty": qty_str,

@@ -71,6 +71,14 @@ class AutoExecuteService:
             return True, "paper mode OK"
         # LIVE path
         if s.firm_autonomy:
+            from services.live_safety import live_buys_allowed
+
+            ok_e, why_e = live_buys_allowed(
+                paper=bool(self._broker.paper),
+                live_entries_enabled=bool(getattr(s, "live_entries_enabled", False)),
+            )
+            if not ok_e:
+                return False, why_e
             return True, "firm_autonomy LIVE"
         if s.auto_execute_paper_first and not self._live_enabled():
             return False, (
@@ -79,6 +87,14 @@ class AutoExecuteService:
             )
         if not self._live_enabled():
             return False, "AUTO_EXECUTE_LIVE=false"
+        from services.live_safety import live_buys_allowed
+
+        ok_e, why_e = live_buys_allowed(
+            paper=False,
+            live_entries_enabled=bool(getattr(s, "live_entries_enabled", False)),
+        )
+        if not ok_e:
+            return False, why_e
         return True, "live promoted"
 
     async def can_auto_trade_async(self) -> tuple[bool, str]:
@@ -108,8 +124,8 @@ class AutoExecuteService:
         from services.live_safety import (
             FLAG_ENTRY_DAY,
             FLAG_SUBMIT_FAILS,
-            entry_day_allowed,
             live_buys_allowed,
+            remaining_entry_slots,
             submit_already_paused,
         )
 
@@ -120,6 +136,7 @@ class AutoExecuteService:
         if not entries_ok:
             return {"skipped": True, "reason": entries_why}
 
+        remaining = int(getattr(self._settings, "live_max_entries_per_day", 1) or 1)
         flags = None
         try:
             from database.repositories.ops_repository import OpsFlagRepository
@@ -129,12 +146,12 @@ class AutoExecuteService:
             if submit_already_paused(fail_flag):
                 return {"skipped": True, "reason": "submit_fail_pause"}
             day_flag = await flags.get_json(FLAG_ENTRY_DAY)
-            day_ok, day_why, day_flag = entry_day_allowed(
+            remaining = remaining_entry_slots(
                 day_flag,
                 max_entries=int(getattr(self._settings, "live_max_entries_per_day", 1) or 1),
             )
-            if not day_ok:
-                return {"skipped": True, "reason": day_why}
+            if remaining <= 0:
+                return {"skipped": True, "reason": "max_1_entry_per_day"}
         except Exception as exc:
             logger.warning("auto_execute.entry_budget_failed", error=str(exc))
 
@@ -178,11 +195,11 @@ class AutoExecuteService:
             until = float(cool.get("until") or 0)
             now_ts = time.time()
             if until and now_ts < until:
-                remaining = int((until - now_ts) / 60) + 1
+                mins_left = int((until - now_ts) / 60) + 1
                 return {
                     "skipped": True,
                     "reason": (
-                        f"post_stop_cooldown_{remaining}m"
+                        f"post_stop_cooldown_{mins_left}m"
                         f"(last={cool.get('symbol')})"
                     ),
                 }
@@ -268,6 +285,18 @@ class AutoExecuteService:
             if str(ticker).upper() in avoid or str(ticker).upper() in open_syms:
                 skipped_avoid += 1
                 continue
+            try:
+                from database.repositories.ops_repository import OpsFlagRepository
+                from services.live_safety import FLAG_STOP_1R, buy_thesis_blocked
+
+                stop_flag = await OpsFlagRepository(self._session).get_json(FLAG_STOP_1R)
+                blocked_1r, why_1r = buy_thesis_blocked(stop_flag, str(ticker))
+                if blocked_1r:
+                    skipped_avoid += 1
+                    logger.info("auto_execute.skip_stop_1r", ticker=ticker, reason=why_1r)
+                    continue
+            except Exception:
+                pass
             price_f = float(price)
             stop = getattr(pick, "stop_loss", None)
             if stop is None or float(stop) <= 0 or float(stop) >= price_f:
@@ -300,7 +329,7 @@ class AutoExecuteService:
                     take_profit=tp,
                 )
             )
-            if len(lines) >= 2:
+            if len(lines) >= remaining:
                 break
         if not lines:
             if skipped_avoid and not skipped_no_committee and not skipped_risk:
@@ -339,7 +368,6 @@ class AutoExecuteService:
                 )
                 for od in result.submitted:
                     day_flag = record_entry_day_fill(day_flag, od.symbol)
-                    break  # max 1 entry/day — count the batch as one
                 await flags.set_json(FLAG_ENTRY_DAY, day_flag)
             fail_flag = await flags.get_json(FLAG_SUBMIT_FAILS)
             paused, pause_why, fail_flag = submit_fail_pause(

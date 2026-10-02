@@ -32,7 +32,7 @@ router = APIRouter()
 class KillSwitchRequest(BaseModel):
     confirm: bool = False
     reason: str = "panic flat"
-    flatten: bool = True
+    flatten: bool = False
     actor: str = "user"
 
 
@@ -209,6 +209,8 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
         "auto_execute": {
             "allowed": ok,
             "reason": reason,
+            "entries_allowed": ok,
+            "exits_only": not bool(settings.live_entries_enabled),
             "policy": auto.policy().model_dump(mode="json"),
         },
         "paper_promotion": promo or {"promoted": False},

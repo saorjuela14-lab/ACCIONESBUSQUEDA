@@ -363,7 +363,5 @@ async def resolve_trading_base(*, equity: float | None = None) -> DepositedBase:
             withdrawals=last.withdrawals if last else 0.0,
             activity_count=last.activity_count if last else 0,
         )
-    if eq > 0:
-        logger.warning("trading_base.conservative_equity", amount=round(eq, 2))
-        return DepositedBase(amount=round(eq, 2), source="conservative:equity")
-    return snap if snap is not None else DepositedBase(amount=None, source="unavailable")
+    logger.error("trading_base.fail_closed_no_deposited_base", equity=eq)
+    return DepositedBase(amount=None, source="unavailable:no_deposited_base")

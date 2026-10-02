@@ -52,6 +52,7 @@ class BrokerOrderRequest(BaseModel):
     stop_loss: float | None = None
     client_order_id: str | None = None
     extended_hours: bool = False
+    source_tag: str = "desk"
 
 
 class BrokerOrderResult(BaseModel):
@@ -122,6 +123,7 @@ class ExecuteLine(BaseModel):
     stop_loss: float | None = None
     take_profit: float | None = None
     client_order_id: str | None = None
+    source_tag: str = "autopilot"
 
 
 class ExecuteOrdersRequest(BaseModel):

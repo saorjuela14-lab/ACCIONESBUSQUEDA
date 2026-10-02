@@ -281,8 +281,13 @@ def test_firm_autonomy_allows_live_without_paper_first():
         s.auto_execute_live = False
         s.auto_execute_max_notional = 25
         s.auto_execute_require_market_open = True
+        s.live_entries_enabled = False
         gs.return_value = s
         svc = AutoExecuteService(session, broker)
+        ok, reason = svc.can_auto_trade()
+        assert ok is False
+        assert reason == "live_entries_disabled"
+        s.live_entries_enabled = True
         ok, reason = svc.can_auto_trade()
         assert ok is True
         assert "firm_autonomy" in reason

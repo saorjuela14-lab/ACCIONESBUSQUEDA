@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 import re
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Mapping
 
 from utils.market_hours import MARKET_CLOSE, US_EASTERN, is_market_open, now_et
@@ -23,10 +23,20 @@ _MULTIASSET_CRYPTO_ROOTS = frozenset({
 })
 
 _KILL_OFF_CONFIRM = ("confirma", "confirmado", "autorizo", "explicit", "explícit")
-_KILL_OFF_TOPIC = ("kill", "freno", "apag", "desactiv", "kill-switch", "kill switch")
+# Human must name the kill-switch; bare "kill" matches "skill" (false positive).
+_KILL_OFF_TOPIC = (
+    "kill switch",
+    "kill-switch",
+    "killswitch",
+    "freno de emergencia",
+    "desactivar kill",
+    "apaga el kill",
+    "apagá el kill",
+)
 
 FLAG_ENTRY_DAY = "live_entry_day_count"
 FLAG_SUBMIT_FAILS = "live_submit_fail_streak"
+FLAG_STOP_1R = "live_stop_1r_block"
 
 
 def deposited_brake_floor(base: float, pct: float = 5.0) -> float:
@@ -63,6 +73,16 @@ def live_buys_allowed(*, paper: bool, live_entries_enabled: bool) -> tuple[bool,
 
 def is_buy_side(side: str | None) -> bool:
     return (side or "").strip().lower() == "buy"
+
+
+def live_entry_blocked(*, side: str | None, paper: bool, live_entries_enabled: bool) -> tuple[bool, str]:
+    """True when this order would open or increase a LIVE position while entries are off."""
+    if not is_buy_side(side):
+        return False, "exit_or_reduce_ok"
+    ok, why = live_buys_allowed(paper=paper, live_entries_enabled=live_entries_enabled)
+    if ok:
+        return False, why
+    return True, why
 
 
 def is_multiasset_crypto_symbol(ticker: str) -> bool:
@@ -224,14 +244,96 @@ def entry_day_allowed(flag: dict[str, Any] | None, *, max_entries: int = 1, toda
     return True, "ok", data
 
 
+def remaining_entry_slots(
+    flag: dict[str, Any] | None, *, max_entries: int = 1, today: str | None = None
+) -> int:
+    """How many new LIVE entries may still be submitted today. Never enlarge the cap."""
+    ok, _, data = entry_day_allowed(flag, max_entries=max_entries, today=today)
+    if not ok:
+        return 0
+    cap = max(1, int(max_entries or 1))
+    return max(0, cap - int(data.get("count") or 0))
+
+
 def record_entry_day_fill(flag: dict[str, Any], symbol: str) -> dict[str, Any]:
     data = dict(flag or {})
     data["count"] = int(data.get("count") or 0) + 1
+    data["at"] = datetime.now().astimezone(US_EASTERN).isoformat()
     syms = list(data.get("symbols") or [])
     if symbol and symbol.upper() not in syms:
         syms.append(symbol.upper())
     data["symbols"] = syms[:8]
     return data
+
+
+def next_et_session_date(day: date | None = None) -> date:
+    d = (day or now_et().date()) + timedelta(days=1)
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    return d
+
+
+def r_multiple_loss(entry: float | None, stop: float | None, exit_px: float | None) -> float | None:
+    try:
+        e = float(entry or 0)
+        s = float(stop or 0)
+        x = float(exit_px or 0)
+    except (TypeError, ValueError):
+        return None
+    if e <= 0 or s <= 0 or x <= 0 or e <= s:
+        return None
+    risk = e - s
+    if risk <= 0:
+        return None
+    return (e - x) / risk
+
+
+def record_stop_1r_block(
+    flag: dict[str, Any] | None,
+    symbol: str,
+    *,
+    r_mult: float,
+    today: str | None = None,
+) -> dict[str, Any]:
+    today = today or et_today()
+    stop_day = date.fromisoformat(today)
+    until = next_et_session_date(stop_day).isoformat()
+    data = dict(flag or {})
+    blocks = dict(data.get("symbols") or {})
+    blocks[symbol.upper()] = {
+        "stop_day": today,
+        "until_session": until,
+        "r": round(float(r_mult), 3),
+    }
+    data["symbols"] = blocks
+    data["at"] = datetime.now().astimezone(US_EASTERN).isoformat()
+    return data
+
+
+def buy_thesis_blocked(
+    flag: dict[str, Any] | None,
+    symbol: str,
+    *,
+    today: str | None = None,
+) -> tuple[bool, str]:
+    today = today or et_today()
+    rec = ((flag or {}).get("symbols") or {}).get((symbol or "").upper())
+    if not rec:
+        return False, "ok"
+    until = str(rec.get("until_session") or "")
+    if until and today <= until:
+        return True, f"stop_1r_skip_until_{until}"
+    return False, "ok"
+
+
+def blocked_buy_symbols(flag: dict[str, Any] | None, *, today: str | None = None) -> set[str]:
+    today = today or et_today()
+    out: set[str] = set()
+    for sym in ((flag or {}).get("symbols") or {}):
+        blocked, _ = buy_thesis_blocked(flag, sym, today=today)
+        if blocked:
+            out.add(sym.upper())
+    return out
 
 
 def submit_fail_pause(

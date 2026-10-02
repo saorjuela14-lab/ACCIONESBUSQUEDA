@@ -65,6 +65,19 @@ class DailyTradeRecommendationService:
         capital: float | None = None,
     ) -> DailyTradeReport:
         logger.info("daily_trade.generate.start", session=session, capital=capital)
+        blocked_1r: set[str] = set()
+        try:
+            from database.engine import get_session
+            from database.repositories.ops_repository import OpsFlagRepository
+            from services.live_safety import FLAG_STOP_1R, blocked_buy_symbols
+
+            async for db in get_session():
+                flag = await OpsFlagRepository(db).get_json(FLAG_STOP_1R)
+                blocked_1r = blocked_buy_symbols(flag)
+                break
+        except Exception as exc:
+            logger.warning("daily_trade.stop_1r_flag_failed", error=str(exc))
+        exclude_tickers = list(exclude_tickers or []) + sorted(blocked_1r)
 
         regime = await self._fetch_market_regime()
         macro = await self._macro.assess(market_regime=regime)
@@ -216,7 +229,10 @@ class DailyTradeRecommendationService:
         scored, htf_notes = await self._apply_htf_gate(scored, soft=macro.mode != "risk_on")
         # Committee gate (micro = soft majority; larger books = unanimous)
         picks = await self._apply_committee_gate(
-            scored[:_COMMITTEE_DAILY_SCREEN], max_picks, mode=committee_mode
+            scored[:_COMMITTEE_DAILY_SCREEN],
+            max_picks,
+            mode=committee_mode,
+            exclude={t.upper() for t in (exclude_tickers or [])},
         )
         used_manager = False
         committee_notes = list(htf_notes or [])
@@ -391,16 +407,18 @@ class DailyTradeRecommendationService:
         max_picks: int,
         *,
         mode: str = "strict",
+        exclude: set[str] | None = None,
     ) -> list[TradePick]:
         """Keep picks that pass committee gate (strict unanimous or micro majority)."""
         if not candidates:
             return []
+        blocked = {t.upper() for t in (exclude or set())}
         if not self._analysis:
             logger.warning("daily_trade.committee_unavailable")
             return []
 
         sem = asyncio.Semaphore(_COMMITTEE_DAILY_CONCURRENCY)
-        buy_like = [p for p in candidates if p.action != _ACTION_WATCH]
+        buy_like = [p for p in candidates if p.action != _ACTION_WATCH and p.ticker.upper() not in blocked]
 
         async def _gate(pick: TradePick) -> TradePick | None:
             async with sem:
@@ -447,7 +465,6 @@ class DailyTradeRecommendationService:
 
         # Hunt in batches — don't stop after the first rejects
         approved: list[TradePick] = []
-        buy_like = [p for p in candidates if p.action != _ACTION_WATCH]
         batch = 8
         for start in range(0, min(len(buy_like), _COMMITTEE_DAILY_SCREEN), batch):
             if len(approved) >= max_picks:
