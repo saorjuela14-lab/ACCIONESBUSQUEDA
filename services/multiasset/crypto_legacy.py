@@ -307,6 +307,16 @@ async def list_paper_orders(
         if "time_in_force" not in row and raw.get("tif"):
             row["time_in_force"] = raw.get("tif")
         items.append(row)
+    size = min(int(page_size or 100), 500)
+    if page_token:
+        start = 0
+        for i, row in enumerate(items):
+            if str(row.get("id") or "") == str(page_token):
+                start = i + 1
+                break
+        items = items[start:]
+    next_token = items[size].get("id") if len(items) > size else None
+    items = items[:size]
     return {
         "paper": True,
         "status": want,
@@ -353,16 +363,7 @@ async def legacy_flatten(
         for sym in asked:
             if is_strategy_a_symbol(sym) and a_has_open_lot(open_a, sym):
                 blocked.append(sym)
-    if blocked and not dry_run:
-        return {
-            "ok": False,
-            "paper": True,
-            "dry_run": False,
-            "actor": actor,
-            "rejected": blocked,
-            "error": "strategy_a_open_lot",
-            "detail": "legacy-flatten rechaza BTC/ETH mientras la A tenga un lote abierto",
-        }
+    # After A is armed: skip BTC/ETH with an A lot; still flatten the other inherited names.
 
     cancels: dict[str, Any] = {"cancelled": [], "dry_run": dry_run}
     try:
@@ -475,8 +476,9 @@ async def legacy_flatten(
         except Exception:
             leftover = leftover
 
+    all_blocked = bool(blocked) and not closed and not dry_run and not missing
     out = {
-        "ok": True,
+        "ok": not (blocked and not closed and not dry_run),
         "paper": True,
         "dry_run": bool(dry_run),
         "actor": actor,
@@ -489,6 +491,7 @@ async def legacy_flatten(
         "cancels": cancels,
         "at": datetime.now(timezone.utc).isoformat(),
         "legacy_engine": "off",
+        "error": "strategy_a_open_lot" if all_blocked else None,
     }
     if flags is not None and not dry_run and closed:
         await flags.set_json(

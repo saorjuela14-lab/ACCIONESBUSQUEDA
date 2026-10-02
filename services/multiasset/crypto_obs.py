@@ -98,7 +98,9 @@ def attach_last_cycle_obs(cycle: dict[str, Any] | None, state: dict[str, Any] | 
         crypto["open_positions"] = crypto.get("open_positions") or []
     crypto["broker_stops_gtc"] = False
     crypto["broker_stop"] = "none"
+    crypto["legacy_engine"] = "off"
     last["broker_stops_gtc"] = False
+    last["legacy_engine"] = "off"
     if state:
         last["last_evaluated_candle"] = state.get("last_evaluated_candle")
         last["eval_history"] = list(state.get("eval_history") or [])[-6:]

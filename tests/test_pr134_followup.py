@@ -190,9 +190,37 @@ async def test_positions_fail_does_not_sell_tracker_qty():
     assert sold["keep_state"] is True
 
 
-def test_a_sell_is_min_of_own_and_broker():
-    own, broker = 0.07, 0.25  # mixed inherited + A
-    assert min(own, broker) == pytest.approx(0.07)
+@pytest.mark.asyncio
+async def test_mixed_btc_sells_only_a_qty_not_whole_broker_lot():
+    """Alpaca merges inherited + A into one BTC position. A sells only its net."""
+    from services.multiasset.autopilot import MultiAssetAutopilotService
+
+    svc = MultiAssetAutopilotService(session=None)
+    svc._broker = MagicMock()
+    svc._broker.get_positions = AsyncMock(
+        return_value=[{"symbol": "BTC/USD", "qty": "0.01", "avg_entry_price": "64000"}]
+    )
+    captured: dict = {}
+
+    class Desk:
+        async def execute(self, req):
+            captured["qty"] = req.qty
+            captured["symbol"] = req.symbol
+            return MagicMock(
+                ok=True,
+                message="sold",
+                payload={"filled_avg_price": "100000", "status": "filled"},
+            )
+
+    svc._desk = Desk()
+    trade = MagicMock(qty=0.001, entry_price=100000.0)
+    sold = await svc._crypto_market_sell(
+        "BTC/USD", trade, dry_run=True, actor="t", reason="software_chandelier_stop"
+    )
+    assert sold["ok"] is True
+    assert captured["qty"] == pytest.approx(0.001)
+    assert captured["qty"] < 0.01
+    assert sold["qty"] == pytest.approx(0.001)
 
 
 def test_loss_streak_win_resets_counter():
@@ -316,7 +344,9 @@ async def test_legacy_flatten_rejects_btc_when_a_has_open_lot(session):
         ]
     )
     broker.list_orders = AsyncMock(return_value=[])
-    broker.close_position = AsyncMock()
+    broker.close_position = AsyncMock(
+        return_value={"id": "w1", "status": "filled", "filled_avg_price": "0.2"}
+    )
     out = await legacy_flatten(
         broker,
         symbols=["BTC/USD", "WIF/USD"],
@@ -325,9 +355,10 @@ async def test_legacy_flatten_rejects_btc_when_a_has_open_lot(session):
         tracker=tr,
         flags=flags,
     )
-    assert out["ok"] is False
     assert "BTC/USD" in out["rejected"]
-    broker.close_position.assert_not_awaited()
+    assert [c["symbol"] for c in out["closed"]] == ["WIF/USD"]
+    broker.close_position.assert_awaited_once()
+    assert broker.close_position.await_args.args[0] in {"WIF/USD", "WIFUSD"}
 
 
 @pytest.mark.asyncio

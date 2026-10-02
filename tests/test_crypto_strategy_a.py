@@ -1099,6 +1099,8 @@ def test_last_cycle_obs_exposes_catchup_fields():
         "replica_id": "host:1",
     }
     cycle = attach_last_cycle_obs({"desks": {"crypto": {}}}, state)
+    assert cycle["legacy_engine"] == "off"
+    assert cycle["desks"]["crypto"]["legacy_engine"] == "off"
     assert cycle["last_evaluated_candle"] == "2026-10-01T16:00:00+00:00"
     assert cycle["missed_candles"] == 1
     assert cycle["candles_behind"] == 1
