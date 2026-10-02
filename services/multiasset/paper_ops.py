@@ -20,6 +20,8 @@ from utils.metrics import metrics
 logger = get_logger(__name__)
 
 STALE_MARKET_BUY_HOURS = 24.0
+ACTIVITY_MAX_PAGES = 20
+ACTIVITY_PAGE_SIZE_CAP = 100
 STALE_BUY_STATUSES = frozenset({"new", "accepted"})
 ACTIVITY_SAFE_FIELDS = (
     "id",
@@ -86,6 +88,18 @@ def is_stale_market_buy(
     return (now_dt - created) > timedelta(hours=float(max_age_hours))
 
 
+def normalize_activity_symbol(symbol: str | None) -> str | None:
+    """BTCUSD and BTC/USD are the same paper crypto pair."""
+    if symbol is None:
+        return None
+    raw = str(symbol).strip()
+    if not raw:
+        return None
+    from services.multiasset.desks import normalize_symbol
+
+    return normalize_symbol(raw)
+
+
 def sanitize_activity(row: dict[str, Any]) -> dict[str, Any]:
     """Drop anything that is not a known activity field (no keys/secrets)."""
     out: dict[str, Any] = {}
@@ -95,6 +109,8 @@ def sanitize_activity(row: dict[str, Any]) -> dict[str, Any]:
     at = row.get("activity_type") or row.get("activityType") or row.get("type")
     if at and "activity_type" not in out:
         out["activity_type"] = at
+    if "symbol" in out:
+        out["symbol"] = normalize_activity_symbol(out.get("symbol")) or out["symbol"]
     return out
 
 
@@ -115,9 +131,13 @@ async def list_paper_activities(
     *,
     types: str | list[str] = "FILL,CFEE",
     after: str | None = None,
+    until: str | None = None,
     page_size: int = 100,
+    page_token: str | None = None,
+    direction: str = "desc",
+    max_pages: int = ACTIVITY_MAX_PAGES,
 ) -> dict[str, Any]:
-    """Read-only Alpaca paper activities. Raises if URL is not paper-api."""
+    """Read-only Alpaca paper activities. Walks page_token until exhausted."""
     skip = paper_guard_or_skip(broker)
     if skip:
         raise MultiAssetNotPaperError(
@@ -125,26 +145,66 @@ async def list_paper_activities(
             f"(base={getattr(broker, 'base_url', '')!r})."
         )
     await assert_beta_account_is_paper(broker)
+    direction_n = (direction or "desc").strip().lower()
+    if direction_n not in {"asc", "desc"}:
+        direction_n = "desc"
+    size = max(1, min(int(page_size or 100), ACTIVITY_PAGE_SIZE_CAP))
+    cap = max(1, int(max_pages or ACTIVITY_MAX_PAGES))
     if not getattr(broker, "is_configured", lambda: False)():
         return {
             "paper": True,
             "host": PAPER_HOST,
             "items": [],
+            "count": 0,
+            "truncated": False,
+            "next_page_token": None,
+            "page_token": page_token,
+            "until": until,
+            "direction": direction_n,
             "skipped": "broker_unconfigured",
         }
-    rows = await broker.list_account_activities(
-        activity_types=types,
-        after=after,
-        page_size=page_size,
-    )
-    items = [sanitize_activity(r) for r in (rows or []) if isinstance(r, dict)]
+    items: list[dict[str, Any]] = []
+    token: str | None = (str(page_token).strip() or None) if page_token else None
+    truncated = False
+    next_token: str | None = None
+    for page_i in range(cap):
+        page = await broker.list_account_activities(
+            activity_types=types,
+            after=after,
+            until=until,
+            page_size=size,
+            page_token=token,
+            direction=direction_n,
+        )
+        rows = [r for r in (page or []) if isinstance(r, dict)]
+        items.extend(sanitize_activity(r) for r in rows)
+        if len(rows) < size:
+            next_token = None
+            truncated = False
+            break
+        next_token = str(rows[-1].get("id") or "").strip() or None
+        if not next_token:
+            truncated = False
+            break
+        if page_i + 1 >= cap:
+            truncated = True
+            break
+        token = next_token
+    else:
+        truncated = bool(next_token)
     return {
         "paper": True,
         "host": PAPER_HOST,
         "types": types if isinstance(types, str) else ",".join(types),
         "after": after,
+        "until": until,
+        "direction": direction_n,
+        "page_token": page_token,
+        "page_size": size,
         "count": len(items),
         "items": items,
+        "truncated": truncated,
+        "next_page_token": next_token if truncated else None,
     }
 
 

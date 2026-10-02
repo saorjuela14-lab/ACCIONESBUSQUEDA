@@ -11,6 +11,7 @@ from services.multiasset.paper_ops import (
     cancel_stale_paper_market_buys,
     is_stale_market_buy,
     list_paper_activities,
+    normalize_activity_symbol,
     sanitize_activity,
 )
 from utils.metrics import metrics
@@ -59,6 +60,13 @@ def test_sanitize_activity_drops_secrets():
     assert "api_key" not in clean
     assert "secret_key" not in clean
     assert "authorization" not in clean
+
+
+def test_normalize_activity_symbol_btcusd():
+    assert normalize_activity_symbol("BTCUSD") == "BTC/USD"
+    assert normalize_activity_symbol("btc/usd") == "BTC/USD"
+    assert normalize_activity_symbol("ETHUSD") == "ETH/USD"
+    assert sanitize_activity({"id": "1", "symbol": "BTCUSD"})["symbol"] == "BTC/USD"
 
 
 @pytest.mark.asyncio
@@ -173,12 +181,17 @@ async def test_list_paper_activities_ok():
     out = await list_paper_activities(broker, types="FILL,CFEE", after="2026-08-01")
     assert out["paper"] is True
     assert out["count"] == 2
+    assert out["truncated"] is False
+    assert out["next_page_token"] is None
     assert out["items"][1]["activity_type"] == "CFEE"
     assert "api_key" not in out["items"][1]
     broker.list_account_activities.assert_awaited_with(
         activity_types="FILL,CFEE",
         after="2026-08-01",
+        until=None,
         page_size=100,
+        page_token=None,
+        direction="desc",
     )
 
 
@@ -260,6 +273,52 @@ async def test_activities_endpoint_returns_sanitized_rows(monkeypatch, tmp_path)
     assert r.status_code == 200
     body = r.json()
     assert body["paper"] is True
+    assert body["truncated"] is False
     assert body["items"][0]["id"] == "f1"
     assert "secret_key" not in body["items"][0]
     get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_list_paper_activities_walks_page_tokens():
+    broker = MagicMock()
+    broker.base_url = "https://paper-api.alpaca.markets"
+    broker.paper = True
+    broker.is_configured.return_value = True
+    broker.get_account = AsyncMock(return_value={"paper": True})
+
+    page1 = [{"id": f"p1-{i}", "activity_type": "FILL", "symbol": "BTCUSD"} for i in range(2)]
+    page2 = [{"id": f"p2-{i}", "activity_type": "FILL", "symbol": "ETH/USD"} for i in range(2)]
+    page3 = [{"id": "p3-0", "activity_type": "CFEE", "symbol": "BTCUSD"}]
+    broker.list_account_activities = AsyncMock(side_effect=[page1, page2, page3])
+
+    out = await list_paper_activities(
+        broker, types="FILL,CFEE", page_size=2, direction="asc", until="2026-10-01"
+    )
+    assert out["count"] == 5
+    assert out["truncated"] is False
+    assert out["next_page_token"] is None
+    assert out["direction"] == "asc"
+    assert out["until"] == "2026-10-01"
+    assert {row["symbol"] for row in out["items"]} == {"BTC/USD", "ETH/USD"}
+    assert broker.list_account_activities.await_count == 3
+    assert broker.list_account_activities.await_args_list[1].kwargs["page_token"] == "p1-1"
+    assert broker.list_account_activities.await_args_list[2].kwargs["page_token"] == "p2-1"
+
+
+@pytest.mark.asyncio
+async def test_list_paper_activities_truncated_exposes_next_token():
+    broker = MagicMock()
+    broker.base_url = "https://paper-api.alpaca.markets"
+    broker.paper = True
+    broker.is_configured.return_value = True
+    broker.get_account = AsyncMock(return_value={"paper": True})
+    full = [{"id": f"x{i}", "activity_type": "FILL", "symbol": "SOLUSD"} for i in range(2)]
+    broker.list_account_activities = AsyncMock(return_value=full)
+
+    out = await list_paper_activities(broker, page_size=2, max_pages=1)
+    assert out["count"] == 2
+    assert out["truncated"] is True
+    assert out["next_page_token"] == "x1"
+    assert out["items"][0]["symbol"] == "SOL/USD"
+    broker.list_account_activities.assert_awaited_once()

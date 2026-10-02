@@ -263,16 +263,22 @@ async def last_autopilot_cycle(session: AsyncSession = Depends(get_session)) -> 
 async def paper_multiasset_activities(
     types: str = Query(default="FILL,CFEE", description="Alpaca activity types, comma-separated"),
     after: str | None = Query(default=None, description="YYYY-MM-DD inclusive lower bound"),
+    until: str | None = Query(default=None, description="YYYY-MM-DD inclusive upper bound"),
+    page_token: str | None = Query(default=None, description="Alpaca page_token (last activity id)"),
+    direction: str = Query(default="desc", description="asc | desc"),
     page_size: int = Query(default=100, ge=1, le=100),
     scope: OrgScope = Depends(get_org_scope),
 ) -> dict:
     """Read-only FILL/CFEE from the Multi-Asset PAPER account. Mesa session required."""
     scope.require_desk()
-    if after:
-        try:
-            datetime.strptime(after[:10], "%Y-%m-%d")
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail="after debe ser YYYY-MM-DD") from exc
+    for label, value in (("after", after), ("until", until)):
+        if value:
+            try:
+                datetime.strptime(value[:10], "%Y-%m-%d")
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=f"{label} debe ser YYYY-MM-DD") from exc
+    if (direction or "").strip().lower() not in {"asc", "desc"}:
+        raise HTTPException(status_code=400, detail="direction debe ser asc o desc")
     from services.multiasset.paper_broker import MultiAssetNotPaperError, get_beta_broker_provider
     from services.multiasset.paper_ops import list_paper_activities
 
@@ -282,7 +288,13 @@ async def paper_multiasset_activities(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     try:
         return await list_paper_activities(
-            broker, types=types, after=after, page_size=page_size
+            broker,
+            types=types,
+            after=after,
+            until=until,
+            page_size=page_size,
+            page_token=page_token,
+            direction=direction,
         )
     except MultiAssetNotPaperError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
