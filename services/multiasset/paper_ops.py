@@ -5,8 +5,9 @@ Never runs against LIVE. Never cancels stops, exit limits, or positions.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Iterable
 
 from services.multiasset.paper_broker import (
     PAPER_HOST,
@@ -46,6 +47,9 @@ ACTIVITY_SAFE_FIELDS = (
 )
 
 
+_DATE_ONLY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
 def _parse_dt(value: Any) -> datetime | None:
     if not value:
         return None
@@ -59,6 +63,71 @@ def _parse_dt(value: Any) -> datetime | None:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt
+
+
+def _to_utc_z(dt: datetime) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def is_date_only_bound(value: str | None) -> bool:
+    return bool(value) and bool(_DATE_ONLY.fullmatch(str(value).strip()))
+
+
+def activity_types_include_cfee(types: str | Iterable[str] | None) -> bool:
+    if types is None:
+        return False
+    if isinstance(types, str):
+        parts = [p.strip().upper() for p in types.split(",") if p.strip()]
+    else:
+        parts = [str(p).strip().upper() for p in types if str(p).strip()]
+    return "CFEE" in parts
+
+
+def normalize_activity_bound(value: str | None, *, kind: str) -> str | None:
+    """Alpaca ``after``/``until`` are exclusive on created_at. Date-only is UTC midnight.
+
+    ``after`` YYYY-MM-DD → that day 00:00:00Z (created_at after midnight includes the day).
+    ``until`` YYYY-MM-DD → next day 00:00:00Z so the requested day stays included.
+    Full timestamps are converted to UTC ``Z`` without shifting the instant.
+    """
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    if is_date_only_bound(raw):
+        day = datetime.strptime(raw, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        if kind == "until":
+            day = day + timedelta(days=1)
+        return _to_utc_z(day)
+    dt = _parse_dt(raw)
+    if dt is None:
+        raise ValueError(f"{kind} debe ser YYYY-MM-DD o un timestamp ISO UTC")
+    return _to_utc_z(dt)
+
+
+def resolve_activity_window(
+    after: str | None,
+    until: str | None,
+    types: str | Iterable[str] | None,
+) -> tuple[str | None, str | None, str | None]:
+    """Return (after_effective, until_normalized, until_effective).
+
+    CFEE extends ``until`` one extra UTC day — Alpaca posts commissions the day after the fill.
+    """
+    after_n = normalize_activity_bound(after, kind="after")
+    until_n = normalize_activity_bound(until, kind="until")
+    until_eff = until_n
+    if until_eff and activity_types_include_cfee(types):
+        dt = _parse_dt(until_eff)
+        if dt is None:
+            raise ValueError("until inválido")
+        until_eff = _to_utc_z(dt + timedelta(days=1))
+    return after_n, until_n, until_eff
 
 
 def is_stale_market_buy(
@@ -150,6 +219,7 @@ async def list_paper_activities(
         direction_n = "desc"
     size = max(1, min(int(page_size or 100), ACTIVITY_PAGE_SIZE_CAP))
     cap = max(1, int(max_pages or ACTIVITY_MAX_PAGES))
+    after_eff, until_norm, until_eff = resolve_activity_window(after, until, types)
     if not getattr(broker, "is_configured", lambda: False)():
         return {
             "paper": True,
@@ -159,7 +229,9 @@ async def list_paper_activities(
             "truncated": False,
             "next_page_token": None,
             "page_token": page_token,
+            "after": after,
             "until": until,
+            "until_effective": until_eff,
             "direction": direction_n,
             "skipped": "broker_unconfigured",
         }
@@ -170,8 +242,8 @@ async def list_paper_activities(
     for page_i in range(cap):
         page = await broker.list_account_activities(
             activity_types=types,
-            after=after,
-            until=until,
+            after=after_eff,
+            until=until_eff,
             page_size=size,
             page_token=token,
             direction=direction_n,
@@ -198,6 +270,7 @@ async def list_paper_activities(
         "types": types if isinstance(types, str) else ",".join(types),
         "after": after,
         "until": until,
+        "until_effective": until_eff,
         "direction": direction_n,
         "page_token": page_token,
         "page_size": size,

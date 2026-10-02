@@ -11,7 +11,9 @@ from services.multiasset.paper_ops import (
     cancel_stale_paper_market_buys,
     is_stale_market_buy,
     list_paper_activities,
+    normalize_activity_bound,
     normalize_activity_symbol,
+    resolve_activity_window,
     sanitize_activity,
 )
 from utils.metrics import metrics
@@ -75,6 +77,65 @@ def test_normalize_activity_symbol_btcusd():
     assert same_symbol("SOLUSD", "BTC/USD") is False
     assert same_symbol("AAPL", "AAPL") is True
     assert same_symbol("", "BTC/USD") is False
+
+
+def test_date_only_after_until_normalized_to_utc_z():
+    after = normalize_activity_bound("2026-08-01", kind="after")
+    until = normalize_activity_bound("2026-08-01", kind="until")
+    assert after == "2026-08-01T00:00:00Z"
+    assert until == "2026-08-02T00:00:00Z"
+    after_ts, until_n, until_eff = resolve_activity_window(
+        "2026-08-01", "2026-08-01", "FILL"
+    )
+    assert after_ts == "2026-08-01T00:00:00Z"
+    assert until_n == "2026-08-02T00:00:00Z"
+    assert until_eff == "2026-08-02T00:00:00Z"
+    assert normalize_activity_bound("2026-08-01T15:30:00+00:00", kind="until") == "2026-08-01T15:30:00Z"
+
+
+def test_until_extended_one_day_when_types_include_cfee():
+    after, until_n, until_eff = resolve_activity_window("2026-10-01", "2026-10-01", "FILL,CFEE")
+    assert after == "2026-10-01T00:00:00Z"
+    assert until_n == "2026-10-02T00:00:00Z"
+    assert until_eff == "2026-10-03T00:00:00Z"
+    _, _, listed = resolve_activity_window(None, "2026-10-01T12:00:00Z", ["cfee"])
+    assert listed == "2026-10-02T12:00:00Z"
+
+
+def test_fill_only_does_not_extend_until():
+    after, until_n, until_eff = resolve_activity_window("2026-10-01", "2026-10-01", "FILL")
+    assert after == "2026-10-01T00:00:00Z"
+    assert until_n == until_eff == "2026-10-02T00:00:00Z"
+
+
+def _paper_broker() -> MagicMock:
+    broker = MagicMock()
+    broker.base_url = "https://paper-api.alpaca.markets"
+    broker.paper = True
+    broker.is_configured.return_value = True
+    broker.get_account = AsyncMock(return_value={"paper": True})
+    broker.list_account_activities = AsyncMock(return_value=[])
+    return broker
+
+
+@pytest.mark.asyncio
+async def test_list_paper_activities_date_only_and_cfee_until():
+    broker = _paper_broker()
+    out = await list_paper_activities(
+        broker, types="FILL,CFEE", after="2026-08-01", until="2026-08-01"
+    )
+    assert out["after"] == "2026-08-01"
+    assert out["until"] == "2026-08-01"
+    assert out["until_effective"] == "2026-08-03T00:00:00Z"
+    assert broker.list_account_activities.await_args.kwargs["after"] == "2026-08-01T00:00:00Z"
+    assert broker.list_account_activities.await_args.kwargs["until"] == "2026-08-03T00:00:00Z"
+
+    fill_only = _paper_broker()
+    out_fill = await list_paper_activities(
+        fill_only, types="FILL", after="2026-08-01", until="2026-08-01"
+    )
+    assert out_fill["until_effective"] == "2026-08-02T00:00:00Z"
+    assert fill_only.list_account_activities.await_args.kwargs["until"] == "2026-08-02T00:00:00Z"
 
 
 @pytest.mark.asyncio
@@ -191,11 +252,13 @@ async def test_list_paper_activities_ok():
     assert out["count"] == 2
     assert out["truncated"] is False
     assert out["next_page_token"] is None
+    assert out["after"] == "2026-08-01"
+    assert out["until_effective"] is None
     assert out["items"][1]["activity_type"] == "CFEE"
     assert "api_key" not in out["items"][1]
     broker.list_account_activities.assert_awaited_with(
         activity_types="FILL,CFEE",
-        after="2026-08-01",
+        after="2026-08-01T00:00:00Z",
         until=None,
         page_size=100,
         page_token=None,
@@ -308,6 +371,9 @@ async def test_list_paper_activities_walks_page_tokens():
     assert out["next_page_token"] is None
     assert out["direction"] == "asc"
     assert out["until"] == "2026-10-01"
+    assert out["until_effective"] == "2026-10-03T00:00:00Z"
+    assert broker.list_account_activities.await_args_list[0].kwargs["until"] == "2026-10-03T00:00:00Z"
+    assert broker.list_account_activities.await_args_list[0].kwargs["after"] is None
     assert {row["symbol"] for row in out["items"]} == {"BTC/USD", "ETH/USD"}
     assert broker.list_account_activities.await_count == 3
     assert broker.list_account_activities.await_args_list[1].kwargs["page_token"] == "p1-1"
