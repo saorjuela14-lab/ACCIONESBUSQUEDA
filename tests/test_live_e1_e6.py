@@ -257,8 +257,8 @@ async def test_e3_auto_execute_1r_check_fail_closed():
     ) as KS, patch("services.risk_policy_service.RiskPolicyService") as RS, patch(
         "database.repositories.ops_repository.OpsFlagRepository", return_value=flags
     ), patch(
-        "services.deposited_capital_service.resolve_trading_base",
-        AsyncMock(return_value=MagicMock(amount=21.76, source="alpaca")),
+        "services.deposited_capital_service.get_deposited_base",
+        AsyncMock(return_value=MagicMock(amount=21.76, source="env:DEPOSITED_BASE_USD", buy_allowed=True)),
     ):
         s = MagicMock()
         s.firm_autonomy = True
@@ -345,7 +345,7 @@ async def test_e5_execute_kill_and_brake_fail_closed():
     with patch("services.live_safety.production_trading_unconfigured", return_value=False), patch(
         "database.engine.get_session", return_value=_sessions()
     ), patch(
-        "services.deposited_capital_service.resolve_trading_base",
+        "services.deposited_capital_service.get_deposited_base",
         AsyncMock(side_effect=RuntimeError("base down")),
     ):
         out = await svc.execute(req)
@@ -375,8 +375,8 @@ async def test_e5_execute_missing_base_blocks_buys():
     with patch("services.live_safety.production_trading_unconfigured", return_value=False), patch(
         "database.engine.get_session", return_value=_sessions()
     ), patch("services.kill_switch_service.KillSwitchService", return_value=ks), patch(
-        "services.deposited_capital_service.resolve_trading_base",
-        AsyncMock(return_value=SimpleNamespace(amount=None, source="missing")),
+        "services.deposited_capital_service.get_deposited_base",
+        AsyncMock(return_value=SimpleNamespace(amount=None, source="missing", buy_allowed=False)),
     ):
         out = await svc.execute(
             ExecuteOrdersRequest(
