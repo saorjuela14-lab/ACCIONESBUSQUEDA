@@ -73,7 +73,7 @@ class BrokerProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def list_orders(self, status: str = "open", limit: int = 50) -> list[dict[str, Any]]:
+    async def list_orders(self, status: str = "all", limit: int = 50) -> list[dict[str, Any]]:
         raise NotImplementedError
 
     @abstractmethod

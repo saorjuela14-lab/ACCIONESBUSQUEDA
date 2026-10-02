@@ -94,30 +94,33 @@ async def test_e2_reserve_slots_atomic_and_deny_on_fail():
     flags = MagicMock()
     flags.get_json = AsyncMock(return_value={"et_date": "2026-10-02", "count": 0, "symbols": []})
     flags.set_json = AsyncMock()
-    ok, why, data = await reserve_entry_slots(
-        flags, n=1, max_entries=1, symbols=["SNAP"], today="2026-10-02"
-    )
-    assert ok is True
-    assert why == "reserved"
-    assert data["count"] == 1
-    flags.set_json.assert_awaited()
+    with patch("services.live_cycle_lock.acquire_lease", AsyncMock(return_value=(True, {}))), patch(
+        "services.live_cycle_lock.release_lease", AsyncMock()
+    ):
+        ok, why, data = await reserve_entry_slots(
+            flags, n=1, max_entries=1, symbols=["SNAP"], today="2026-10-02"
+        )
+        assert ok is True
+        assert why == "reserved"
+        assert data["count"] == 1
+        flags.set_json.assert_awaited()
 
-    flags.get_json = AsyncMock(return_value={"et_date": "2026-10-02", "count": 1, "symbols": ["SNAP"]})
-    ok, why, _ = await reserve_entry_slots(
-        flags, n=1, max_entries=1, symbols=["AAPL"], today="2026-10-02"
-    )
-    assert ok is False
-    assert why == "max_1_entry_per_day"
+        flags.get_json = AsyncMock(return_value={"et_date": "2026-10-02", "count": 1, "symbols": ["SNAP"]})
+        ok, why, _ = await reserve_entry_slots(
+            flags, n=1, max_entries=1, symbols=["AAPL"], today="2026-10-02"
+        )
+        assert ok is False
+        assert why == "max_1_entry_per_day"
 
-    async def _get_then_fail(name):
-        if name == "live_entry_day_count":
-            raise RuntimeError("db down")
-        return {}
+        async def _get_then_fail(name):
+            if name == "live_entry_day_count":
+                raise RuntimeError("db down")
+            return {}
 
-    flags.get_json = AsyncMock(side_effect=_get_then_fail)
-    ok, why, _ = await reserve_entry_slots(flags, n=1, max_entries=1, today="2026-10-02")
-    assert ok is False
-    assert why == "entry_slot_write_failed"
+        flags.get_json = AsyncMock(side_effect=_get_then_fail)
+        ok, why, _ = await reserve_entry_slots(flags, n=1, max_entries=1, today="2026-10-02")
+        assert ok is False
+        assert why == "entry_slot_write_failed"
 
 
 @pytest.mark.asyncio
@@ -487,22 +490,21 @@ async def test_voice_confirm_rechecks_session_clock():
 
 @pytest.mark.asyncio
 async def test_replica_lease_and_deterministic_client_order_id():
-    flags = MagicMock()
-    store: dict = {}
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-    async def _get(name):
-        return dict(store.get(name) or {})
+    from database.models import Base
 
-    async def _set(name, val):
-        store[name] = dict(val)
-
-    flags.get_json = AsyncMock(side_effect=_get)
-    flags.set_json = AsyncMock(side_effect=_set)
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
     now = datetime(2026, 10, 2, 15, 0, tzinfo=timezone.utc)
-    got_a, lease_a = await acquire_lease(flags, owner="replica-a", now=now, session=None)
-    assert got_a is True
-    got_b, _ = await acquire_lease(flags, owner="replica-b", now=now, session=None)
-    assert got_b is False
+    async with factory() as session:
+        got_a, _lease_a = await acquire_lease(None, owner="replica-a", now=now, session=session)
+        assert got_a is True
+        got_b, _ = await acquire_lease(None, owner="replica-b", now=now, session=session)
+        assert got_b is False
+    await engine.dispose()
     cid = live_client_order_id("SNAP", "buy", when=now)
     assert cid == "live-SNAP-20261002-buy-1"
     assert len(cid) <= 48
@@ -521,8 +523,79 @@ async def test_autopilot_skips_when_replica_lease_held():
     flags.get_json = AsyncMock(return_value={"owner": "other", "expires_at": "2099-01-01T00:00:00+00:00"})
     flags.set_json = AsyncMock()
     with patch("services.autopilot_service.OpsFlagRepository", return_value=flags), patch(
-        "services.live_cycle_lock.try_pg_advisory_lock", AsyncMock(return_value=None)
+        "services.live_cycle_lock.acquire_lease",
+        AsyncMock(return_value=(False, {"owner": "other", "backend": "desk_lease"})),
     ):
         out = await svc.run(actor="test")
     assert out.get("aborted") == "replica_lease_held" or out.get("skipped") is True
     assert "réplica" in (out.get("message") or "") or out.get("aborted") == "replica_lease_held"
+
+
+@pytest.mark.asyncio
+async def test_b4_central_gate_honors_own_reservation():
+    """Reserve consumes the daily slot; the same cycle must still be allowed to buy."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from database.models import Base
+    from database.repositories.ops_repository import OpsFlagRepository
+    from services.alpaca_order_service import AlpacaOrderService
+    from services.live_safety import FLAG_ENTRY_DAY, et_today
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        flags = OpsFlagRepository(session)
+        await flags.set_json(
+            FLAG_ENTRY_DAY, {"et_date": et_today(), "count": 1, "symbols": ["SNAP"]}
+        )
+
+        async def _sessions():
+            yield session
+
+        inner = MagicMock()
+        inner.paper = False
+        inner.last_request_id = "rid"
+        inner.submit_order = AsyncMock(
+            return_value={
+                "id": "ord-res",
+                "symbol": "SNAP",
+                "qty": "1",
+                "side": "buy",
+                "status": "accepted",
+                "client_order_id": "live-SNAP-res",
+            }
+        )
+        svc = AlpacaOrderService(broker=inner)
+        svc.get_account = AsyncMock(return_value=SimpleNamespace(equity=22.0))
+        settings = SimpleNamespace(live_max_entries_per_day=1, deposited_brake_pct=5.0)
+        with (
+            patch("database.engine.get_session", new=_sessions),
+            patch("services.kill_switch_service.KillSwitchService") as KS,
+            patch(
+                "services.deposited_capital_service.resolve_trading_base",
+                AsyncMock(return_value=SimpleNamespace(amount=21.76)),
+            ),
+            patch("services.live_safety.production_trading_unconfigured", return_value=False),
+            patch("utils.market_hours.eod_may_submit_orders", return_value=True),
+            patch("services.live_safety.live_entry_blocked", return_value=(False, "ok")),
+        ):
+            KS.return_value.is_active = AsyncMock(return_value=False)
+            blocked = await svc._live_buy_central_gates(settings, skip_daily_cap=False)
+            allowed = await svc._live_buy_central_gates(settings, skip_daily_cap=True)
+            out = await svc.submit_one(
+                BrokerOrderRequest(
+                    symbol="SNAP",
+                    qty=1,
+                    side="buy",
+                    client_order_id="live-SNAP-res",
+                    entry_slot_reserved=True,
+                )
+            )
+    await engine.dispose()
+    assert blocked == "max_1_entry_per_day"
+    assert allowed is None
+    assert out.error is None
+    assert out.id == "ord-res"
+    inner.submit_order.assert_awaited()

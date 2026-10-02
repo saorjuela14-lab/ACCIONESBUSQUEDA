@@ -292,6 +292,9 @@ async def test_autopilot_kill_still_runs_lifecycle():
          patch("services.autopilot_service.ReconcileService", return_value=recon), \
          patch("services.autopilot_service.PositionLifecycleService", return_value=life), \
          patch("services.autopilot_service.OpsFlagRepository", return_value=flags), \
+         patch("services.live_cycle_lock.acquire_lease", AsyncMock(return_value=(True, {"backend": "desk_lease"}))), \
+         patch("services.live_cycle_lock.release_lease", AsyncMock()), \
+         patch("services.live_cycle_lock.heartbeat_cycle_lease", AsyncMock(return_value=True)), \
          patch("services.live_safety.arm_deposited_brake_if_needed", AsyncMock(return_value=None)), \
          patch(
              "services.deposited_capital_service.get_deposited_base",

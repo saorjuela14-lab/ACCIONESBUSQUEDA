@@ -125,7 +125,7 @@ class AlpacaBrokerProvider(BrokerProvider):
         data = await self._request("GET", "/v2/positions")
         return data if isinstance(data, list) else []
 
-    async def list_orders(self, status: str = "open", limit: int = 50) -> list[dict[str, Any]]:
+    async def list_orders(self, status: str = "all", limit: int = 50) -> list[dict[str, Any]]:
         data = await self._request(
             "GET",
             "/v2/orders",

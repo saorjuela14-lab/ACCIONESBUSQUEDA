@@ -313,14 +313,13 @@ class PositionLifecycleService:
         if "stop" in (getattr(mandate, "exit_reason", None) or "").lower():
             return True
         try:
-            for status in ("closed", "open"):
-                orders = await self._broker.list_orders(status=status, limit=50)
-                for od in orders or []:
-                    raw_sym = getattr(od, "symbol", "") or ""
-                    if str(raw_sym).upper() != symbol.upper():
-                        continue
-                    if order_looks_like_stop(od):
-                        return True
+            orders = await self._broker.list_orders(status="all", limit=50)
+            for od in orders or []:
+                raw_sym = getattr(od, "symbol", "") or ""
+                if str(raw_sym).upper() != symbol.upper():
+                    continue
+                if order_looks_like_stop(od):
+                    return True
         except Exception:
             pass
         return bool(getattr(mandate, "stop_loss", None))
@@ -335,19 +334,18 @@ class PositionLifecycleService:
         tp = float(latest.take_profit) if latest and latest.take_profit else None
         thesis = latest.thesis if latest else None
         try:
-            for status in ("open", "closed"):
-                orders = await self._broker.list_orders(status=status, limit=50)
-                for od in orders or []:
-                    raw_sym = getattr(od, "symbol", "") or ""
-                    if str(raw_sym).upper() != symbol.upper():
-                        continue
-                    s, t = protective_levels_from_order(od)
-                    if s:
-                        stop = s
-                    if t:
-                        tp = t
-                    if stop or tp:
-                        return stop, tp, thesis
+            orders = await self._broker.list_orders(status="all", limit=50)
+            for od in orders or []:
+                raw_sym = getattr(od, "symbol", "") or ""
+                if str(raw_sym).upper() != symbol.upper():
+                    continue
+                s, t = protective_levels_from_order(od)
+                if s:
+                    stop = s
+                if t:
+                    tp = t
+                if stop or tp:
+                    return stop, tp, thesis
         except Exception as exc:
             logger.warning("lifecycle.deferred_levels_failed", symbol=symbol, error=str(exc))
         return stop, tp, thesis
@@ -601,9 +599,7 @@ class PositionLifecycleService:
                 )
                 decision.executed = executed
                 decision.detail = detail
-                # Broker may have already filled the protective stop (403 qty=0) — still cool down
-                already_flat = "insufficient qty" in (detail or "").lower()
-                if executed or already_flat:
+                if executed:
                     exits.append(m.symbol)
                     protective = any(
                         k in (decision.reason or "")

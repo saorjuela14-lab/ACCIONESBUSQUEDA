@@ -53,6 +53,7 @@ class BrokerOrderRequest(BaseModel):
     client_order_id: str | None = None
     extended_hours: bool = False
     source_tag: str = "desk"
+    entry_slot_reserved: bool = False
 
 
 class BrokerOrderResult(BaseModel):
@@ -123,7 +124,7 @@ class ExecuteLine(BaseModel):
     stop_loss: float | None = None
     take_profit: float | None = None
     client_order_id: str | None = None
-    source_tag: str = "autopilot"
+    source_tag: str = "desk"
 
 
 class ExecuteOrdersRequest(BaseModel):
@@ -137,6 +138,7 @@ class ExecuteOrdersRequest(BaseModel):
         default=None,
         description="Si se indica, refleja fills en el portafolio interno NexBuy",
     )
+    entry_slot_reserved: bool = False
 
 
 class ExecuteOrdersResponse(BaseModel):

@@ -384,6 +384,7 @@ class AutoExecuteService:
                 lines=lines,
                 dry_run=False,
                 confirm_live=not self._broker.paper,
+                entry_slot_reserved=reserved,
             )
         )
         try:

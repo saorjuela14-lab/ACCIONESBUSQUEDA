@@ -39,10 +39,13 @@ def _http_err(status: int, *, code: int | None = None, message: str = "nope") ->
 def test_422_duplicate_vs_other_cause():
     dup = _http_err(422, code=ALPACA_DUPLICATE_COID_CODE, message="client_order_id must be unique")
     other = _http_err(422, code=40010000, message="qty must be > 0")
+    generic = _http_err(422, code=ALPACA_DUPLICATE_COID_CODE, message="qty must be integer")
     assert is_duplicate_client_order_id_error(dup) is True
     assert is_unrelated_422(dup) is False
     assert is_duplicate_client_order_id_error(other) is False
     assert is_unrelated_422(other) is True
+    assert is_duplicate_client_order_id_error(generic) is False
+    assert is_unrelated_422(generic) is True
     assert is_duplicate_client_order_id_error(RuntimeError("nope")) is False
 
 
@@ -357,3 +360,102 @@ async def test_insufficient_qty_on_stop_does_not_close_or_unprotect():
 def test_insufficient_qty_helper():
     assert is_insufficient_qty_error("insufficient qty available") is True
     assert is_insufficient_qty_error("asset not found") is False
+
+
+def test_manual_source_tag_uuid_not_fixed_minus_one():
+    from services.alpaca_order_service import AlpacaOrderService
+
+    svc = AlpacaOrderService(broker=MagicMock())
+    a = svc._build_order_payload(
+        BrokerOrderRequest(symbol="AAPL", qty=1, side="sell", source_tag="voice")
+    )
+    b = svc._build_order_payload(
+        BrokerOrderRequest(symbol="AAPL", qty=1, side="sell", source_tag="voice")
+    )
+    assert a["client_order_id"] != b["client_order_id"]
+    assert a["client_order_id"].startswith("voice-")
+    auto = svc._build_order_payload(
+        BrokerOrderRequest(symbol="AAPL", qty=1, side="buy", source_tag="autopilot")
+    )
+    assert auto["client_order_id"].startswith("live-AAPL-")
+    assert auto["client_order_id"].endswith("-1")
+
+
+@pytest.mark.asyncio
+async def test_reconcile_rejects_dead_or_mismatch():
+    from services.alpaca_order_service import AlpacaOrderService
+
+    broker = MagicMock()
+    broker.last_request_id = None
+    svc = AlpacaOrderService(broker=broker)
+    req = BrokerOrderRequest(symbol="SNAP", qty=1, side="buy")
+    dead = svc._reconcile_existing_order(
+        req, {"id": "x", "symbol": "SNAP", "qty": "1", "side": "buy", "status": "canceled"}
+    )
+    assert dead.error == "stale_order:canceled"
+    mismatch = svc._reconcile_existing_order(
+        req, {"id": "x", "symbol": "AAPL", "qty": "1", "side": "buy", "status": "accepted"}
+    )
+    assert mismatch.error == "reconcile_symbol_mismatch"
+    qty = svc._reconcile_existing_order(
+        req, {"id": "x", "symbol": "SNAP", "qty": "3", "side": "buy", "status": "accepted"}
+    )
+    assert qty.error == "reconcile_qty_mismatch"
+    ok = svc._reconcile_existing_order(
+        req, {"id": "x", "symbol": "SNAP", "qty": "1", "side": "buy", "status": "accepted"}
+    )
+    assert ok.error is None
+    assert ok.raw.get("reconciled") is True
+
+
+@pytest.mark.asyncio
+async def test_timeout_lookup_5xx_does_not_repost():
+    from services.alpaca_order_service import AlpacaOrderService
+
+    inner = MagicMock()
+    inner.paper = True
+    inner.last_request_id = "rid"
+    inner.submit_order = AsyncMock(side_effect=httpx.ReadTimeout("no reply"))
+    inner.get_order_by_client_order_id = AsyncMock(side_effect=_http_err(503, message="unavailable"))
+    svc = AlpacaOrderService(broker=inner)
+    with patch("services.live_safety.production_trading_unconfigured", return_value=False), patch(
+        "utils.market_hours.eod_may_submit_orders", return_value=True
+    ):
+        out = await svc.submit_one(
+            BrokerOrderRequest(symbol="SNAP", qty=1, side="buy", client_order_id="live-SNAP-20261002-buy-1")
+        )
+    assert out.error == "order_uncertain_no_retry"
+    inner.submit_order.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_read_attempt_fail_closed_never_defaults_one():
+    from services.order_idempotency import AttemptUnavailable
+
+    with pytest.raises(AttemptUnavailable):
+        await read_attempt(None, "SNAP:buy:20261002")
+    flags = MagicMock()
+    flags.get_json = AsyncMock(side_effect=RuntimeError("db down"))
+    with pytest.raises(AttemptUnavailable):
+        await read_attempt(flags, "SNAP:buy:20261002")
+
+
+@pytest.mark.asyncio
+async def test_atomic_attempt_bump_returning():
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from database.models import Base
+    from database.repositories.ops_repository import OpsFlagRepository
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        flags = OpsFlagRepository(session)
+        n = await bump_attempt(flags, "SNAP:buy:20261002")
+        assert n == 2
+        n2 = await bump_attempt(flags, "SNAP:buy:20261002")
+        assert n2 == 3
+        assert await read_attempt(flags, "SNAP:buy:20261002") == 3
+    await engine.dispose()

@@ -216,7 +216,7 @@ class AlpacaOrderService:
         raw_list = await self._broker.get_positions()
         return [self._map_position(p) for p in raw_list]
 
-    async def list_orders(self, status: str = "open", limit: int = 50) -> list[BrokerOrderResult]:
+    async def list_orders(self, status: str = "all", limit: int = 50) -> list[BrokerOrderResult]:
         raw_list = await self._broker.list_orders(status=status, limit=limit)
         return [self._map_order(o) for o in raw_list]
 
@@ -432,9 +432,12 @@ class AlpacaOrderService:
     async def close_all_positions(self, *, cancel_orders: bool = True) -> list[dict[str, Any]]:
         return await self._broker.close_all_positions(cancel_orders=cancel_orders)
 
-    async def _live_buy_central_gates(self, settings: Any) -> str | None:
+    async def _live_buy_central_gates(
+        self, settings: Any, *, skip_daily_cap: bool = False
+    ) -> str | None:
         """Same LIVE buy filters as execute(): kill, deposited brake, daily cap, cooldown.
 
+        ``skip_daily_cap`` is for the autopilot reservation already consumed this cycle.
         Returns an error tag or None if the buy may proceed. Fail-closed.
         """
         from services.live_safety import FLAG_ENTRY_DAY, remaining_entry_slots
@@ -457,7 +460,7 @@ class AlpacaOrderService:
                     if until and __import__("time").time() < until:
                         return "post_stop_cooldown"
                     day_flag = await flags.get_json(FLAG_ENTRY_DAY)
-                    if remaining_entry_slots(
+                    if not skip_daily_cap and remaining_entry_slots(
                         day_flag,
                         max_entries=int(getattr(settings, "live_max_entries_per_day", 1) or 1),
                     ) <= 0:
@@ -492,7 +495,9 @@ class AlpacaOrderService:
     def _reconcile_existing_order(
         self, req: BrokerOrderRequest, raw: dict[str, Any] | BrokerOrderResult
     ) -> BrokerOrderResult:
-        """Map an already-accepted broker order. Never treat it as a new fill."""
+        """Map an already-accepted broker order. Never treat dead/mismatch as a fill."""
+        from services.order_idempotency import is_dead_retryable_status
+
         if isinstance(raw, BrokerOrderResult):
             mapped = raw
             extra = dict(mapped.raw or {})
@@ -501,14 +506,56 @@ class AlpacaOrderService:
             extra = dict(mapped.raw or {})
         extra["reconciled"] = True
         extra["no_new_fill"] = True
+        status = str(mapped.status or "").lower()
+        if is_dead_retryable_status(status):
+            extra["stale"] = True
+            return mapped.model_copy(
+                update={"raw": extra, "status": "failed", "error": f"stale_order:{status}"}
+            )
+        if (mapped.symbol or "").upper() != (req.symbol or "").upper():
+            return mapped.model_copy(
+                update={"raw": extra, "status": "failed", "error": "reconcile_symbol_mismatch"}
+            )
+        if (mapped.side or "").lower() != (req.side or "").lower():
+            return mapped.model_copy(
+                update={"raw": extra, "status": "failed", "error": "reconcile_side_mismatch"}
+            )
+        try:
+            want = float(req.qty or 0)
+            have = float(mapped.qty or 0)
+        except (TypeError, ValueError):
+            want, have = 0.0, -1.0
+        if want > 0 and have > 0 and abs(want - have) > 1e-6:
+            return mapped.model_copy(
+                update={"raw": extra, "status": "failed", "error": "reconcile_qty_mismatch"}
+            )
         return mapped.model_copy(update={"raw": extra, "error": None})
 
-    async def _lookup_by_client_order_id(self, client_id: str) -> BrokerOrderResult | None:
+    async def _lookup_by_client_order_id(self, client_id: str) -> dict[str, Any]:
+        """404 = missing (retry same id). 5xx/network = uncertain (do not POST)."""
+        from services.order_idempotency import alpaca_http_status, is_timeout_or_network
+
         try:
-            return await self.get_order_by_client_order_id(client_id)
+            order = await self.get_order_by_client_order_id(client_id)
         except Exception as exc:
-            logger.warning("broker.by_client_order_id_failed", client_order_id=client_id, error=str(exc))
-            return None
+            status = alpaca_http_status(exc)
+            if status == 404:
+                return {"missing": True, "uncertain": False, "order": None}
+            logger.warning(
+                "broker.by_client_order_id_uncertain",
+                client_order_id=client_id,
+                error=str(exc),
+            )
+            return {
+                "missing": False,
+                "uncertain": True,
+                "order": None,
+                "error": str(exc),
+                "network": is_timeout_or_network(exc),
+            }
+        if order is None:
+            return {"missing": True, "uncertain": False, "order": None}
+        return {"missing": False, "uncertain": False, "order": order}
 
     async def _submit_payload_idempotent(
         self,
@@ -536,7 +583,8 @@ class AlpacaOrderService:
                     }
                 )
             if is_duplicate_client_order_id_error(exc):
-                existing = await self._lookup_by_client_order_id(client_id)
+                looked = await self._lookup_by_client_order_id(client_id)
+                existing = looked.get("order")
                 if existing:
                     logger.info(
                         "broker.duplicate_coid_reconciled",
@@ -546,6 +594,14 @@ class AlpacaOrderService:
                         status=existing.status,
                     )
                     return self._reconcile_existing_order(req, existing)
+                if looked.get("uncertain"):
+                    return failed.model_copy(
+                        update={
+                            "error": "order_uncertain_no_retry",
+                            "client_order_id": client_id,
+                            "request_id": self._broker.last_request_id,
+                        }
+                    )
                 return failed.model_copy(
                     update={
                         "error": "duplicate_client_order_id_unresolved",
@@ -554,7 +610,8 @@ class AlpacaOrderService:
                     }
                 )
             if is_timeout_or_network(exc):
-                existing = await self._lookup_by_client_order_id(client_id)
+                looked = await self._lookup_by_client_order_id(client_id)
+                existing = looked.get("order")
                 if existing:
                     logger.info(
                         "broker.timeout_order_exists_reconciled",
@@ -563,14 +620,27 @@ class AlpacaOrderService:
                         order_id=existing.id,
                     )
                     return self._reconcile_existing_order(req, existing)
+                if looked.get("uncertain"):
+                    logger.warning(
+                        "broker.timeout_lookup_uncertain_no_post",
+                        symbol=req.symbol,
+                        client_order_id=client_id,
+                    )
+                    return failed.model_copy(
+                        update={
+                            "error": "order_uncertain_no_retry",
+                            "client_order_id": client_id,
+                            "request_id": self._broker.last_request_id,
+                        }
+                    )
                 try:
                     raw = await self._broker.submit_order(payload)
                     return self._map_order(raw)
                 except Exception as retry_exc:
                     if is_duplicate_client_order_id_error(retry_exc):
                         again = await self._lookup_by_client_order_id(client_id)
-                        if again:
-                            return self._reconcile_existing_order(req, again)
+                        if again.get("order"):
+                            return self._reconcile_existing_order(req, again["order"])
                     return failed.model_copy(
                         update={
                             "error": str(retry_exc),
@@ -624,7 +694,9 @@ class AlpacaOrderService:
         if is_buy_side(req.side) and not eod_may_submit_orders():
             return failed.model_copy(update={"error": "after_regular_close_no_orders"})
         if is_buy_side(req.side) and not self._broker.paper:
-            gate_err = await self._live_buy_central_gates(settings)
+            gate_err = await self._live_buy_central_gates(
+                settings, skip_daily_cap=bool(getattr(req, "entry_slot_reserved", False))
+            )
             if gate_err:
                 return failed.model_copy(update={"error": gate_err})
         payload = self._build_order_payload(req)
@@ -1076,7 +1148,8 @@ class AlpacaOrderService:
                 take_profit=line.take_profit,
                 stop_loss=line.stop_loss,
                 client_order_id=line.client_order_id,
-                source_tag=getattr(line, "source_tag", None) or "autopilot",
+                source_tag=getattr(line, "source_tag", None) or "desk",
+                entry_slot_reserved=bool(getattr(request, "entry_slot_reserved", False)),
             )
             if not request.dry_run:
                 try:

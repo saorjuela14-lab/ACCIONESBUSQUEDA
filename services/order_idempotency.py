@@ -20,9 +20,21 @@ ALPACA_DUPLICATE_COID_CODE = 40_010_001
 DUPLICATE_COID_PHRASE = "client_order_id must be unique"
 FLAG_ATTEMPTS = "order_client_id_attempts"
 WORKING_ORDER_STATUSES = frozenset(
-    {"new", "held", "accepted", "pending_new", "partially_filled"}
+    {
+        "new",
+        "held",
+        "accepted",
+        "pending_new",
+        "partially_filled",
+        "pending_replace",
+        "accepted_for_bidding",
+    }
 )
 DEAD_RETRYABLE_STATUSES = frozenset({"canceled", "cancelled", "rejected", "expired"})
+
+
+class AttemptUnavailable(Exception):
+    """Read/write of the attempt counter failed. Fail closed — never invent 1."""
 
 
 def _sym(symbol: str) -> str:
@@ -107,17 +119,28 @@ def alpaca_http_status(exc: BaseException) -> int | None:
     return None
 
 
+def _alpaca_error_text(exc: BaseException) -> str:
+    parts = [str(exc or "")]
+    response = getattr(exc, "response", None)
+    if response is not None:
+        try:
+            body = response.json()
+        except Exception:
+            body = None
+        if isinstance(body, dict):
+            parts.append(str(body.get("message") or ""))
+            parts.append(str(body.get("error") or ""))
+    return " ".join(parts).lower()
+
+
 def is_duplicate_client_order_id_error(exc: BaseException) -> bool:
-    """True only for 422 + 40010001 / unique-id phrase. Other 422s are False."""
+    """True only for HTTP 422 whose message contains ``client_order_id must be unique``.
+
+    40010001 is a generic Alpaca validation code and is not sufficient by itself.
+    """
     if alpaca_http_status(exc) != 422:
-        text = str(exc or "").lower()
-        if "40010001" in text or DUPLICATE_COID_PHRASE in text:
-            return True
         return False
-    code = alpaca_error_code(exc)
-    if code == ALPACA_DUPLICATE_COID_CODE:
-        return True
-    return DUPLICATE_COID_PHRASE in str(exc or "").lower()
+    return DUPLICATE_COID_PHRASE in _alpaca_error_text(exc)
 
 
 def is_unrelated_422(exc: BaseException) -> bool:
@@ -188,24 +211,81 @@ def order_is_live_stop(order: Any) -> bool:
     return False
 
 
+def _repo_session(flags: Any) -> Any:
+    try:
+        from database.repositories.ops_repository import OpsFlagRepository
+    except Exception:
+        return None
+    if isinstance(flags, OpsFlagRepository):
+        return flags._session
+    return None
+
+
 async def read_attempt(flags: Any, slot: str) -> int:
     if flags is None:
-        return 1
+        raise AttemptUnavailable("flags_missing")
+    session = _repo_session(flags)
+    if session is not None:
+        try:
+            from sqlalchemy import text
+
+            row = (
+                await session.execute(
+                    text("SELECT attempt FROM order_id_attempts WHERE slot = :s"),
+                    {"s": slot},
+                )
+            ).first()
+        except Exception as exc:
+            logger.warning("order_id.attempt_read_failed", slot=slot, error=str(exc))
+            raise AttemptUnavailable(str(exc)) from exc
+        if not row:
+            return 1
+        try:
+            return max(1, int(row[0] or 1))
+        except (TypeError, ValueError) as exc:
+            raise AttemptUnavailable("attempt_corrupt") from exc
     try:
         data = await flags.get_json(FLAG_ATTEMPTS)
     except Exception as exc:
         logger.warning("order_id.attempt_read_failed", slot=slot, error=str(exc))
-        return 1
+        raise AttemptUnavailable(str(exc)) from exc
     try:
         n = int((data or {}).get(slot) or 1)
-    except (TypeError, ValueError):
-        n = 1
+    except (TypeError, ValueError) as exc:
+        raise AttemptUnavailable("attempt_corrupt") from exc
     return max(1, n)
 
 
 async def persist_attempt(flags: Any, slot: str, attempt: int) -> int:
     n = max(1, int(attempt or 1))
     if flags is None:
+        raise AttemptUnavailable("flags_missing")
+    session = _repo_session(flags)
+    if session is not None:
+        try:
+            from sqlalchemy import text
+
+            dialect = str(getattr(getattr(session.get_bind(), "dialect", None), "name", "") or "")
+            if dialect.startswith("postgres"):
+                await session.execute(
+                    text(
+                        "INSERT INTO order_id_attempts (slot, attempt) VALUES (:s, :n) "
+                        "ON CONFLICT (slot) DO UPDATE SET attempt = EXCLUDED.attempt"
+                    ),
+                    {"s": slot, "n": n},
+                )
+            else:
+                await session.execute(
+                    text(
+                        "INSERT INTO order_id_attempts (slot, attempt) VALUES (:s, :n) "
+                        "ON CONFLICT(slot) DO UPDATE SET attempt = excluded.attempt"
+                    ),
+                    {"s": slot, "n": n},
+                )
+            await session.commit()
+        except Exception as exc:
+            logger.warning("order_id.attempt_write_failed", slot=slot, error=str(exc))
+            raise AttemptUnavailable(str(exc)) from exc
         return n
     try:
         data = dict(await flags.get_json(FLAG_ATTEMPTS) or {})
@@ -217,9 +297,36 @@ async def persist_attempt(flags: Any, slot: str, attempt: int) -> int:
         await flags.set_json(FLAG_ATTEMPTS, data)
     except Exception as exc:
         logger.warning("order_id.attempt_write_failed", slot=slot, error=str(exc))
+        raise AttemptUnavailable(str(exc)) from exc
     return n
 
 
 async def bump_attempt(flags: Any, slot: str) -> int:
+    session = _repo_session(flags)
+    if session is not None:
+        try:
+            from sqlalchemy import text
+
+            dialect = str(getattr(getattr(session.get_bind(), "dialect", None), "name", "") or "")
+            if dialect.startswith("postgres"):
+                sql = (
+                    "INSERT INTO order_id_attempts (slot, attempt) VALUES (:s, 2) "
+                    "ON CONFLICT (slot) DO UPDATE SET attempt = order_id_attempts.attempt + 1 "
+                    "RETURNING attempt"
+                )
+            else:
+                sql = (
+                    "INSERT INTO order_id_attempts (slot, attempt) VALUES (:s, 2) "
+                    "ON CONFLICT(slot) DO UPDATE SET attempt = order_id_attempts.attempt + 1 "
+                    "RETURNING attempt"
+                )
+            row = (await session.execute(text(sql), {"s": slot})).first()
+            await session.commit()
+        except Exception as exc:
+            logger.warning("order_id.attempt_bump_failed", slot=slot, error=str(exc))
+            raise AttemptUnavailable(str(exc)) from exc
+        if not row:
+            raise AttemptUnavailable("attempt_bump_empty")
+        return max(1, int(row[0]))
     current = await read_attempt(flags, slot)
     return await persist_attempt(flags, slot, current + 1)

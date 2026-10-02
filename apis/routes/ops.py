@@ -30,6 +30,21 @@ from domain.ops import utc_now
 router = APIRouter()
 
 
+def _ops_db_host() -> str | None:
+    from database.engine import db_snapshot
+
+    return db_snapshot().get("host")
+
+
+async def _lease_status(session: AsyncSession) -> dict:
+    from services.db_lease import snapshot_leases
+
+    try:
+        return await snapshot_leases(session)
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 class KillSwitchRequest(BaseModel):
     confirm: bool = False
     reason: str = "panic flat"
@@ -263,6 +278,8 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
             "max_beta": settings.risk_max_portfolio_beta,
             "max_sector_pct": settings.risk_max_sector_pct,
         },
+        "db_host": _ops_db_host(),
+        "leases": await _lease_status(session),
     }
 
 
@@ -270,7 +287,18 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
 async def last_autopilot_cycle(session: AsyncSession = Depends(get_session)) -> dict:
     """Read-only snapshot of the last firm Autopilot cycle (hora, resultado, mensaje)."""
     data = await OpsFlagRepository(session).get_json("firm_autopilot_last_cycle")
-    return data or {"at": None, "result": None, "message": "sin ciclo registrado"}
+    body = data or {"at": None, "result": None, "message": "sin ciclo registrado"}
+    try:
+        from services.db_lease import LEASE_LIVE_STOCKS, snapshot_lease
+
+        lease = (await snapshot_lease(session, LEASE_LIVE_STOCKS)).as_dict()
+        body["lease"] = lease
+        body["lease_owner"] = lease.get("lease_owner")
+        body["lease_expires_at"] = lease.get("lease_expires_at")
+        body["lease_misses_consecutive"] = lease.get("lease_misses_consecutive")
+    except Exception:
+        body.setdefault("lease", {"name": "live_stocks", "error": "snapshot_failed"})
+    return body
 
 
 @router.get("/ops/multiasset/activities")

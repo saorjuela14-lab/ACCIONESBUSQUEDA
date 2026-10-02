@@ -119,6 +119,9 @@ class AutopilotService:
             steps["message"] = "otra réplica tiene el ciclo de acciones"
             return steps
         try:
+            from services.live_cycle_lock import heartbeat_cycle_lease
+
+            await heartbeat_cycle_lease(self._session, owner=owner)
             return await self._run_unlocked(
                 steps, session_label=session_label, execute_trades=execute_trades, actor=actor
             )
