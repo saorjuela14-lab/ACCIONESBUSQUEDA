@@ -1,27 +1,37 @@
-"""Replica lease + idempotent client_order_id for Strategy A PAPER cycles.
+"""Strategy A cycle lease + client_order_id allocator (combo #9).
 
-Survives FastAPI Cloud scale-to-zero and multiple replicas: lock lives in DB
-(pg_advisory_lock when Postgres, else an expiring ops-flag lease).
+The cycle lock is a DB row lease (``desk_leases.crypto_a``). Session advisory
+locks are not used — they do not survive PgBouncer transaction-mode pooling.
 """
 
 from __future__ import annotations
 
-import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 
-from utils.logging import get_logger
+from sqlalchemy.ext.asyncio import AsyncSession
 
-logger = get_logger(__name__)
+from services.db_lease import (
+    DEFAULT_TTL_SECONDS,
+    LEASE_CRYPTO_A,
+    acquire_lease,
+    heartbeat_lease,
+    release_lease,
+    replica_id,
+    snapshot_lease,
+)
 
-FLAG_LEASE = "crypto_strategy_a_lease"
-LEASE_TTL_SEC = 180
-ADVISORY_KEY = 1_340_090_01
-
-
-def replica_id() -> str:
-    host = os.environ.get("HOSTNAME") or os.uname().nodename or "unknown"
-    return f"{host}:{os.getpid()}"
+__all__ = [
+    "DEFAULT_TTL_SECONDS",
+    "LEASE_CRYPTO_A",
+    "acquire_cycle_lease",
+    "allocate_sa9_client_order_id",
+    "heartbeat_cycle_lease",
+    "idempotency_key",
+    "release_cycle_lease",
+    "replica_id",
+    "snapshot_cycle_lease",
+]
 
 
 def idempotency_key(
@@ -40,6 +50,45 @@ def idempotency_key(
         except Exception:
             cycle = "na"
     return build_client_order_id("sa9", symbol, action, cycle, attempt)
+
+
+async def acquire_cycle_lease(
+    flags: Any,
+    *,
+    owner: str,
+    now: datetime,
+    session: AsyncSession | None = None,
+    ttl_seconds: int = DEFAULT_TTL_SECONDS,
+) -> tuple[bool, dict[str, Any]]:
+    del flags, now
+    if session is None:
+        return False, {"error": "session_required"}
+    snap = await acquire_lease(session, name=LEASE_CRYPTO_A, owner=owner, ttl_seconds=ttl_seconds)
+    return snap.acquired, snap.as_dict()
+
+
+async def heartbeat_cycle_lease(
+    session: AsyncSession,
+    *,
+    owner: str,
+    ttl_seconds: int = DEFAULT_TTL_SECONDS,
+) -> bool:
+    return await heartbeat_lease(session, name=LEASE_CRYPTO_A, owner=owner, ttl_seconds=ttl_seconds)
+
+
+async def release_cycle_lease(
+    flags: Any,
+    owner: str,
+    session: AsyncSession | None = None,
+) -> None:
+    del flags
+    if session is None:
+        return
+    await release_lease(session, name=LEASE_CRYPTO_A, owner=owner)
+
+
+async def snapshot_cycle_lease(session: AsyncSession) -> dict[str, Any]:
+    return (await snapshot_lease(session, LEASE_CRYPTO_A)).as_dict()
 
 
 async def allocate_sa9_client_order_id(
@@ -78,113 +127,3 @@ async def allocate_sa9_client_order_id(
                 attempt = await bump_attempt(flags, slot)
                 cid = idempotency_key(symbol, candle_open, action, attempt=attempt)
     return cid, attempt
-
-
-def pd_ts(value: datetime | str) -> datetime:
-    if isinstance(value, datetime):
-        dt = value
-    else:
-        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
-
-
-async def try_pg_advisory_lock(session: Any, key: int = ADVISORY_KEY) -> bool | None:
-    """True/False on Postgres; None if the dialect has no advisory locks."""
-    if session is None:
-        return None
-    bind = getattr(session, "bind", None) or getattr(session, "get_bind", lambda: None)()
-    url = str(getattr(bind, "url", "") or "")
-    if "postgres" not in url and "postgresql" not in url:
-        dialect = str(getattr(getattr(bind, "dialect", None), "name", "") or "")
-        if dialect not in {"postgresql", "postgres"}:
-            return None
-    try:
-        from sqlalchemy import text
-
-        result = await session.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": int(key)})
-        row = result.scalar()
-        return bool(row)
-    except Exception as exc:
-        logger.warning("crypto_a.advisory_lock_failed", error=str(exc))
-        return None
-
-
-async def release_pg_advisory_lock(session: Any, key: int = ADVISORY_KEY) -> None:
-    try:
-        from sqlalchemy import text
-
-        await session.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": int(key)})
-    except Exception:
-        pass
-
-
-async def acquire_cycle_lease(
-    flags: Any,
-    *,
-    owner: str,
-    now: datetime | None = None,
-    ttl_sec: int = LEASE_TTL_SEC,
-    session: Any = None,
-) -> tuple[bool, dict[str, Any]]:
-    clock = now or datetime.now(timezone.utc)
-    if clock.tzinfo is None:
-        clock = clock.replace(tzinfo=timezone.utc)
-    pg = await try_pg_advisory_lock(session)
-    if pg is True:
-        lease = {
-            "owner": owner,
-            "replica_id": owner,
-            "expires_at": (clock + timedelta(seconds=ttl_sec)).isoformat(),
-            "backend": "pg_advisory_lock",
-        }
-        if flags is not None:
-            await flags.set_json(FLAG_LEASE, lease)
-        return True, lease
-    if pg is False:
-        cur = await flags.get_json(FLAG_LEASE) if flags is not None else {}
-        return False, cur or {"owner": "other", "backend": "pg_advisory_lock"}
-
-    cur = await flags.get_json(FLAG_LEASE) if flags is not None else {}
-    exp_raw = cur.get("expires_at")
-    exp = None
-    if exp_raw:
-        try:
-            exp = pd_ts(exp_raw)
-        except Exception:
-            exp = None
-    if cur.get("owner") and exp and exp > clock and cur.get("owner") != owner:
-        return False, cur
-    lease = {
-        "owner": owner,
-        "replica_id": owner,
-        "expires_at": (clock + timedelta(seconds=ttl_sec)).isoformat(),
-        "backend": "ops_flag_lease",
-    }
-    if flags is not None:
-        await flags.set_json(FLAG_LEASE, lease)
-        again = await flags.get_json(FLAG_LEASE)
-        if again.get("owner") and again.get("owner") != owner:
-            exp2 = None
-            try:
-                exp2 = pd_ts(again.get("expires_at"))
-            except Exception:
-                exp2 = None
-            if exp2 and exp2 > clock:
-                return False, again
-    return True, lease
-
-
-async def release_cycle_lease(flags: Any, owner: str, session: Any = None) -> None:
-    await release_pg_advisory_lock(session)
-    if flags is None:
-        return
-    try:
-        cur = await flags.get_json(FLAG_LEASE)
-        if cur.get("owner") == owner:
-            cur["released_at"] = datetime.now(timezone.utc).isoformat()
-            cur["owner"] = None
-            await flags.set_json(FLAG_LEASE, cur)
-    except Exception:
-        pass

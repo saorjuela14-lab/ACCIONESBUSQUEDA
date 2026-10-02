@@ -105,9 +105,19 @@ def attach_last_cycle_obs(cycle: dict[str, Any] | None, state: dict[str, Any] | 
         last["missed_candles"] = state.get("missed_candles")
         last["replica_id"] = state.get("replica_id")
         last["candles_behind"] = state.get("candles_behind")
+        last["cursors"] = state.get("cursors")
         crypto["last_evaluated_candle"] = last.get("last_evaluated_candle")
         crypto["eval_history"] = last.get("eval_history")
         crypto["missed_candles"] = last.get("missed_candles")
         crypto["replica_id"] = last.get("replica_id")
         crypto["candles_behind"] = last.get("candles_behind")
+        crypto["cursors"] = last.get("cursors")
+        lease = state.get("lease") if isinstance(state.get("lease"), dict) else {}
+        if lease:
+            last["lease_owner"] = lease.get("lease_owner") or lease.get("owner")
+            last["lease_expires_at"] = lease.get("lease_expires_at") or lease.get("expires_at")
+            last["lease_misses_consecutive"] = lease.get("lease_misses_consecutive") or lease.get("misses_consecutive")
+            crypto["lease_owner"] = last.get("lease_owner")
+            crypto["lease_expires_at"] = last.get("lease_expires_at")
+            crypto["lease_misses_consecutive"] = last.get("lease_misses_consecutive")
     return last

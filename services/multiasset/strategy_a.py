@@ -134,6 +134,15 @@ def donchian_S(df: pd.DataFrame, periods: tuple[int, ...] = DONCHIAN_L) -> tuple
     return s, components
 
 
+def donchian_S_series(df: pd.DataFrame, periods: tuple[int, ...] = DONCHIAN_L) -> pd.Series:
+    """Per-bar S (mean of hysteresis channels) for catch-up lock rebuild."""
+    if df is None or getattr(df, "empty", True):
+        return pd.Series(dtype=float)
+    channels = [hysteresis_channel(df, int(L)) for L in periods]
+    mean = np.vstack(channels).mean(axis=0) if channels else np.zeros(len(df))
+    return pd.Series(mean, index=df.index)
+
+
 def btc_regime_ok(btc_4h: pd.DataFrame | None) -> tuple[bool, str]:
     """BTC 4h close > SMA of 1.200 4h bars (200 daily sessions). Same flag for every coin."""
     if btc_4h is None or btc_4h.empty:
@@ -152,14 +161,14 @@ def btc_regime_ok(btc_4h: pd.DataFrame | None) -> tuple[bool, str]:
 
 
 def realized_vol_30d(df_4h: pd.DataFrame) -> float | None:
-    """Annualized 30d realized vol from 4h log returns (6×365)."""
+    """Annualized 30d realized vol from 4h simple returns (engine.py pct_change)."""
     if df_4h is None or df_4h.empty:
         return None
     close = _col(df_4h, "Close")
     if len(close) < VOL_LOOKBACK_BARS + 1:
         return None
-    log_r = np.log(close.replace(0, np.nan)).diff()
-    window = log_r.iloc[-VOL_LOOKBACK_BARS:]
+    simple = close.pct_change()
+    window = simple.iloc[-VOL_LOOKBACK_BARS:]
     std = float(window.std(ddof=1)) if window.notna().sum() >= 10 else float("nan")
     if not np.isfinite(std) or std <= 0:
         return None
@@ -311,7 +320,7 @@ def should_rebalance(
         return float(current_notional) > 0
     if float(current_notional) <= 0:
         return float(target_notional) > 0
-    return abs(float(current_notional) - float(target_notional)) / float(target_notional) > float(dev)
+    return abs(float(current_notional) - float(target_notional)) / float(current_notional) > float(dev)
 
 
 def vol_weight_notional(*, s: float, vol_30d: float | None, name_cap_notional: float) -> float:
@@ -423,8 +432,9 @@ def rebuild_highest_close(
     *,
     entry_ts: datetime | str | None,
     persisted: float | None,
+    until: datetime | str | None = None,
 ) -> tuple[float | None, str]:
-    """Max close since entry from history. Never reset to entry price alone."""
+    """Max close since entry up to ``until``. Never look ahead into an unevaluated gap."""
     completed = last_completed_frame(df_4h) if df_4h is not None else pd.DataFrame()
     if completed is None or completed.empty:
         if persisted and float(persisted) > 0:
@@ -441,6 +451,17 @@ def rebuild_highest_close(
                 if idx.tz is None:
                     ts = ts.tz_localize(None) if ts.tzinfo else ts
                 close = close.loc[idx >= ts]
+        except Exception:
+            pass
+    if until is not None and isinstance(completed.index, pd.DatetimeIndex):
+        try:
+            ut = pd.Timestamp(until)
+            if ut.tzinfo is None:
+                ut = ut.tz_localize("UTC")
+            idx = close.index
+            if idx.tz is None:
+                ut = ut.tz_localize(None)
+            close = close.loc[idx <= ut]
         except Exception:
             pass
     if close.empty:

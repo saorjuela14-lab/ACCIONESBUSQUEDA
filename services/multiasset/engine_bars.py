@@ -10,11 +10,16 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable
 
+import numpy as np
 import pandas as pd
 
 from utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+OUTLIER_LOOKBACK = 48
+OUTLIER_LO = 0.55
+OUTLIER_HI = 1.80
 
 ALPACA_CRYPTO_BARS_PATH = "/v1beta3/crypto/us/bars"
 ALPACA_DATA_BASE = "https://data.alpaca.markets"
@@ -63,6 +68,9 @@ def clean(df: pd.DataFrame, bar_h: int = 1) -> pd.DataFrame:
     out = out[out["Close"].astype(float) > 0]
     if out.empty:
         return out
+    out = clip_outlier_prints(out)
+    if out.empty:
+        return out
     expected = pd.Timedelta(hours=int(bar_h) or 1)
     delta = out.index.to_series().diff()
     # First bar has no previous; later bars with a hole larger than bar_h stay
@@ -70,6 +78,17 @@ def clean(df: pd.DataFrame, bar_h: int = 1) -> pd.DataFrame:
     # are dropped in resample_4h.
     _ = delta, expected
     return out
+
+
+def clip_outlier_prints(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop prints that deviate from a rolling median (engine.py: ETH 788 USD case)."""
+    if df is None or getattr(df, "empty", True) or "Close" not in df.columns:
+        return df
+    close = df["Close"].astype(float)
+    med = close.rolling(OUTLIER_LOOKBACK, min_periods=8).median()
+    ratio = close / med.replace(0, np.nan)
+    keep = med.isna() | ((ratio >= OUTLIER_LO) & (ratio <= OUTLIER_HI))
+    return df.loc[keep]
 
 
 def resample_4h(df_1h: pd.DataFrame) -> pd.DataFrame:

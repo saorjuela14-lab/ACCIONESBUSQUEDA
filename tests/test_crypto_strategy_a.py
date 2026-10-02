@@ -196,7 +196,8 @@ def test_post_stop_block_until_S_zero_then_up():
     assert b2["blocked"] is False
     assert should_rebalance(100, 100, 1.0, 2 / 3) is True
     assert should_rebalance(100, 100, 1.0, 1.0) is False
-    assert should_rebalance(130, 100, 1.0, 1.0) is True  # 30% > 20%
+    assert should_rebalance(130, 100, 1.0, 1.0) is True  # 30% vs current
+    assert should_rebalance(100, 125, 1.0, 1.0) is True  # 25% vs current qty, not target
 
 
 def test_stop_zero_or_above_entry_rejected():
@@ -711,8 +712,9 @@ async def test_last_cycle_and_desk_status_expose_stop_obs(session, monkeypatch):
     with patch(
         "services.multiasset.autopilot.MultiAssetAutopilotService.crypto_catchup_on_wake",
         AsyncMock(return_value={"skipped": "test"}),
-    ):
+    ) as catchup:
         body = await last_multiasset_cycle(session)
+    catchup.assert_not_called()
     row = body["desks"]["crypto"]["open_positions"][0]
     assert row["symbol"] == "ETH/USD"
     assert row["stop_px"] == 3900.0
@@ -1313,8 +1315,9 @@ def test_rolling_24h_window_resets_after_expiry():
         now=now,
         hours=24.0,
     )
-    assert reset2 is True
-    assert start2 == pytest.approx(1900.0)
+    # True rolling window: the 25h-old sample is the wealth ~24h ago, not a reset to now.
+    assert reset2 is False
+    assert start2 == pytest.approx(2000.0)
     start3, _, reset3 = rolling_window_start(
         stamped_at=None, stamped_wealth=None, wealth=1800.0, now=now, hours=24.0
     )
@@ -1386,3 +1389,148 @@ async def test_scheduler_fires_crypto_catchup_before_run(monkeypatch):
         await SchedulerService()._run_multiasset_autopilot()
     assert calls == ["catchup:scheduler_wake", "run:scheduler"]
     get_settings.cache_clear()
+
+
+def _fixture_4h(n: int, *, start: float = 100.0, step: float = 0.4, start_ts: str = "2026-01-01") -> pd.DataFrame:
+    idx = pd.date_range(start_ts, periods=n, freq="4h", tz="UTC")
+    close = start + np.arange(n) * step
+    return pd.DataFrame(
+        {"Open": close - 0.05, "High": close + 0.2, "Low": close - 0.2, "Close": close, "Volume": 10.0},
+        index=idx,
+    )
+
+
+def test_rebuild_highest_close_does_not_look_ahead_into_gap():
+    df = _fixture_4h(20, start=100.0, step=1.0)
+    # Spike only in the unevaluated gap (last 3 bars).
+    df.iloc[-1, df.columns.get_loc("Close")] = 999.0
+    until = df.index[-4]
+    hist, _src = rebuild_highest_close(df, entry_ts=df.index[0], persisted=100.0, until=until)
+    assert hist < 200.0
+    full, _ = rebuild_highest_close(df, entry_ts=df.index[0], persisted=100.0)
+    assert full == pytest.approx(999.0)
+
+
+def test_catch_up_parity_3_and_7_bar_gaps():
+    """Bar-by-bar walk matches engine order: compare previous stop, then ratchet."""
+    from services.multiasset.indicators import atr
+    from services.multiasset.strategy_a import chandelier_stop_px
+
+    for n in (3, 7):
+        df = _fixture_4h(80, start=200.0, step=0.5)
+        crash_i = 80 - n  # first missed bar after last_evaluated
+        df.iloc[crash_i, df.columns.get_loc("Close")] = 120.0
+        df.iloc[crash_i, df.columns.get_loc("Low")] = 118.0
+        last_eval = df.index[crash_i - 1]
+        high = float(df["Close"].iloc[:crash_i].max())
+        hist0 = df.iloc[:crash_i]
+        a0 = atr(hist0, 14)
+        atr0 = float(a0.iloc[-1])
+        stop = chandelier_stop_px(high, atr0)
+        cup = catch_up_exits(
+            df,
+            last_evaluated_open=last_eval,
+            highest_close=high,
+            stop_px=stop,
+            now=df.index[-1] + pd.Timedelta(hours=5),
+        )
+        assert cup["data_ok"] is True
+        assert cup["hit"] is True
+        assert cup["hit_bar"]["late"] is True
+        assert cup["hit_bar"]["sell_now"] is True
+        opens = [e["candle_open"] for e in cup["evals"]]
+        assert opens == sorted(opens)
+        assert cup["last_evaluated_candle"] == cup["hit_bar"]["candle_open"]
+        assert len(cup["evals"]) == 1
+
+
+def test_new_entry_cursor_ignores_pre_entry_bars():
+    df = _fixture_4h(40, start=80.0, step=1.0)
+    df.iloc[5, df.columns.get_loc("Close")] = 10.0  # would hit any stop if evaluated
+    entry = df.index[20]
+    cup = catch_up_exits(
+        df,
+        last_evaluated_open=entry,
+        highest_close=float(df.loc[entry, "Close"]),
+        stop_px=50.0,
+        now=df.index[-1] + pd.Timedelta(hours=5),
+    )
+    opens = [e["candle_open"] for e in cup["evals"]]
+    assert all(pd.Timestamp(o) > pd.Timestamp(entry) for o in opens)
+
+
+def test_clean_clips_eth_788_outlier():
+    from services.multiasset.engine_bars import clean
+
+    idx = pd.date_range("2025-04-01", periods=80, freq="1h", tz="UTC")
+    close = np.full(80, 1500.0)
+    close[40] = 788.0  # 2025-04-07 style print
+    raw = pd.DataFrame(
+        {"Open": close, "High": close + 2, "Low": close - 2, "Close": close, "Volume": 1.0},
+        index=idx,
+    )
+    cleaned = clean(raw)
+    assert 788.0 not in set(cleaned["Close"].astype(float))
+    assert (cleaned["Close"] > 1000).all()
+
+
+def test_realized_vol_uses_simple_returns():
+    from services.multiasset.strategy_a import realized_vol_30d
+
+    idx = pd.date_range("2026-01-01", periods=200, freq="4h", tz="UTC")
+    close = 100 * np.cumprod(1 + np.full(200, 0.001))
+    df = pd.DataFrame(
+        {"Open": close, "High": close, "Low": close, "Close": close},
+        index=idx,
+    )
+    vol = realized_vol_30d(df)
+    simple = pd.Series(close, index=idx).pct_change().iloc[-180:]
+    expect = float(simple.std(ddof=1) * np.sqrt(6 * 365.0))
+    assert vol == pytest.approx(expect, rel=1e-9)
+
+
+@pytest.mark.asyncio
+async def test_pending_exit_and_real_pnl_not_missing_as_loss():
+    from services.multiasset.autopilot import MultiAssetAutopilotService, _fill_price
+
+    class Res:
+        ok = True
+        payload = {}
+
+    assert _fill_price(Res(), fallback=None) is None
+    class ResFill:
+        ok = True
+        payload = {"filled_avg_price": "101.5"}
+
+    assert _fill_price(ResFill()) == pytest.approx(101.5)
+    svc = MultiAssetAutopilotService(session=None)
+    trade = MagicMock(entry_price=100.0, qty=2.0)
+    svc._crypto_position_qty = AsyncMock(return_value=2.0)
+    class Desk:
+        async def execute(self, req):
+            del req
+            return MagicMock(ok=False, message="broker_down", payload={})
+
+    svc._desk = Desk()
+    sold = await svc._crypto_market_sell("ETH/USD", trade, dry_run=True, actor="t", reason="stop")
+    assert sold["ok"] is False
+    assert sold["pnl_usd"] is None
+    assert sold["keep_state"] is True
+
+
+@pytest.mark.asyncio
+async def test_crypto_kill_reset_is_audited(session):
+    from database.repositories.ops_repository import OpsFlagRepository
+    from services.multiasset.crypto_risk import reset_allocation_kill
+
+    flags = OpsFlagRepository(session)
+    mark = {"kill_active": True, "peak_wealth_usd": 2000.0, "wealth_usd": 1700.0}
+    await flags.set_json("crypto_strategy_a_risk", mark)
+    updated = reset_allocation_kill(mark, actor="desk", reason="review", current_wealth=1700.0)
+    assert updated["kill_active"] is False
+    assert updated["kill_reset"]["actor"] == "desk"
+    assert updated["kill_reset"]["reason"] == "review"
+    await flags.set_json("crypto_strategy_a_risk", updated)
+    stored = await flags.get_json("crypto_strategy_a_risk")
+    assert stored["kill_active"] is False
+    assert stored["kill_reset"]["prev_kill"] is True

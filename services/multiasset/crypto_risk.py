@@ -356,6 +356,45 @@ def open_risk_from_mark(*, qty: float, last: float, stop: float) -> float:
     return max(0.0, (px - st) * q)
 
 
+def rolling_wealth_from_samples(
+    samples: list[dict[str, Any]] | None,
+    *,
+    wealth: float,
+    now: datetime,
+    hours: float,
+) -> tuple[float, list[dict[str, Any]]]:
+    """True rolling window: wealth now vs the sample nearest to now-hours (not a fixed reset)."""
+    from datetime import timedelta
+
+    clock = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
+    cutoff = clock - timedelta(hours=float(hours))
+    rows: list[dict[str, Any]] = []
+    for raw in samples or []:
+        if not isinstance(raw, dict):
+            continue
+        try:
+            at = datetime.fromisoformat(str(raw.get("at") or "").replace("Z", "+00:00"))
+            if at.tzinfo is None:
+                at = at.replace(tzinfo=timezone.utc)
+            w = float(raw.get("wealth"))
+        except Exception:
+            continue
+        rows.append({"at": at.isoformat(), "wealth": w, "_at": at})
+    rows.append({"at": clock.isoformat(), "wealth": float(wealth), "_at": clock})
+    rows.sort(key=lambda r: r["_at"])
+    older = [r for r in rows if r["_at"] <= cutoff]
+    newer = [r for r in rows if r["_at"] > cutoff]
+    if older:
+        anchor = older[-1]
+        start_w = float(anchor["wealth"])
+        keep = [anchor] + newer
+    else:
+        start_w = float(rows[0]["wealth"])
+        keep = rows
+    slim = [{"at": r["at"], "wealth": r["wealth"]} for r in keep[-72:]]
+    return start_w, slim
+
+
 def rolling_window_start(
     *,
     stamped_at: str | None,
@@ -363,26 +402,17 @@ def rolling_window_start(
     wealth: float,
     now: datetime,
     hours: float,
+    samples: list[dict[str, Any]] | None = None,
 ) -> tuple[float, str, bool]:
-    """Anchor wealth for a rolling pause window. Reset when missing or older than `hours`."""
+    """Rolling pause window. Prefer samples; fall back to a two-point stamp."""
     clock = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
     stamp = clock.isoformat()
-    if not stamped_at:
-        return float(wealth), stamp, True
-    try:
-        started = datetime.fromisoformat(str(stamped_at).replace("Z", "+00:00"))
-        if started.tzinfo is None:
-            started = started.replace(tzinfo=timezone.utc)
-    except Exception:
-        return float(wealth), stamp, True
-    age = (clock - started).total_seconds()
-    if age > float(hours) * 3600:
-        return float(wealth), stamp, True
-    try:
-        start_w = float(stamped_wealth) if stamped_wealth is not None else float(wealth)
-    except (TypeError, ValueError):
-        start_w = float(wealth)
-    return start_w, str(stamped_at), False
+    seed = list(samples or [])
+    if stamped_at and stamped_wealth is not None:
+        seed = [{"at": stamped_at, "wealth": stamped_wealth}, *seed]
+    start_w, slim = rolling_wealth_from_samples(seed, wealth=wealth, now=clock, hours=hours)
+    reset = len(slim) <= 1
+    return start_w, stamp, reset
 
 
 def loss_streak_pause(

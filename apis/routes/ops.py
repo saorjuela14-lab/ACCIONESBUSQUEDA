@@ -283,6 +283,37 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
     }
 
 
+class CryptoKillResetRequest(BaseModel):
+    confirm: bool = False
+    reason: str = Field(min_length=3, max_length=240)
+    actor: str = "desk"
+
+
+@router.post("/ops/crypto/kill-reset")
+async def reset_crypto_allocation_kill(
+    body: CryptoKillResetRequest,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Audited reset of Strategy A allocation kill. Does not submit orders."""
+    if not body.confirm:
+        raise HTTPException(status_code=400, detail="confirm=true required")
+    from services.multiasset.crypto_risk import reset_allocation_kill
+
+    flags = OpsFlagRepository(session)
+    mark = await flags.get_json("crypto_strategy_a_risk")
+    wealth = float(mark.get("wealth_usd") or mark.get("crypto_usd") or 0)
+    updated = reset_allocation_kill(
+        mark, actor=body.actor, reason=body.reason, current_wealth=wealth
+    )
+    await flags.set_json("crypto_strategy_a_risk", updated)
+    return {
+        "ok": True,
+        "kill_active": False,
+        "reset": updated.get("kill_reset"),
+        "peak_wealth_usd": updated.get("peak_wealth_usd"),
+    }
+
+
 @router.get("/ops/autopilot/last")
 async def last_autopilot_cycle(session: AsyncSession = Depends(get_session)) -> dict:
     """Read-only snapshot of the last firm Autopilot cycle (hora, resultado, mensaje)."""

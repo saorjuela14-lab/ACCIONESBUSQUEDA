@@ -72,20 +72,29 @@ async def desk_board(session: AsyncSession = Depends(get_session)):
 
 @router.get("/beta/multiasset/last-cycle")
 async def last_multiasset_cycle(session: AsyncSession = Depends(get_session)):
+    """Read-only snapshot. Never submits orders or runs catch-up."""
     _enabled()
     from database.repositories.ops_repository import OpsFlagRepository
-    from services.multiasset.autopilot import MultiAssetAutopilotService
+    from services.db_lease import LEASE_CRYPTO_A, snapshot_lease
     from services.multiasset.crypto_obs import attach_last_cycle_obs
     from services.multiasset.risk_engine import FLAG_CYCLE
 
-    # Scale-to-zero: GET may wake the app and must run catch-up first.
-    try:
-        await MultiAssetAutopilotService(session).crypto_catchup_on_wake(actor="last_cycle_get")
-    except Exception:
-        pass
     last = await OpsFlagRepository(session).get_json(FLAG_CYCLE)
     state = await OpsFlagRepository(session).get_json("crypto_strategy_a_state")
-    return attach_last_cycle_obs(last, state)
+    body = attach_last_cycle_obs(last, state)
+    try:
+        lease = (await snapshot_lease(session, LEASE_CRYPTO_A)).as_dict()
+        body["lease"] = lease
+        crypto = body.setdefault("desks", {}).setdefault("crypto", {})
+        crypto["lease_owner"] = lease.get("lease_owner")
+        crypto["lease_expires_at"] = lease.get("lease_expires_at")
+        crypto["lease_misses_consecutive"] = lease.get("lease_misses_consecutive")
+        body["lease_owner"] = lease.get("lease_owner")
+        body["lease_expires_at"] = lease.get("lease_expires_at")
+        body["lease_misses_consecutive"] = lease.get("lease_misses_consecutive")
+    except Exception:
+        body.setdefault("lease", {"name": LEASE_CRYPTO_A, "error": "snapshot_failed"})
+    return body
 
 
 @router.get("/beta/multiasset/strategy-a/eligibility")
