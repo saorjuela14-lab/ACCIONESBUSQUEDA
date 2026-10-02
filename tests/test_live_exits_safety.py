@@ -430,7 +430,11 @@ def test_stop_1r_blocks_buy_thesis_next_session():
     blocked, _ = buy_thesis_blocked(flag, "SNAP", today="2026-10-03")
     assert blocked is False
     assert "SNAP" in blocked_buy_symbols(flag, today="2026-10-02")
-    assert buy_thesis_blocked(flag, "AAPL", today="2026-10-02")[0] is False
+    # E3: ≥1R freezes the whole session, not just the stopped symbol.
+    assert buy_thesis_blocked(flag, "AAPL", today="2026-10-02")[0] is True
+    flag["at"] = "2026-10-01T15:00:00-04:00"
+    later = datetime(2026, 10, 1, 16, 0, tzinfo=US_EASTERN)
+    assert buy_thesis_blocked(flag, "AAPL", today="2026-10-01", thesis_at=later)[0] is False
 
 
 def test_kill_switch_request_flatten_defaults_false():
@@ -452,7 +456,11 @@ async def test_submit_one_live_buy_blocked_sell_allowed(monkeypatch):
     inner.submit_order = AsyncMock(
         return_value={"id": "s1", "status": "accepted", "symbol": "SNAP", "side": "sell", "qty": "1"}
     )
+    inner.get_positions = AsyncMock(
+        return_value=[SimpleNamespace(symbol="SNAP", qty=1.0)]
+    )
     svc = AlpacaOrderService(broker=inner)
+    svc.get_positions = AsyncMock(return_value=[SimpleNamespace(symbol="SNAP", qty=1.0)])
     monkeypatch.setenv("LIVE_ENTRIES_ENABLED", "false")
     from config.settings import get_settings
 

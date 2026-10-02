@@ -10,7 +10,10 @@ import re
 from datetime import date, datetime, timedelta
 from typing import Any, Mapping
 
+from utils.logging import get_logger
 from utils.market_hours import MARKET_CLOSE, US_EASTERN, is_market_open, now_et
+
+logger = get_logger(__name__)
 
 # NYSE/NASDAQ common stock tickers (class suffix allowed: BRK.B).
 _US_EQUITY_RE = re.compile(r"^[A-Z]{1,5}(\.[A-Z])?$")
@@ -85,6 +88,40 @@ def live_entry_blocked(*, side: str | None, paper: bool, live_entries_enabled: b
     return True, why
 
 
+def sell_qty_exceeds_long(qty: float | None, position_qty: float | None) -> bool:
+    """True when a sell is larger than the real long. Missing position → exceed (fail closed)."""
+    try:
+        want = float(qty or 0)
+    except (TypeError, ValueError):
+        return True
+    if want <= 0:
+        return True
+    try:
+        have = float(position_qty) if position_qty is not None else 0.0
+    except (TypeError, ValueError):
+        return True
+    return want > have + 1e-9
+
+
+def long_qty_from_positions(positions: list[Any] | None, symbol: str) -> float:
+    want = (symbol or "").upper().replace("/", "").replace("-", "")
+    for p in positions or []:
+        if isinstance(p, dict):
+            raw = str(p.get("symbol") or "")
+            qty = p.get("qty")
+        else:
+            raw = str(getattr(p, "symbol", "") or "")
+            qty = getattr(p, "qty", 0)
+        key = raw.upper().replace("/", "").replace("-", "")
+        if key == want or key.endswith(want):
+            try:
+                q = float(qty or 0)
+            except (TypeError, ValueError):
+                return 0.0
+            return q if q > 0 else 0.0
+    return 0.0
+
+
 def is_multiasset_crypto_symbol(ticker: str) -> bool:
     t = (ticker or "").upper().replace(" ", "")
     if not t:
@@ -107,8 +144,27 @@ def is_us_equity_live_symbol(ticker: str) -> bool:
     return bool(_US_EQUITY_RE.fullmatch(t))
 
 
+_KILL_OFF_EXACT = frozenset({
+    "confirma desactivar kill switch",
+    "confirma desactivar el kill switch",
+    "confirma apagar el kill switch",
+    "confirmado desactivar kill switch",
+    "autorizo desactivar kill switch",
+    "sergio confirma desactivar kill switch",
+})
+
+
+def _norm_voice_text(text: str) -> str:
+    t = (text or "").lower()
+    for src, dst in (("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u"), ("ü", "u")):
+        t = t.replace(src, dst)
+    t = t.replace("-", " ")
+    t = re.sub(r"[^a-z0-9\s]", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
 def voice_kill_off_confirmed(args: dict[str, Any] | None, user_text: str | None = None) -> bool:
-    """Viernes cannot disarm the kill-switch unless the human said it explicitly."""
+    """Exact spoken phrase only. Never reads args['user_text'] (spoofable)."""
     args = args or {}
     confirm = args.get("confirm")
     if confirm is True:
@@ -117,12 +173,14 @@ def voice_kill_off_confirmed(args: dict[str, Any] | None, user_text: str | None 
         flagged = str(confirm or "").strip().lower() in {"true", "1", "yes", "y", "si", "sí"}
     if not flagged:
         return False
-    text = str(user_text or args.get("user_text") or "").lower()
-    if not text:
+    # Caller must pass the live utterance. Do not fall back to args["user_text"].
+    text = str(user_text or "")
+    if not text.strip():
         return False
-    has_confirm = any(n in text for n in _KILL_OFF_CONFIRM)
-    has_topic = any(k in text for k in _KILL_OFF_TOPIC)
-    return has_confirm and has_topic
+    norm = _norm_voice_text(text)
+    if re.search(r"\bno\b", norm):
+        return False
+    return norm in _KILL_OFF_EXACT
 
 
 def eod_may_submit_orders(dt: datetime | None = None) -> bool:
@@ -218,9 +276,82 @@ def order_looks_like_stop(order: Any) -> bool:
         return False
     if isinstance(order, dict):
         otype = str(order.get("type") or order.get("order_type") or "").lower()
+        raw = order
     else:
         otype = str(getattr(order, "type", "") or "").lower()
-    return otype in {"stop", "stop_limit"} or "stop" in otype
+        raw = getattr(order, "raw", None) or {}
+    if otype in {"stop", "stop_limit"} or "stop" in otype:
+        return True
+    if isinstance(raw, dict):
+        nested = raw.get("stop_loss") or raw.get("stop_price")
+        if nested:
+            return True
+        for leg in raw.get("legs") or []:
+            if isinstance(leg, dict) and order_looks_like_stop(leg):
+                return True
+    return False
+
+
+def _level_num(value: Any) -> float | None:
+    if isinstance(value, dict):
+        value = (
+            value.get("stop_price")
+            or value.get("limit_price")
+            or value.get("price")
+            or value.get("stop")
+        )
+    try:
+        px = float(value or 0)
+    except (TypeError, ValueError):
+        return None
+    return px if px > 0 else None
+
+
+def protective_levels_from_order(order: Any) -> tuple[float | None, float | None]:
+    """Real stop / take-profit from a broker order. Never invents 8%/16% defaults."""
+    if order is None:
+        return None, None
+    raw = order if isinstance(order, dict) else (getattr(order, "raw", None) or {})
+    if not isinstance(raw, dict):
+        raw = {}
+    stop = _level_num(raw.get("stop_loss") or raw.get("stop_price"))
+    tp = _level_num(raw.get("take_profit") or raw.get("limit_price") if raw.get("take_profit") else None)
+    if tp is None and str(raw.get("type") or raw.get("order_type") or "").lower() in {"limit"}:
+        tp = _level_num(raw.get("limit_price"))
+    if not isinstance(order, dict):
+        stop = stop or _level_num(getattr(order, "stop_price", None))
+        tp = tp or _level_num(getattr(order, "limit_price", None))
+        tp = tp or _level_num(getattr(order, "take_profit", None))
+        stop = stop or _level_num(getattr(order, "stop_loss", None))
+    for leg in raw.get("legs") or []:
+        if not isinstance(leg, dict):
+            continue
+        ltype = str(leg.get("type") or leg.get("order_type") or "").lower()
+        if ltype in {"stop", "stop_limit"} or leg.get("stop_price"):
+            stop = stop or _level_num(leg.get("stop_price") or leg.get("stop_loss"))
+        if ltype == "limit" or leg.get("limit_price"):
+            side = str(leg.get("side") or "").lower()
+            if side != "buy":
+                tp = tp or _level_num(leg.get("limit_price") or leg.get("take_profit"))
+    return stop, tp
+
+
+def exit_px_from_order_state(order: Any, mandate: Any = None) -> float | None:
+    """Best available exit price from order/position state when no fill is journaled."""
+    px = filled_exit_price_from_order(order)
+    if px:
+        return px
+    stop, _ = protective_levels_from_order(order)
+    if stop:
+        return stop
+    if mandate is not None:
+        try:
+            s = float(getattr(mandate, "stop_loss", 0) or 0)
+        except (TypeError, ValueError):
+            s = 0.0
+        if s > 0:
+            return s
+    return None
 
 
 def et_today(dt: datetime | None = None) -> str:
@@ -266,6 +397,62 @@ def record_entry_day_fill(flag: dict[str, Any], symbol: str) -> dict[str, Any]:
     return data
 
 
+async def reserve_entry_slots(
+    flags: Any,
+    *,
+    n: int,
+    max_entries: int,
+    symbols: list[str] | None = None,
+    session: Any = None,
+    owner: str | None = None,
+    today: str | None = None,
+) -> tuple[bool, str, dict[str, Any]]:
+    """Atomically reserve n daily entry slots. Deny if lock/read/write fails."""
+    from services.live_cycle_lock import (
+        ENTRY_ADVISORY_KEY,
+        FLAG_ENTRY_LOCK,
+        acquire_lease,
+        release_lease,
+        replica_id,
+    )
+
+    if n <= 0:
+        return False, "no_slots_requested", {}
+    who = owner or replica_id()
+    try:
+        got, lease = await acquire_lease(
+            flags,
+            owner=who,
+            flag=FLAG_ENTRY_LOCK,
+            advisory_key=ENTRY_ADVISORY_KEY,
+            session=session,
+        )
+    except Exception as exc:
+        logger.warning("live_entry.reserve_lock_failed", error=str(exc))
+        return False, "entry_slot_lock_failed", {}
+    if not got:
+        return False, "entry_slot_lock_held", lease or {}
+    try:
+        day_flag = await flags.get_json(FLAG_ENTRY_DAY)
+        remaining = remaining_entry_slots(day_flag, max_entries=max_entries, today=today)
+        if remaining < int(n):
+            return False, "max_1_entry_per_day", day_flag
+        _, _, day_flag = entry_day_allowed(day_flag, max_entries=max_entries, today=today)
+        names = list(symbols or [])
+        for i in range(int(n)):
+            label = names[i] if i < len(names) else "RESERVED"
+            day_flag = record_entry_day_fill(day_flag, label)
+        await flags.set_json(FLAG_ENTRY_DAY, day_flag)
+        return True, "reserved", day_flag
+    except Exception as exc:
+        logger.warning("live_entry.reserve_failed", error=str(exc))
+        return False, "entry_slot_write_failed", {}
+    finally:
+        await release_lease(
+            flags, who, flag=FLAG_ENTRY_LOCK, advisory_key=ENTRY_ADVISORY_KEY, session=session
+        )
+
+
 def next_et_session_date(day: date | None = None) -> date:
     d = (day or now_et().date()) + timedelta(days=1)
     while d.weekday() >= 5:
@@ -306,8 +493,38 @@ def record_stop_1r_block(
         "r": round(float(r_mult), 3),
     }
     data["symbols"] = blocks
+    data["session_blocked"] = True
+    data["until_session"] = until
+    data["session_symbol"] = symbol.upper()
+    data["session_r"] = round(float(r_mult), 3)
     data["at"] = datetime.now().astimezone(US_EASTERN).isoformat()
     return data
+
+
+def thesis_is_fresh_after_stop(
+    flag: dict[str, Any] | None,
+    thesis_at: datetime | str | None,
+) -> bool:
+    """True only when a BUY thesis timestamp is strictly after the 1R stop."""
+    if not flag:
+        return True
+    raw = (flag or {}).get("at")
+    if not raw:
+        return False
+    if thesis_at is None or thesis_at == "":
+        return False
+    try:
+        stop_at = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        th = thesis_at if isinstance(thesis_at, datetime) else datetime.fromisoformat(
+            str(thesis_at).replace("Z", "+00:00")
+        )
+        if stop_at.tzinfo is None:
+            stop_at = stop_at.replace(tzinfo=US_EASTERN)
+        if th.tzinfo is None:
+            th = th.replace(tzinfo=US_EASTERN)
+    except Exception:
+        return False
+    return th > stop_at
 
 
 def buy_thesis_blocked(
@@ -315,14 +532,21 @@ def buy_thesis_blocked(
     symbol: str,
     *,
     today: str | None = None,
+    thesis_at: datetime | str | None = None,
 ) -> tuple[bool, str]:
     today = today or et_today()
-    rec = ((flag or {}).get("symbols") or {}).get((symbol or "").upper())
+    data = flag or {}
+    until = str(data.get("until_session") or "")
+    if data.get("session_blocked") and until and today <= until:
+        if not thesis_is_fresh_after_stop(data, thesis_at):
+            return True, f"stop_1r_session_until_{until}"
+    rec = (data.get("symbols") or {}).get((symbol or "").upper())
     if not rec:
         return False, "ok"
-    until = str(rec.get("until_session") or "")
-    if until and today <= until:
-        return True, f"stop_1r_skip_until_{until}"
+    until_sym = str(rec.get("until_session") or until or "")
+    if until_sym and today <= until_sym:
+        if not thesis_is_fresh_after_stop(data, thesis_at):
+            return True, f"stop_1r_skip_until_{until_sym}"
     return False, "ok"
 
 

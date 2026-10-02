@@ -316,9 +316,13 @@ async def test_auto_execute_skips_picks_without_committee_consensus():
     )
     broker.execute = AsyncMock()
 
+    flags = MagicMock()
+    flags.get_json = AsyncMock(return_value={})
+    flags.set_json = AsyncMock()
     with patch("services.auto_execute_service.get_settings") as gs, \
          patch("services.auto_execute_service.KillSwitchService") as KS, \
          patch("services.risk_policy_service.RiskPolicyService") as RS, \
+         patch("database.repositories.ops_repository.OpsFlagRepository", return_value=flags), \
          patch(
              "services.deposited_capital_service.resolve_trading_base",
              AsyncMock(return_value=MagicMock(amount=21.76, source="alpaca")),
@@ -372,9 +376,13 @@ async def test_auto_execute_skips_second_line_on_micro_book():
     )
     broker.execute = AsyncMock()
 
+    flags = MagicMock()
+    flags.get_json = AsyncMock(return_value={})
+    flags.set_json = AsyncMock()
     with patch("services.auto_execute_service.get_settings") as gs, \
          patch("services.auto_execute_service.KillSwitchService") as KS, \
          patch("services.risk_policy_service.RiskPolicyService") as RS, \
+         patch("database.repositories.ops_repository.OpsFlagRepository", return_value=flags), \
          patch(
              "services.deposited_capital_service.resolve_trading_base",
              AsyncMock(return_value=MagicMock(amount=21.76, source="alpaca")),
@@ -427,9 +435,13 @@ async def test_auto_execute_skips_when_trading_base_unavailable():
     )
     broker.execute = AsyncMock()
 
+    flags = MagicMock()
+    flags.get_json = AsyncMock(return_value={})
+    flags.set_json = AsyncMock()
     with patch("services.auto_execute_service.get_settings") as gs, \
          patch("services.auto_execute_service.KillSwitchService") as KS, \
          patch("services.risk_policy_service.RiskPolicyService") as RS, \
+         patch("database.repositories.ops_repository.OpsFlagRepository", return_value=flags), \
          patch(
              "services.deposited_capital_service.resolve_trading_base",
              AsyncMock(return_value=MagicMock(amount=None, source="unavailable")),

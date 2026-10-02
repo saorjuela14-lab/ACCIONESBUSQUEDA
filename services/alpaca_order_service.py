@@ -385,43 +385,104 @@ class AlpacaOrderService:
     async def close_all_positions(self, *, cancel_orders: bool = True) -> list[dict[str, Any]]:
         return await self._broker.close_all_positions(cancel_orders=cancel_orders)
 
+    async def _live_buy_central_gates(self, settings: Any) -> str | None:
+        """Same LIVE buy filters as execute(): kill, deposited brake, daily cap, cooldown.
+
+        Returns an error tag or None if the buy may proceed. Fail-closed.
+        """
+        from services.live_safety import FLAG_ENTRY_DAY, remaining_entry_slots
+
+        try:
+            from database.engine import get_session
+            from services.kill_switch_service import KillSwitchService
+
+            kill_active = False
+            checked = False
+            async for session in get_session():
+                kill_active = await KillSwitchService(session, self).is_active()
+                flags = None
+                try:
+                    from database.repositories.ops_repository import OpsFlagRepository
+
+                    flags = OpsFlagRepository(session)
+                    cool = await flags.get_json("post_stop_cooldown")
+                    until = float((cool or {}).get("until") or 0)
+                    if until and __import__("time").time() < until:
+                        return "post_stop_cooldown"
+                    day_flag = await flags.get_json(FLAG_ENTRY_DAY)
+                    if remaining_entry_slots(
+                        day_flag,
+                        max_entries=int(getattr(settings, "live_max_entries_per_day", 1) or 1),
+                    ) <= 0:
+                        return "max_1_entry_per_day"
+                except Exception:
+                    return "entry_gate_read_failed"
+                checked = True
+                break
+            if not checked:
+                return "kill_switch_check_failed"
+            if kill_active:
+                return "kill_switch_entries_blocked"
+        except Exception:
+            return "kill_switch_check_failed"
+        try:
+            from services.deposited_capital_service import resolve_trading_base
+            from services.live_safety import deposited_brake_triggered
+
+            acct = await self.get_account()
+            eq = float(acct.equity or 0)
+            snap = await resolve_trading_base(equity=eq)
+            base = snap.amount if snap.amount and snap.amount > 0 else None
+            if base is None:
+                return "deposited_base_missing"
+            pct = float(getattr(settings, "deposited_brake_pct", 5.0) or 5.0)
+            if deposited_brake_triggered(eq, base, pct):
+                return "deposited_brake"
+        except Exception:
+            return "deposited_brake_check_failed"
+        return None
+
     async def submit_one(self, req: BrokerOrderRequest) -> BrokerOrderResult:
-        from services.live_safety import live_entry_blocked, production_trading_unconfigured
+        from services.live_safety import (
+            is_buy_side,
+            live_entry_blocked,
+            long_qty_from_positions,
+            production_trading_unconfigured,
+            sell_qty_exceeds_long,
+        )
         from utils.market_hours import eod_may_submit_orders
 
         settings = get_settings()
+        failed = BrokerOrderResult(
+            symbol=req.symbol.upper(),
+            qty=req.qty,
+            side=req.side,
+            type=req.order_type,
+            status="failed",
+        )
         if production_trading_unconfigured():
-            return BrokerOrderResult(
-                symbol=req.symbol.upper(),
-                qty=req.qty,
-                side=req.side,
-                type=req.order_type,
-                status="failed",
-                error="trading_mode_unconfigured",
-            )
+            return failed.model_copy(update={"error": "trading_mode_unconfigured"})
+        if not is_buy_side(req.side):
+            try:
+                positions = await self.get_positions()
+            except Exception:
+                positions = []
+            have = long_qty_from_positions(positions, req.symbol)
+            if sell_qty_exceeds_long(req.qty, have):
+                return failed.model_copy(update={"error": "sell_qty_exceeds_long"})
         blocked, why = live_entry_blocked(
             side=req.side,
             paper=self._broker.paper,
             live_entries_enabled=bool(getattr(settings, "live_entries_enabled", False)),
         )
         if blocked:
-            return BrokerOrderResult(
-                symbol=req.symbol.upper(),
-                qty=req.qty,
-                side=req.side,
-                type=req.order_type,
-                status="failed",
-                error=why,
-            )
-        if (req.side or "").lower() == "buy" and not eod_may_submit_orders():
-            return BrokerOrderResult(
-                symbol=req.symbol.upper(),
-                qty=req.qty,
-                side=req.side,
-                type=req.order_type,
-                status="failed",
-                error="after_regular_close_no_orders",
-            )
+            return failed.model_copy(update={"error": why})
+        if is_buy_side(req.side) and not eod_may_submit_orders():
+            return failed.model_copy(update={"error": "after_regular_close_no_orders"})
+        if is_buy_side(req.side) and not self._broker.paper:
+            gate_err = await self._live_buy_central_gates(settings)
+            if gate_err:
+                return failed.model_copy(update={"error": gate_err})
         payload = self._build_order_payload(req)
         try:
             raw = await self._broker.submit_order(payload)
@@ -475,6 +536,7 @@ class AlpacaOrderService:
 
         # --- Kill switch: block entries, allow exits (brackets stay). ---
         kill_active = False
+        has_buy = any((ln.side or "").lower() == "buy" for ln in request.lines)
         try:
             from database.engine import get_session
             from services.kill_switch_service import KillSwitchService
@@ -484,6 +546,12 @@ class AlpacaOrderService:
                 break
         except Exception as exc:
             warnings.append(f"Kill switch check falló ({exc})")
+            if has_buy and not self._broker.paper and not request.dry_run:
+                return ExecuteOrdersResponse(
+                    paper=self._broker.paper,
+                    dry_run=request.dry_run,
+                    warnings=["kill_switch_check_failed_fail_closed"],
+                )
         if kill_active:
             warnings.append(
                 "KILL SWITCH ACTIVO — entradas bloqueadas; stops/TP/salidas permitidos."
@@ -528,6 +596,12 @@ class AlpacaOrderService:
                 eq = float(account.equity or 0)
                 base_snap = await resolve_trading_base(equity=eq)
                 base = base_snap.amount if base_snap.amount and base_snap.amount > 0 else None
+                if has_buy and base is None:
+                    return ExecuteOrdersResponse(
+                        paper=self._broker.paper,
+                        dry_run=request.dry_run,
+                        warnings=["deposited_base_missing"],
+                    )
                 pct = float(getattr(get_settings(), "deposited_brake_pct", 5.0) or 5.0)
                 from database.engine import get_session as _gsess
 
@@ -549,6 +623,18 @@ class AlpacaOrderService:
                     break
             except Exception as exc:
                 warnings.append(f"deposited_brake check falló ({exc})")
+                if has_buy and not self._broker.paper and not request.dry_run:
+                    return ExecuteOrdersResponse(
+                        paper=self._broker.paper,
+                        dry_run=request.dry_run,
+                        warnings=["deposited_brake_check_failed_fail_closed"],
+                    )
+        elif has_buy and not self._broker.paper and not request.dry_run:
+            return ExecuteOrdersResponse(
+                paper=self._broker.paper,
+                dry_run=request.dry_run,
+                warnings=["deposited_base_missing"],
+            )
 
         # --- Risk desk + macro gate ---
         policy = self._risk.policy_from_settings()
@@ -1023,7 +1109,12 @@ class AlpacaOrderService:
         client_id = (req.client_order_id or "").strip()
         if not client_id:
             tag = "".join(c for c in (getattr(req, "source_tag", None) or "desk").lower() if c.isalnum())[:12] or "desk"
-            client_id = f"{tag}-{uuid4().hex[:12]}"
+            if tag == "autopilot":
+                from services.live_cycle_lock import live_client_order_id
+
+                client_id = live_client_order_id(req.symbol, req.side)
+            else:
+                client_id = f"{tag}-{uuid4().hex[:12]}"
         payload: dict[str, Any] = {
             "symbol": req.symbol.upper(),
             "qty": qty_str,

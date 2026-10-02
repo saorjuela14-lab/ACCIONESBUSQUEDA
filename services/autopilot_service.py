@@ -87,6 +87,54 @@ class AutopilotService:
         actor: str = "autopilot",
     ) -> dict[str, Any]:
         steps: dict[str, Any] = {"started_at": utc_now().isoformat(), "actor": actor}
+        from services.live_cycle_lock import (
+            ADVISORY_KEY,
+            FLAG_LEASE,
+            acquire_lease,
+            release_lease,
+            replica_id,
+        )
+
+        owner = replica_id()
+        flags_lock = OpsFlagRepository(self._session)
+        try:
+            got, lease = await acquire_lease(
+                flags_lock,
+                owner=owner,
+                flag=FLAG_LEASE,
+                advisory_key=ADVISORY_KEY,
+                session=self._session,
+            )
+        except Exception as exc:
+            steps["aborted"] = "replica_lease_failed"
+            steps["lease_error"] = str(exc)
+            steps["finished_at"] = utc_now().isoformat()
+            steps["message"] = f"abortado: replica_lease_failed ({exc})"
+            return steps
+        if not got:
+            steps["skipped"] = True
+            steps["aborted"] = "replica_lease_held"
+            steps["lease"] = lease
+            steps["finished_at"] = utc_now().isoformat()
+            steps["message"] = "otra réplica tiene el ciclo de acciones"
+            return steps
+        try:
+            return await self._run_unlocked(
+                steps, session_label=session_label, execute_trades=execute_trades, actor=actor
+            )
+        finally:
+            await release_lease(
+                flags_lock, owner, flag=FLAG_LEASE, advisory_key=ADVISORY_KEY, session=self._session
+            )
+
+    async def _run_unlocked(
+        self,
+        steps: dict[str, Any],
+        *,
+        session_label: str,
+        execute_trades: bool | None,
+        actor: str,
+    ) -> dict[str, Any]:
         settings = self._settings
         kill_on = False
         try:

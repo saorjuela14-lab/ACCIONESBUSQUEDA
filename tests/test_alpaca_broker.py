@@ -136,7 +136,7 @@ async def test_order_service_dry_run_builds_bracket():
     assert payload["take_profit"]["limit_price"] == "2.2"
     assert payload["stop_loss"]["stop_price"] == "1.5"
     assert payload["qty"] == "10"
-    assert payload["client_order_id"].startswith("autopilot-")
+    assert payload["client_order_id"].startswith("live-")
 
 
 @pytest.mark.asyncio
