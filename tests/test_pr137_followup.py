@@ -45,7 +45,22 @@ async def test_emit_desk_ops_alert_false_when_no_channel():
 
 @pytest.mark.asyncio
 async def test_lease_alert_dedupe_stable_across_cycles():
+    from services.desk_ops_alert import _dedupe_key
+
     reset_desk_ops_alert_dedupe()
+    key = "lease_misses:live_stocks_stable"
+    assert _dedupe_key(
+        KIND_LEASE_MISSES,
+        owner="holder-a",
+        detail="lease=live_stocks misses=2 expires=t1",
+        dedupe_key=key,
+    ) == key
+    assert _dedupe_key(
+        KIND_LEASE_MISSES,
+        owner="holder-a",
+        detail="lease=live_stocks misses=5 expires=t2",
+        dedupe_key=key,
+    ) == key
     push = MagicMock()
     push.any_channel_configured = True
     push.notify_message = AsyncMock(return_value={"telegram": True})
@@ -54,13 +69,14 @@ async def test_lease_alert_dedupe_stable_across_cycles():
             KIND_LEASE_MISSES,
             owner="holder-a",
             detail="lease=live_stocks misses=2 expires=t1",
-            dedupe_key="lease_misses:live_stocks",
+            dedupe_key=key,
+            force=True,
         )
         b = await emit_desk_ops_alert(
             KIND_LEASE_MISSES,
             owner="holder-a",
             detail="lease=live_stocks misses=5 expires=t2",
-            dedupe_key="lease_misses:live_stocks",
+            dedupe_key=key,
         )
     assert a is True
     assert b is False
