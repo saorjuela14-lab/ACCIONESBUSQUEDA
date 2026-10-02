@@ -5,6 +5,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.deposited_capital_service import (
+    CANONICAL_SOURCE,
+    MISSING_SOURCE,
+    deposited_base_status,
     get_deposited_base,
     net_transfers_from_activities,
     reset_deposited_cache,
@@ -68,7 +71,40 @@ def test_csw_negative_net_amount_not_double_flipped():
 
 
 @pytest.mark.asyncio
-async def test_get_deposited_base_from_alpaca(monkeypatch):
+async def test_canonical_env_21_76_floor_and_not_alpaca(monkeypatch):
+    from config.settings import get_settings
+
+    monkeypatch.setenv("DEPOSITED_BASE_USD", "21.76")
+    get_settings.cache_clear()
+    broker = MagicMock()
+    broker.is_configured.return_value = True
+    broker.list_account_activities = AsyncMock(
+        return_value=[
+            {"id": "a1", "activity_type": "CSD", "net_amount": "21.74", "status": "executed"},
+        ]
+    )
+    with patch(
+        "services.deposited_capital_service.get_broker_provider",
+        return_value=broker,
+    ):
+        snap = await get_deposited_base(force=True)
+    assert snap.source == CANONICAL_SOURCE
+    assert snap.amount == 21.76
+    assert snap.floor_5pct == 20.67
+    assert snap.buy_allowed is True
+    assert snap.alpaca_amount == 21.74
+    assert any("discrepancy" in w and "alpaca" in w for w in snap.warnings)
+    payload = deposited_base_status(snap)
+    assert payload["amount"] == 21.76
+    assert payload["source"] == CANONICAL_SOURCE
+    assert payload["floor_5pct"] == 20.67
+    get_settings.cache_clear()
+    monkeypatch.delenv("DEPOSITED_BASE_USD", raising=False)
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_missing_env_fail_closed_for_buys(monkeypatch):
     from config.settings import get_settings
 
     monkeypatch.delenv("DEPOSITED_BASE_USD", raising=False)
@@ -77,7 +113,7 @@ async def test_get_deposited_base_from_alpaca(monkeypatch):
     broker.is_configured.return_value = True
     broker.list_account_activities = AsyncMock(
         return_value=[
-            {"id": "a1", "activity_type": "CSD", "net_amount": "21.74", "status": "executed"},
+            {"id": "a1", "activity_type": "CSD", "net_amount": "21.76", "status": "executed"},
         ]
     )
     with patch(
@@ -85,60 +121,19 @@ async def test_get_deposited_base_from_alpaca(monkeypatch):
         return_value=broker,
     ):
         snap = await get_deposited_base(force=True)
-    assert snap.source == "alpaca"
-    assert snap.amount == 21.74
-    assert snap.deposits == 21.74
-    get_settings.cache_clear()
-
-
-@pytest.mark.asyncio
-async def test_get_deposited_base_uses_ttl_cache():
-    broker = MagicMock()
-    broker.is_configured.return_value = True
-    broker.list_account_activities = AsyncMock(
-        return_value=[
-            {"id": "a1", "activity_type": "CSD", "net_amount": "21.74", "status": "executed"},
-        ]
-    )
-    with patch(
-        "services.deposited_capital_service.get_broker_provider",
-        return_value=broker,
-    ):
-        first = await get_deposited_base(force=True)
-        second = await get_deposited_base()
-    assert first.amount == 21.74
-    assert second.source == "alpaca"
-    # CSD/CSW/JNLC/TRANS × (non_trade, then maybe None if empty)
-    assert broker.list_account_activities.await_count >= 4
-
-
-@pytest.mark.asyncio
-async def test_fallback_to_env_never_silent_twenty(monkeypatch):
-    from config.settings import get_settings
-
-    monkeypatch.setenv("DEPOSITED_BASE_USD", "21.74")
-    get_settings.cache_clear()
-    broker = MagicMock()
-    broker.is_configured.return_value = True
-    broker.list_account_activities = AsyncMock(side_effect=RuntimeError("alpaca down"))
-    with patch(
-        "services.deposited_capital_service.get_broker_provider",
-        return_value=broker,
-    ):
-        snap = await get_deposited_base(force=True)
-    assert snap.source == "env"
-    assert snap.amount == 21.74
+    assert snap.source == MISSING_SOURCE
+    assert snap.amount is None
+    assert snap.buy_allowed is False
     assert snap.amount != 20.0
-    get_settings.cache_clear()
-    monkeypatch.delenv("DEPOSITED_BASE_USD", raising=False)
+    assert any("fail-closed" in w for w in snap.warnings)
     get_settings.cache_clear()
 
 
 @pytest.mark.asyncio
-async def test_unavailable_does_not_invent_twenty(monkeypatch):
+async def test_portfolio_initial_discrepancy_warning(monkeypatch):
     from config.settings import get_settings
 
-    monkeypatch.delenv("DEPOSITED_BASE_USD", raising=False)
+    monkeypatch.setenv("DEPOSITED_BASE_USD", "21.76")
     get_settings.cache_clear()
     broker = MagicMock()
     broker.is_configured.return_value = False
@@ -146,42 +141,38 @@ async def test_unavailable_does_not_invent_twenty(monkeypatch):
         "services.deposited_capital_service.get_broker_provider",
         return_value=broker,
     ):
-        snap = await get_deposited_base(force=True)
-    assert snap.source.startswith("unavailable")
-    assert snap.amount is None
-    get_settings.cache_clear()
-
-
-@pytest.mark.asyncio
-async def test_stale_cache_beats_env_when_alpaca_fails(monkeypatch):
-    from config.settings import get_settings
-
-    monkeypatch.setenv("DEPOSITED_BASE_USD", "99.00")
-    get_settings.cache_clear()
-    broker = MagicMock()
-    broker.is_configured.return_value = True
-    broker.list_account_activities = AsyncMock(
-        return_value=[
-            {"id": "a1", "activity_type": "CSD", "net_amount": "21.74", "status": "executed"},
-        ]
-    )
-    with patch(
-        "services.deposited_capital_service.get_broker_provider",
-        return_value=broker,
-    ):
-        warm = await get_deposited_base(force=True)
-        assert warm.amount == 21.74
-        broker.list_account_activities = AsyncMock(side_effect=RuntimeError("down"))
-        snap = await get_deposited_base(force=True)
-    assert snap.source == "cache"
-    assert snap.amount == 21.74
+        snap = await get_deposited_base(force=True, portfolio_initial=20.0)
+    assert snap.amount == 21.76
+    assert snap.portfolio_initial == 20.0
+    assert any("initial_capital" in w for w in snap.warnings)
     get_settings.cache_clear()
     monkeypatch.delenv("DEPOSITED_BASE_USD", raising=False)
     get_settings.cache_clear()
 
 
 @pytest.mark.asyncio
-async def test_resolve_trading_base_conservative_equity_never_twenty(monkeypatch):
+async def test_get_deposited_base_uses_ttl_cache(monkeypatch):
+    from config.settings import get_settings
+
+    monkeypatch.setenv("DEPOSITED_BASE_USD", "21.76")
+    get_settings.cache_clear()
+    broker = MagicMock()
+    broker.is_configured.return_value = False
+    with patch(
+        "services.deposited_capital_service.get_broker_provider",
+        return_value=broker,
+    ):
+        first = await get_deposited_base(force=True)
+        second = await get_deposited_base()
+    assert first.amount == 21.76
+    assert second.source == CANONICAL_SOURCE
+    get_settings.cache_clear()
+    monkeypatch.delenv("DEPOSITED_BASE_USD", raising=False)
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_resolve_trading_base_is_same_function(monkeypatch):
     from config.settings import get_settings
     from services.deposited_capital_service import resolve_trading_base
 
@@ -194,35 +185,57 @@ async def test_resolve_trading_base_conservative_equity_never_twenty(monkeypatch
         return_value=broker,
     ):
         snap = await resolve_trading_base(equity=21.01)
-    assert snap.amount == 21.01
-    assert snap.source.startswith("conservative")
-    assert snap.amount != 20.0
-    none = await resolve_trading_base(equity=0)
-    assert none.amount is None
+    assert snap.amount is None
+    assert snap.buy_allowed is False
+    assert snap.source == MISSING_SOURCE
     get_settings.cache_clear()
 
 
 @pytest.mark.asyncio
-async def test_resolve_trading_base_min_equity_and_last_known(monkeypatch):
-    from services.deposited_capital_service import DepositedBase, resolve_trading_base
-    import services.deposited_capital_service as dcs
+async def test_ops_status_exposes_deposited_base_and_warning(monkeypatch):
+    from types import SimpleNamespace
+    from services.deposited_capital_service import DepositedBase
+    from apis.routes import ops as ops_routes
 
-    monkeypatch.delenv("DEPOSITED_BASE_USD", raising=False)
+    monkeypatch.setenv("DEPOSITED_BASE_USD", "21.76")
     from config.settings import get_settings
 
     get_settings.cache_clear()
-    dcs._cache = DepositedBase(amount=21.76, source="alpaca", deposits=21.76)
-    with patch(
-        "services.deposited_capital_service.get_deposited_base",
-        AsyncMock(return_value=DepositedBase(amount=None, source="unavailable:alpaca_down")),
+    snap = DepositedBase(
+        amount=21.76,
+        source=CANONICAL_SOURCE,
+        floor_5pct=20.67,
+        buy_allowed=True,
+        warnings=("discrepancy alpaca=21.74 vs env:DEPOSITED_BASE_USD=21.76",),
+        alpaca_amount=21.74,
+        portfolio_initial=20.0,
+    )
+    session = MagicMock()
+    ks = SimpleNamespace(model_dump=lambda mode="json": {"active": False})
+    auto = SimpleNamespace(
+        can_auto_trade_async=AsyncMock(return_value=(False, "live_entries_disabled")),
+        policy=lambda: SimpleNamespace(model_dump=lambda mode="json": {}),
+    )
+    flags = SimpleNamespace(get_json=AsyncMock(return_value={}))
+    with (
+        patch("apis.routes.ops.get_settings", return_value=get_settings()),
+        patch("apis.routes.ops.KillSwitchService", return_value=SimpleNamespace(status=AsyncMock(return_value=ks))),
+        patch("apis.routes.ops.AutoExecuteService", return_value=auto),
+        patch("apis.routes.ops.OpsFlagRepository", return_value=flags),
+        patch("services.deposited_capital_service.get_deposited_base", AsyncMock(return_value=snap)),
+        patch(
+            "database.repositories.portfolio_repository.PortfolioRepository.list_all",
+            AsyncMock(return_value=[SimpleNamespace(initial_capital=20.0)]),
+        ),
     ):
-        snap = await resolve_trading_base(equity=15.0)
-    assert snap.amount == 15.0
-    assert snap.source.startswith("conservative")
-    with patch(
-        "services.deposited_capital_service.get_deposited_base",
-        AsyncMock(return_value=DepositedBase(amount=None, source="unavailable:alpaca_down")),
-    ):
-        bigger = await resolve_trading_base(equity=30.0)
-    assert bigger.amount == 21.76
+        # ops_status imports get_deposited_base inside the function
+        body = await ops_routes.ops_status(session)
+    assert body["deposited_base"]["amount"] == 21.76
+    assert body["deposited_base"]["source"] == CANONICAL_SOURCE
+    assert body["deposited_base"]["floor_5pct"] == 20.67
+    assert body["deposited_base"]["buy_allowed"] is True
+    assert body["warnings"]
+    assert any("discrepancy" in w for w in body["warnings"])
+    get_settings.cache_clear()
+    monkeypatch.delenv("DEPOSITED_BASE_USD", raising=False)
     get_settings.cache_clear()

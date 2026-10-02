@@ -119,6 +119,12 @@ class AutoExecuteService:
         )
         if not entries_ok:
             return {"skipped": True, "reason": entries_why}
+        if not self._broker.paper:
+            from services.deposited_capital_service import get_deposited_base
+
+            base_gate = await get_deposited_base()
+            if not base_gate.buy_allowed:
+                return {"skipped": True, "reason": "deposited_base_missing"}
 
         flags = None
         try:
@@ -199,9 +205,9 @@ class AutoExecuteService:
         except Exception as exc:
             logger.warning("auto_execute.account_failed", error=str(exc))
 
-        from services.deposited_capital_service import resolve_trading_base
+        from services.deposited_capital_service import get_deposited_base
 
-        base_snap = await resolve_trading_base(equity=equity if equity > 0 else None)
+        base_snap = await get_deposited_base()
         capital_base = base_snap.amount if base_snap.amount and base_snap.amount > 0 else None
         if capital_base is None:
             return {"skipped": True, "reason": "no_trading_base"}

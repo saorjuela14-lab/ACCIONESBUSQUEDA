@@ -202,6 +202,20 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
     auto = AutoExecuteService(session)
     ok, reason = await auto.can_auto_trade_async()
     promo = await OpsFlagRepository(session).get_json("paper_promotion")
+    from services.deposited_capital_service import deposited_base_status, get_deposited_base
+
+    pf_init = None
+    try:
+        from database.repositories.portfolio_repository import PortfolioRepository
+
+        rows = await PortfolioRepository(session).list_all()
+        if rows:
+            pf_init = getattr(rows[0], "initial_capital", None)
+    except Exception:
+        pf_init = None
+    deposited = await get_deposited_base(portfolio_initial=pf_init)
+    deposited_payload = deposited_base_status(deposited)
+    warnings = list(deposited_payload.get("warnings") or [])
     return {
         "kill_switch": ks.model_dump(mode="json"),
         "firm_autonomy": settings.firm_autonomy,
@@ -225,7 +239,9 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
         "live_entries_enabled": bool(settings.live_entries_enabled),
         "live_max_entries_per_day": settings.live_max_entries_per_day,
         "live_submit_fail_pause": settings.live_submit_fail_pause,
+        "deposited_base": deposited_payload,
         "deposited_brake_pct": settings.deposited_brake_pct,
+        "warnings": warnings,
         "app_env": settings.app_env,
         "trading_mode": trading_mode_label(settings),
         "risk_discipline": {

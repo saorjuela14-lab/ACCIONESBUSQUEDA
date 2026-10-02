@@ -478,11 +478,11 @@ class AlpacaOrderService:
         # Accumulated 5% vs deposited — arm kill without flatten; allow exits.
         if account and not self._broker.paper and not request.dry_run:
             try:
-                from services.deposited_capital_service import resolve_trading_base
+                from services.deposited_capital_service import get_deposited_base
                 from services.live_safety import arm_deposited_brake_if_needed
 
                 eq = float(account.equity or 0)
-                base_snap = await resolve_trading_base(equity=eq)
+                base_snap = await get_deposited_base()
                 base = base_snap.amount if base_snap.amount and base_snap.amount > 0 else None
                 pct = float(getattr(get_settings(), "deposited_brake_pct", 5.0) or 5.0)
                 from database.engine import get_session as _gsess
@@ -551,9 +551,9 @@ class AlpacaOrderService:
                 from services.portfolio_risk_metrics_service import PortfolioRiskMetricsService
 
                 equity = float(account.equity or account.portfolio_value or 0.0)
-                from services.deposited_capital_service import resolve_trading_base
+                from services.deposited_capital_service import get_deposited_base
 
-                base_snap = await resolve_trading_base(equity=equity)
+                base_snap = await get_deposited_base()
                 capital_base = base_snap.amount if base_snap.amount and base_snap.amount > 0 else None
                 risk_metrics = await PortfolioRiskMetricsService().compute(
                     positions,
@@ -661,6 +661,12 @@ class AlpacaOrderService:
                     paper=self._broker.paper,
                     live_entries_enabled=bool(getattr(settings, "live_entries_enabled", False)),
                 )
+                if ok_buy and not self._broker.paper:
+                    from services.deposited_capital_service import get_deposited_base
+
+                    base_gate = await get_deposited_base()
+                    if not base_gate.buy_allowed:
+                        ok_buy, buy_why = False, "deposited_base_missing"
                 if not ok_buy:
                     failed.append(
                         BrokerOrderResult(
