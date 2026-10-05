@@ -108,7 +108,8 @@ def test_crypto_backtest_weekend_note():
     )
     r = run_symbol_backtest(df, desk="crypto", book="new", symbol="BTC-USD", signal_fn=new_crypto_signal)
     assert r.crypto_24_7.get("daily_loss_weekend") is True
-    assert "GTC" in r.crypto_24_7.get("broker_stops", "")
+    assert "GTC" not in r.crypto_24_7.get("broker_stops", "")
+    assert "software" in r.crypto_24_7.get("broker_stops", "").lower()
     assert r.leverage == 1.0
 
 

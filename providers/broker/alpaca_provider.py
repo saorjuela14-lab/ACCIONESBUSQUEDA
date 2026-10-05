@@ -172,6 +172,39 @@ class AlpacaBrokerProvider(BrokerProvider):
             raise
         return data if isinstance(data, dict) else None
 
+    async def get_order_by_client_order_id(self, client_order_id: str) -> dict[str, Any] | None:
+        cid = (client_order_id or "").strip()
+        if not cid:
+            return None
+        from urllib.parse import quote
+
+        path = f"/v2/orders:by_client_order_id/{quote(cid, safe='')}"
+        try:
+            data = await self._request("GET", path)
+        except httpx.HTTPStatusError as exc:
+            status = getattr(exc, "alpaca_status", None) or getattr(
+                getattr(exc, "response", None), "status_code", None
+            )
+            if int(status or 0) == 404:
+                return None
+            raise
+        return data if isinstance(data, dict) else None
+
+    async def get_order(self, order_id: str) -> dict[str, Any] | None:
+        oid = (order_id or "").strip()
+        if not oid:
+            return None
+        try:
+            data = await self._request("GET", f"/v2/orders/{oid}")
+        except httpx.HTTPStatusError as exc:
+            status = getattr(exc, "alpaca_status", None) or getattr(
+                getattr(exc, "response", None), "status_code", None
+            )
+            if int(status or 0) == 404:
+                return None
+            raise
+        return data if isinstance(data, dict) else None
+
     async def replace_order(
         self,
         order_id: str,
@@ -229,10 +262,34 @@ class AlpacaBrokerProvider(BrokerProvider):
     async def close_position(self, symbol: str) -> dict[str, Any]:
         """DELETE /v2/positions/{symbol} — liquidate one position.
 
-        Alpaca cancels open orders tied to that symbol as part of the close.
-        If this call fails, we do not cancel brackets ourselves (stop stays).
+        Crypto symbols on Alpaca are unslashed (WIFUSD), not WIF/USD. 404
+        retries the unslashed form, then the asset id. Failures propagate.
         """
-        return await self._request("DELETE", f"/v2/positions/{symbol.upper()}")
+        raw = (symbol or "").strip()
+        unslashed = raw.upper().replace(" ", "").replace("/", "")
+        candidates = []
+        for key in (unslashed, raw.upper(), raw):
+            if key and key not in candidates:
+                candidates.append(key)
+        last_exc: Exception | None = None
+        for key in candidates:
+            try:
+                return await self._request("DELETE", f"/v2/positions/{key}")
+            except httpx.HTTPStatusError as exc:
+                last_exc = exc
+                status = int(getattr(exc, "alpaca_status", None) or getattr(exc.response, "status_code", 0) or 0)
+                if status != 404:
+                    raise
+        try:
+            asset = await self.get_asset(unslashed or raw.upper())
+            aid = str((asset or {}).get("id") or "").strip()
+            if aid:
+                return await self._request("DELETE", f"/v2/positions/{aid}")
+        except Exception as exc:
+            last_exc = exc
+        if last_exc is not None:
+            raise last_exc
+        raise ValueError(f"close_position: no path for {symbol!r}")
 
     async def close_all_positions(self, *, cancel_orders: bool = True) -> list[dict[str, Any]]:
         """DELETE /v2/positions — liquidate entire portfolio (CLI: alpaca position close-all)."""
