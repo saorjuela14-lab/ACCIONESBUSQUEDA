@@ -185,7 +185,13 @@ class SchedulerService:
         if not should_run_automation():
             return
         async for session in get_session():
-            from services.db_lease import LEASE_LIFECYCLE, acquire_lease, release_lease, run_owner
+            from services.db_lease import (
+                LEASE_LIFECYCLE,
+                LeaseHeartbeat,
+                acquire_lease,
+                release_lease,
+                run_owner,
+            )
             from services.position_lifecycle_service import PositionLifecycleService
 
             owner = run_owner()
@@ -201,7 +207,12 @@ class SchedulerService:
                     misses=snap.misses_consecutive,
                 )
                 break
+            hb = LeaseHeartbeat(name=LEASE_LIFECYCLE, owner=owner)
+            await hb.start()
             try:
+                if hb.lost or not await hb.still_mine():
+                    logger.warning("scheduler.lifecycle_lease_lost_before_scan")
+                    break
                 report = await PositionLifecycleService(session).scan(
                     execute_exits=self._settings.lifecycle_auto_exit
                 )
@@ -219,6 +230,10 @@ class SchedulerService:
                             "Cerradas: " + ", ".join(report.exits),
                         )
             finally:
+                try:
+                    await hb.stop()
+                except Exception:
+                    pass
                 await release_lease(session, name=LEASE_LIFECYCLE, owner=owner)
             break
 

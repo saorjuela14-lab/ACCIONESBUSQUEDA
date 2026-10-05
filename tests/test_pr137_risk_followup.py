@@ -367,6 +367,7 @@ async def test_lease_lost_skips_entries_keeps_exits():
 async def test_desk_ops_alerts_dedupe_and_kinds():
     reset_desk_ops_alert_dedupe()
     push = MagicMock()
+    push.any_channel_configured = True
     push.notify_message = AsyncMock(return_value={"telegram": True})
     with patch("services.push_notification_service.PushNotificationService", return_value=push):
         ok1 = await emit_desk_ops_alert(KIND_LEASE_MISSES, owner="host:1:aaa", detail="misses=2")
@@ -509,23 +510,20 @@ async def test_find_working_stop_paginates():
         )
     ]
     inner = MagicMock()
-    inner.last_next_page_token = "tok-1"
     svc = AlpacaOrderService(broker=inner)
-    listed = AsyncMock(side_effect=[page1, page2])
 
-    async def _list(status="all", limit=50, page_token=None):
-        if page_token == "tok-1":
-            inner.last_next_page_token = None
+    async def _list(status="all", limit=50, after=None, until=None):
+        if until:
             return page2
-        inner.last_next_page_token = "tok-1"
-        return page1
+        return page1 + [BrokerOrderResult(id="pad", symbol="AAPL", qty=1, side="sell", type="limit", status="new", raw={"created_at": "2026-10-02T12:00:00Z"})] * 199
 
-    listed.side_effect = _list
+    listed = AsyncMock(side_effect=_list)
     with patch.object(svc, "list_orders", listed):
         found = await svc.find_working_stop("SNAP")
     assert found is not None
     assert found.id == "snap-stop"
     assert listed.await_count == 2
+    assert listed.await_args_list[1].kwargs.get("until")
 
 
 @pytest.mark.asyncio

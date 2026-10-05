@@ -251,6 +251,7 @@ async def acquire_lease(
                     f"lease={name} misses={snap.misses_consecutive} "
                     f"holder={snap.owner} challenger={owner} expires={snap.expires_at}"
                 ),
+                dedupe_key=f"lease_misses:{name}",
             )
         except Exception as exc:
             log.warning("lease_miss_alert_push_failed name=%s err=%s", name, exc)
@@ -375,6 +376,7 @@ class LeaseHeartbeat:
                         self.name,
                         self.owner,
                     )
+                    await self._alert_lost("heartbeat_loop_not_owner")
                     return
                 await asyncio.sleep(self.interval_seconds)
         except asyncio.CancelledError:
@@ -387,6 +389,7 @@ class LeaseHeartbeat:
             ok = await self._beat()
             if not ok:
                 self.lost = True
+                await self._alert_lost("heartbeat_start_not_owner")
                 return
             self._started = True
             self._task = asyncio.create_task(self._loop())
@@ -397,8 +400,10 @@ class LeaseHeartbeat:
                 self.owner,
                 exc,
             )
+            self.lost = True
             self._task = None
             self._started = False
+            await self._alert_lost(f"heartbeat_start_error:{exc}")
 
     async def still_mine(self) -> bool:
         if self.lost:
@@ -406,16 +411,32 @@ class LeaseHeartbeat:
         try:
             ok = await self._beat()
         except Exception as exc:
+            self.lost = True
             log.warning(
                 "lease_still_mine_failed name=%s owner=%s err=%s",
                 self.name,
                 self.owner,
                 exc,
             )
-            return not self.lost
+            await self._alert_lost(f"still_mine_error:{exc}")
+            return False
         if not ok:
             self.lost = True
-        return ok
+            await self._alert_lost("still_mine_not_owner")
+        return bool(ok)
+
+    async def _alert_lost(self, detail: str) -> None:
+        try:
+            from services.desk_ops_alert import KIND_LEASE_MISSES, emit_desk_ops_alert
+
+            await emit_desk_ops_alert(
+                KIND_LEASE_MISSES,
+                owner=self.owner,
+                detail=detail,
+                dedupe_key=f"lease_lost:{self.name}",
+            )
+        except Exception as exc:
+            log.warning("lease_lost_alert_failed name=%s err=%s", self.name, exc)
 
     async def stop(self) -> None:
         task = self._task
