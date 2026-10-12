@@ -14,6 +14,22 @@ from services.db_lease import LeaseHeartbeat
 
 
 @pytest.mark.asyncio
+async def test_first_alert_is_not_suppressed_when_dedupe_empty():
+    from services.desk_ops_alert import KIND_LEASE_MISSES, emit_desk_ops_alert, reset_desk_ops_alert_dedupe
+
+    reset_desk_ops_alert_dedupe()
+    push = MagicMock()
+    push.any_channel_configured = True
+    push.notify_message = AsyncMock(return_value={"telegram": True})
+    with patch("services.push_notification_service.PushNotificationService", return_value=push):
+        first = await emit_desk_ops_alert(KIND_LEASE_MISSES, owner="host:1:aaa", detail="misses=2")
+        second = await emit_desk_ops_alert(KIND_LEASE_MISSES, owner="host:1:aaa", detail="misses=3")
+    assert first is True
+    assert second is False
+    assert push.notify_message.await_count == 1
+
+
+@pytest.mark.asyncio
 async def test_heartbeat_loop_marks_lost_and_alerts_on_exception():
     hb = LeaseHeartbeat(
         name="live_stocks",
