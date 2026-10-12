@@ -6,6 +6,8 @@ import re
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 _CRED_IN_URL = re.compile(r"//[^/\s]+:[^/\s]+@")
+_IPV4_HOST = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?\b")
+_DNS_HOST = re.compile(r"\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b", re.IGNORECASE)
 
 # Neon project curly-surf-33371253 / endpoint ep-small-pond-awyhvhoz
 NEON_DIRECT_HOST = "ep-small-pond-awyhvhoz.c-12.us-east-1.aws.neon.tech"
@@ -64,7 +66,9 @@ def database_host(url: str) -> str | None:
 
 
 def sanitize_db_error(exc: BaseException) -> str:
-    """Log/health text without connection-string credentials."""
+    """Log/health/ops text without credentials, hostnames, or IPs."""
     text = f"{type(exc).__name__}: {exc}"
     text = _CRED_IN_URL.sub("//***:***@", text)
+    text = _IPV4_HOST.sub("[redacted-host]", text)
+    text = _DNS_HOST.sub("[redacted-host]", text)
     return text[:240]
