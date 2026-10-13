@@ -142,7 +142,7 @@ class AutopilotService:
     def _lease_sessions(self):
         from sqlalchemy.ext.asyncio import AsyncSession
 
-        bind = self._session.get_bind()
+        bind = self._session.bind  # AsyncEngine, no el Engine síncrono
 
         async def _gen():
             async with AsyncSession(bind, expire_on_commit=False) as session:
