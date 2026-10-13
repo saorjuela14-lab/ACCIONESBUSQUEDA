@@ -2,7 +2,8 @@
 
 1x only (no margin). Volatility sizing 2–3% risk per trade. Mandatory stop.
 Trailing after +1R. Daily + weekly loss caps. Own drawdown kill-switch.
-Crypto 24/7: calendar-day loss (weekends included) + broker GTC stop.
+Crypto 24/7: calendar-day loss (weekends included). Strategy A stops are
+software-only at each 4h close — Alpaca crypto does not accept stop/bracket/OCO.
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ class MultiAssetRiskPolicy:
     trail_arm_r: float = 1.0
     allow_leverage: bool = False
     max_leverage: float = 1.0
-    crypto_broker_stops: bool = True
+    crypto_broker_stops: bool = False
     crypto_24_7_monitor: bool = True
 
 
@@ -57,7 +58,7 @@ def policy_from_settings() -> MultiAssetRiskPolicy:
         max_leverage=1.0 if not bool(getattr(s, "multiasset_allow_leverage", False)) else float(
             getattr(s, "multiasset_max_leverage", 1.0) or 1.0
         ),
-        crypto_broker_stops=True,
+        crypto_broker_stops=False,
         crypto_24_7_monitor=True,
     )
 
@@ -160,9 +161,15 @@ class MultiAssetRiskDesk:
             "day_pnl_pct": pnl.get("day_pnl_pct"),
             "week_pnl_pct": pnl.get("week_pnl_pct"),
             "crypto_24_7": {
-                "broker_stops_gtc": self._policy.crypto_broker_stops,
+                "broker_stops_gtc": False,
+                "broker_stop": "none",
                 "daily_loss_includes_weekend": True,
                 "autopilot_24_7": self._policy.crypto_24_7_monitor,
+                "note": (
+                    "Alpaca crypto solo acepta market/limit/stop_limit; "
+                    "Strategy A no envía stops al broker. Protección = chandelier "
+                    "al cierre de cada vela 4h (paper no modela bien los gaps)."
+                ),
             },
         }
 

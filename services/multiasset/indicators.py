@@ -22,7 +22,32 @@ def true_range(df: pd.DataFrame) -> pd.Series:
     return tr
 
 
+def rma(series: pd.Series, n: int) -> pd.Series:
+    """Wilder RMA: seed with SMA of the first n, then (prev*(n-1)+x)/n."""
+    s = series.astype(float)
+    n = int(n)
+    out = pd.Series(index=s.index, dtype=float)
+    if len(s) < n:
+        return out
+    seed = float(s.iloc[:n].mean())
+    out.iloc[n - 1] = seed
+    prev = seed
+    for i in range(n, len(s)):
+        x = float(s.iloc[i])
+        if not np.isfinite(x):
+            out.iloc[i] = prev
+            continue
+        prev = (prev * (n - 1) + x) / n
+        out.iloc[i] = prev
+    return out
+
+
 def atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
+    """Wilder ATR (RMA of true range). Used by Strategy A combo #9."""
+    return rma(true_range(df), n)
+
+
+def atr_sma(df: pd.DataFrame, n: int = 14) -> pd.Series:
     return true_range(df).rolling(n, min_periods=n).mean()
 
 

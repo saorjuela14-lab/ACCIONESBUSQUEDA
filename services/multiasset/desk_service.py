@@ -104,17 +104,33 @@ class MultiAssetDeskService:
             except Exception as exc:
                 logger.warning("multiasset.positions_failed", desk=desk, error=str(exc))
             try:
-                orders = await self._broker.list_orders(status="open", limit=40)
+                orders = await self._broker.list_orders(status="all", limit=80)
+                # filter loosely by desk symbols
                 wanted = desk_symbols(desk)
+                wanted_flat = {w.replace("/", "") for w in wanted} | wanted
+                from services.order_idempotency import is_working_status
+
                 orders = [
                     o
                     for o in orders
-                    if any(same_symbol(str(o.get("symbol") or ""), w) for w in wanted)
+                    if str(o.get("symbol") or "").upper().replace("/", "")
+                    in {x.replace("/", "") for x in wanted_flat}
+                    and is_working_status(str(o.get("status") or ""))
                 ]
             except Exception:
                 orders = []
             for item in strategy.symbols:
                 quotes[item.symbol] = await quote_symbol(item.symbol)
+
+        if desk == "crypto" and self._session is not None:
+            try:
+                from database.repositories.ops_repository import OpsFlagRepository
+                from services.multiasset.crypto_obs import overlay_open_positions
+
+                state = await OpsFlagRepository(self._session).get_json("crypto_strategy_a_state")
+                positions = overlay_open_positions(positions, (state or {}).get("positions"))
+            except Exception as exc:
+                logger.warning("crypto.a.status_obs_failed", error=str(exc))
 
         return DeskStatus(
             desk=desk,
@@ -170,6 +186,7 @@ class MultiAssetDeskService:
                 "fx_risk_agent": 0.5,
             },
             "crypto": {
+                "crypto_strategy_a": 3.2,
                 "crypto_breakout_specialist": 3.0,
                 "crypto_chart_technical_agent": 1.4,
                 "crypto_news_social_agent": 1.0,
@@ -319,9 +336,11 @@ class MultiAssetDeskService:
             order["qty"] = str(qty)
         else:
             raise ValueError("Para equity ETF usa qty; crypto puede usar notional")
+        if req.client_order_id:
+            order["client_order_id"] = str(req.client_order_id)[:48]
 
-        # Protective stop on the PAPER broker (GTC). 1x, no margin. Crypto 24/7.
-        if req.side == "buy" and not req.dry_run:
+        # Alpaca crypto: never attach stop/bracket/OCO/trailing. Software chandelier only.
+        if req.side == "buy" and not req.dry_run and not is_crypto:
             try:
                 qstop = await quote_symbol(sym)
                 px_s = float((qstop or {}).get("current_price") or 0)
@@ -334,6 +353,22 @@ class MultiAssetDeskService:
                 order["order_class"] = "oto"
                 order["stop_loss"] = {"stop_price": str(stop_px)}
                 order["time_in_force"] = "gtc"
+
+        if is_crypto:
+            from services.multiasset.crypto_orders import CryptoStopNotSupported, sanitize_crypto_order
+
+            try:
+                order = sanitize_crypto_order(order)
+            except CryptoStopNotSupported as exc:
+                raise ValueError(str(exc)) from exc
+            cid = str(req.client_order_id or "")
+            if req.side == "buy" and cid.startswith("sa9-") and self._session is not None:
+                from services.multiasset.crypto_owned import inherited_on_symbol
+                from services.multiasset.trade_tracker import MultiAssetTradeTracker
+
+                open_lots = await MultiAssetTradeTracker(self._session).list_open(desk="crypto")
+                if inherited_on_symbol(open_lots, sym):
+                    raise ValueError(f"mixed_lot_blocked:{sym}:inherited_open")
 
         if req.dry_run or not self._broker.is_configured():
             result = MultiAssetOrderResult(
@@ -354,18 +389,49 @@ class MultiAssetDeskService:
             return result
 
         try:
-            raw = await self._broker.submit_order(order)
+            raw = await self._submit_with_idempotency(order)
         except Exception as exc:
+            if is_crypto:
+                from services.multiasset.crypto_orders import is_stop_like, record_rejected_crypto_stop
+                from services.order_idempotency import is_insufficient_qty_error, lookup_working_stop
+
+                if is_stop_like(order):
+                    if is_insufficient_qty_error(exc):
+                        try:
+                            held = await lookup_working_stop(self._broker, sym)
+                        except Exception:
+                            held = None
+                        if held:
+                            logger.info(
+                                "crypto.stop_insufficient_qty_still_protected",
+                                symbol=sym,
+                                order_id=(held.get("id") if isinstance(held, dict) else None),
+                            )
+                            raise ValueError(
+                                "crypto stop insufficient qty; live stop still present — no flatten"
+                            ) from exc
+                    await record_rejected_crypto_stop(
+                        self._session, symbol=sym, detail=str(exc), raw={"error": str(exc)}
+                    )
+                    raise ValueError(f"crypto stop rejected; broker_stop=none: {exc}") from exc
+                raise
             if "stop_loss" in order:
                 logger.warning("multiasset.oto_failed_retry_plain", error=str(exc), symbol=sym)
                 plain = {k: v for k, v in order.items() if k not in {"order_class", "stop_loss"}}
-                raw = await self._broker.submit_order(plain)
+                raw = await self._submit_with_idempotency(plain)
             else:
                 raise
-        if isinstance(raw, dict) and str(raw.get("status") or "") in {"rejected", "canceled"} and "stop_loss" in order:
-            logger.warning("multiasset.oto_rejected_retry_plain", symbol=sym)
-            plain = {k: v for k, v in order.items() if k not in {"order_class", "stop_loss"}}
-            raw = await self._broker.submit_order(plain)
+        if isinstance(raw, dict) and str(raw.get("status") or "") in {"rejected", "canceled"}:
+            if is_crypto:
+                from services.multiasset.crypto_orders import is_stop_like, record_rejected_crypto_stop
+
+                if is_stop_like(order):
+                    await record_rejected_crypto_stop(self._session, symbol=sym, detail="status_rejected", raw=raw)
+                    raise ValueError("crypto stop rejected; broker_stop=none")
+            elif "stop_loss" in order:
+                logger.warning("multiasset.oto_rejected_retry_plain", symbol=sym)
+                plain = {k: v for k, v in order.items() if k not in {"order_class", "stop_loss"}}
+                raw = await self._submit_with_idempotency(plain)
         result = MultiAssetOrderResult(
             ok=True,
             desk=req.desk,
@@ -378,10 +444,56 @@ class MultiAssetDeskService:
             message=f"Orden paper enviada ({req.side} {sym})",
             payload=raw if isinstance(raw, dict) else {"raw": raw},
         )
-        if self._session is not None:
+        reconciled = isinstance(raw, dict) and bool(raw.get("reconciled"))
+        if self._session is not None and not reconciled:
             await self._journal_write(req, result)
             await self._track_fill(req, result, sym, is_sim=False)
+        elif reconciled:
+            result.message = f"Orden paper reconciliada ({req.side} {sym}); sin fill nuevo"
+            result.payload = {**(result.payload or {}), "reconciled": True, "no_new_fill": True}
         return result
+
+    async def _lookup_by_client_order_id(self, client_id: str) -> dict | None:
+        getter = getattr(self._broker, "get_order_by_client_order_id", None)
+        if getter is None or not client_id:
+            return None
+        try:
+            raw = await getter(client_id)
+        except Exception as exc:
+            logger.warning("multiasset.by_client_order_id_failed", error=str(exc))
+            return None
+        return raw if isinstance(raw, dict) else None
+
+    async def _submit_with_idempotency(self, order: dict) -> dict:
+        from services.order_idempotency import (
+            is_duplicate_client_order_id_error,
+            is_timeout_or_network,
+            is_unrelated_422,
+        )
+
+        cid = str(order.get("client_order_id") or "")
+        try:
+            raw = await self._broker.submit_order(order)
+            return raw if isinstance(raw, dict) else {"raw": raw}
+        except Exception as exc:
+            if is_unrelated_422(exc):
+                raise
+            if is_duplicate_client_order_id_error(exc):
+                existing = await self._lookup_by_client_order_id(cid)
+                if existing:
+                    existing["reconciled"] = True
+                    existing["no_new_fill"] = True
+                    return existing
+                raise
+            if is_timeout_or_network(exc):
+                existing = await self._lookup_by_client_order_id(cid)
+                if existing:
+                    existing["reconciled"] = True
+                    existing["no_new_fill"] = True
+                    return existing
+                raw = await self._broker.submit_order(order)
+                return raw if isinstance(raw, dict) else {"raw": raw}
+            raise
 
     async def _track_fill(
         self,
@@ -403,11 +515,8 @@ class MultiAssetDeskService:
             logger.warning("multiasset.track_no_price", symbol=sym)
             return
 
-        qty = req.qty
-        if qty is None and req.notional is not None:
-            qty = float(req.notional) / px
-        if qty is None or float(qty) <= 0:
-            return
+        from services.multiasset.crypto_fills import resolve_filled_qty
+        from services.multiasset.crypto_owned import STRATEGY_A_CID_PREFIX
 
         brief: DeskBrief | None = None
         try:
@@ -415,16 +524,57 @@ class MultiAssetDeskService:
         except Exception as exc:
             logger.warning("multiasset.track_brief_failed", error=str(exc))
 
+        fill_qty = None
+        fill_px = px
+        if req.desk == "crypto" and not is_sim:
+            resolved = await resolve_filled_qty(
+                self._broker,
+                symbol=sym,
+                order_id=result.order_id,
+                payload=result.payload if isinstance(result.payload, dict) else None,
+            )
+            if not resolved.get("ok"):
+                logger.info(
+                    "multiasset.track_skip_unfilled",
+                    symbol=sym,
+                    reason=resolved.get("reason"),
+                    order_id=result.order_id,
+                )
+                result.payload = {
+                    **(result.payload or {}),
+                    "tracked": False,
+                    "track_reason": resolved.get("reason"),
+                }
+                return
+            fill_qty = float(resolved["qty"])
+            if resolved.get("avg_price"):
+                fill_px = float(resolved["avg_price"])
+        else:
+            qty = req.qty
+            if qty is None and req.notional is not None and px:
+                qty = float(req.notional) / px
+            fill_qty = float(qty or 0)
+        if fill_qty is None or fill_qty <= 0:
+            return
         if req.side == "buy":
+            cid = req.client_order_id or ""
+            meta = {
+                "note": req.note,
+                "dry_run": is_sim,
+                "client_order_id": cid,
+            }
+            if str(cid).startswith(STRATEGY_A_CID_PREFIX):
+                meta["strategy"] = "strategy_a"
+                meta["evidence_grade"] = "paper_cost_only"
             trade = await tracker.open_trade(
                 desk=req.desk,
                 symbol=sym,
-                qty=float(qty),
-                entry_price=px,
+                qty=fill_qty,
+                entry_price=fill_px,
                 brief=brief,
                 is_sim=is_sim,
                 order_id=result.order_id,
-                meta={"note": req.note, "dry_run": is_sim},
+                meta=meta,
             )
             result.payload = {
                 **(result.payload or {}),
@@ -437,14 +587,15 @@ class MultiAssetDeskService:
             closed = await tracker.close_trade(
                 desk=req.desk,
                 symbol=sym,
-                exit_price=px,
+                exit_price=fill_px,
                 exit_reason=req.note or ("dry-run sell" if is_sim else "paper sell"),
+                qty=fill_qty,
             )
             if closed:
                 result.payload = {
                     **(result.payload or {}),
                     "tracked_trade_id": closed.id,
-                    "exit_price": px,
+                    "exit_price": fill_px,
                     "pnl_pct": closed.pnl_pct,
                     "was_correct": closed.was_correct,
                     "error_tag": closed.error_tag,

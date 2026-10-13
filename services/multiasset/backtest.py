@@ -477,10 +477,18 @@ def run_symbol_backtest(
     crypto_note = {}
     if desk == "crypto":
         crypto_note = {
-            "broker_stops": "GTC bracket stop en el broker paper, activo 24/7 incl. fin de semana",
+            "broker_stops": (
+                "software only — Alpaca crypto no acepta stop/bracket/OCO/trailing; "
+                "chandelier al cierre 4h, fill a mercado en la apertura siguiente"
+            ),
             "daily_loss_weekend": True,
-            "monitor": "autopilot 24/7 (interval minutes); si el host duerme, el stop GTC sigue en Alpaca paper",
-            "unsupervised_window": "no se deja crypto sin stop de broker; no se requiere flatten pre-cierre US",
+            "monitor": (
+                "autopilot 24/7; el paper de Alpaca no mide bien los gaps — "
+                "la protección real es el stop al cierre de cada vela 4h"
+            ),
+            "unsupervised_window": (
+                "sin stop de broker en crypto; no se envía stop de emergencia en este PR"
+            ),
             "weekend_trades_held": sum(1 for t in closed if t.weekend_hold),
         }
 

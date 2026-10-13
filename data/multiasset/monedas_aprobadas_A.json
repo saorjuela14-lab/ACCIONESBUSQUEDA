@@ -1,0 +1,7 @@
+{
+  "version": "2026-10-02",
+  "strategy": "A",
+  "combo": 9,
+  "note": "Universo acordado combo #9. Si este archivo falta, el runtime usa BTC/USD y ETH/USD.",
+  "approved": ["BTC/USD", "ETH/USD"]
+}

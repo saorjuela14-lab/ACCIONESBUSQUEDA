@@ -360,7 +360,10 @@ class SchedulerService:
         async for session in get_session():
             from services.multiasset.autopilot import MultiAssetAutopilotService
 
-            result = await MultiAssetAutopilotService(session).run(actor="scheduler")
+            svc = MultiAssetAutopilotService(session)
+            if hasattr(svc, "crypto_catchup_on_wake"):
+                await svc.crypto_catchup_on_wake(actor="scheduler_wake")
+            result = await svc.run(actor="scheduler")
             logger.info(
                 "scheduler.multiasset_autopilot",
                 skipped=result.get("skipped"),
@@ -575,7 +578,9 @@ class SchedulerService:
                     IntervalTrigger(minutes=ma_every),
                     id="multiasset_autopilot",
                     replace_existing=True,
-                    misfire_grace_time=20 * 60,
+                    # Wake after scale-to-zero: do not drop the missed crypto A cycle.
+                    # One coalesced run evaluates every closed 4h bar since last_evaluated_candle.
+                    misfire_grace_time=24 * 60 * 60,
                     coalesce=True,
                 )
 

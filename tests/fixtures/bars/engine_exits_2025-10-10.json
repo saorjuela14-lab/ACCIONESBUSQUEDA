@@ -1,0 +1,14 @@
+{
+  "ETH/USD": {
+    "candle_open": "2025-10-10T12:00:00+00:00",
+    "stop_px": 4206.7478,
+    "highest_close": 4796.066972,
+    "source": "engine.py saved exit (not recomputed at test time from stop)"
+  },
+  "BTC/USD": {
+    "candle_open": "2025-10-10T20:00:00+00:00",
+    "stop_px": 116031.9115,
+    "highest_close": 129681.868182,
+    "source": "engine.py saved exit (not recomputed at test time from stop)"
+  }
+}

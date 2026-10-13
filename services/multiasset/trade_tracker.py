@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -168,14 +169,47 @@ class MultiAssetTradeTracker:
         existing = await self.get_open(desk, symbol)
         scores = {v.agent_name: float(v.score) for v in (brief.votes if brief else [])}
         if existing:
+            from services.multiasset.crypto_owned import is_strategy_a_trade
+
+            incoming_a = bool(
+                isinstance(meta, dict)
+                and (
+                    str(meta.get("strategy") or "").lower() in {"strategy_a", "sa9", "combo9"}
+                    or str(meta.get("client_order_id") or order_id or "").startswith("sa9-")
+                )
+            )
+            if incoming_a != is_strategy_a_trade(existing):
+                raise ValueError(
+                    f"mixed_lot_blocked:{symbol}:inherited_and_strategy_a_must_not_merge"
+                )
             row = await self._session.get(MultiAssetTradeORM, existing.id)
             assert row is not None
+            try:
+                meta_ex = json.loads(row.meta_json or "{}")
+            except json.JSONDecodeError:
+                meta_ex = {}
+            seen_ids = list(meta_ex.get("client_order_ids") or [])
+            first_cid = meta_ex.get("client_order_id")
+            if first_cid and first_cid not in seen_ids:
+                seen_ids.append(str(first_cid))
+            new_cid = None
+            if isinstance(meta, dict):
+                new_cid = meta.get("client_order_id") or order_id
+            if new_cid and (
+                new_cid == row.order_id or new_cid == first_cid or new_cid in seen_ids
+            ):
+                # Duplicate replica buy — do not double qty.
+                return self._to_domain(row)
             old_qty = float(row.qty or 0)
             old_px = float(row.entry_price or 0)
             new_qty = old_qty + float(qty)
             if new_qty > 0 and entry_price > 0:
                 row.entry_price = ((old_px * old_qty) + (float(entry_price) * float(qty))) / new_qty
             row.qty = new_qty
+            if new_cid:
+                seen_ids.append(str(new_cid))
+                meta_ex["client_order_ids"] = seen_ids[-12:]
+                row.meta_json = json.dumps(meta_ex, default=str)
             if brief:
                 row.recommendation = brief.recommendation
                 row.confidence = brief.confidence
@@ -221,6 +255,7 @@ class MultiAssetTradeTracker:
         symbol: str,
         stop: float,
         peak: float | None = None,
+        extra_meta: dict[str, Any] | None = None,
     ) -> MultiAssetTrade | None:
         open_t = await self.get_open(desk, symbol)
         if not open_t:
@@ -236,6 +271,9 @@ class MultiAssetTradeTracker:
         if peak is not None:
             meta["peak"] = peak
         meta["trail_stop"] = float(stop)
+        meta["broker_stop"] = "none"
+        if extra_meta:
+            meta.update(extra_meta)
         row.meta_json = json.dumps(meta, default=str)
         await self._session.commit()
         return self._to_domain(row)
@@ -247,6 +285,7 @@ class MultiAssetTradeTracker:
         symbol: str,
         exit_price: float,
         exit_reason: str | None = None,
+        qty: float | None = None,
     ) -> MultiAssetTrade | None:
         open_t = await self.get_open(desk, symbol)
         if not open_t:
@@ -255,8 +294,36 @@ class MultiAssetTradeTracker:
         if not row:
             return None
         entry = float(row.entry_price or 0)
-        qty = float(row.qty or 0)
+        open_qty = float(row.qty or 0)
+        fill_qty = float(qty) if qty is not None and float(qty) > 0 else open_qty
         exit_px = float(exit_price)
+        residual = open_qty - fill_qty
+        from services.multiasset.crypto_fills import is_dust
+
+        if fill_qty + 1e-12 < open_qty and not is_dust(
+            residual, exit_px, symbol=str(row.symbol or "")
+        ):
+            # Partial fill: reduce the open lot; do not close the remainder.
+            sold = fill_qty
+            row.qty = open_qty - sold
+            try:
+                meta = json.loads(row.meta_json or "{}")
+            except json.JSONDecodeError:
+                meta = {}
+            parts = list(meta.get("partial_exits") or [])
+            parts.append(
+                {
+                    "qty": sold,
+                    "exit_price": exit_px,
+                    "pnl_usd": (exit_px - entry) * sold if entry else None,
+                    "reason": exit_reason,
+                }
+            )
+            meta["partial_exits"] = parts[-20:]
+            row.meta_json = json.dumps(meta, default=str)
+            await self._session.commit()
+            return self._to_domain(row)
+        qty = open_qty
         pnl_usd = (exit_px - entry) * qty if entry and qty else None
         pnl_pct = ((exit_px - entry) / entry * 100.0) if entry > 0 else None
         r_mult = None
@@ -266,6 +333,14 @@ class MultiAssetTradeTracker:
             if risk > 0:
                 r_mult = round(pnl_pct / risk, 2)
 
+        if residual > 1e-12:
+            try:
+                meta = json.loads(row.meta_json or "{}")
+            except json.JSONDecodeError:
+                meta = {}
+            meta["dust_qty"] = residual
+            meta["dust"] = True
+            row.meta_json = json.dumps(meta, default=str)
         row.status = "closed"
         row.exit_price = exit_px
         row.closed_at = utc_now()
@@ -346,6 +421,16 @@ class MultiAssetTradeTracker:
             q = q.where(MultiAssetTradeORM.desk == desk)
         rows = (await self._session.execute(q)).scalars().all()
         return [self._to_domain(r) for r in rows]
+
+    async def count_symbol_trades(self, *, desk: AssetDeskId, symbol: str) -> int:
+        from sqlalchemy import func
+
+        q = select(func.count()).select_from(MultiAssetTradeORM).where(
+            MultiAssetTradeORM.desk == desk,
+            MultiAssetTradeORM.symbol == symbol,
+        )
+        n = (await self._session.execute(q)).scalar()
+        return int(n or 0)
 
     async def track_record(
         self, *, desk: AssetDeskId | None = None, window_days: int = 90

@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from apis.deps import OrgScope, get_org_scope
 from config.settings import get_settings
 from database.engine import get_session
 from domain.multiasset import AssetDeskId, MultiAssetOrderRequest
@@ -49,6 +50,10 @@ async def desk_board(session: AsyncSession = Depends(get_session)):
     from database.repositories.ops_repository import OpsFlagRepository
 
     last = await OpsFlagRepository(session).get_json(FLAG_CYCLE)
+    from services.multiasset.crypto_obs import attach_last_cycle_obs
+
+    state = await OpsFlagRepository(session).get_json("crypto_strategy_a_state")
+    last = attach_last_cycle_obs(last, state)
     return {
         "paper": True,
         "live_untouched": True,
@@ -67,11 +72,52 @@ async def desk_board(session: AsyncSession = Depends(get_session)):
 
 @router.get("/beta/multiasset/last-cycle")
 async def last_multiasset_cycle(session: AsyncSession = Depends(get_session)):
+    """Read-only snapshot. Never submits orders or runs catch-up."""
     _enabled()
     from database.repositories.ops_repository import OpsFlagRepository
+    from services.db_lease import LEASE_CRYPTO_A, snapshot_lease
+    from services.multiasset.crypto_obs import attach_last_cycle_obs
     from services.multiasset.risk_engine import FLAG_CYCLE
 
-    return await OpsFlagRepository(session).get_json(FLAG_CYCLE)
+    last = await OpsFlagRepository(session).get_json(FLAG_CYCLE)
+    state = await OpsFlagRepository(session).get_json("crypto_strategy_a_state")
+    body = attach_last_cycle_obs(last, state)
+    try:
+        lease = (await snapshot_lease(session, LEASE_CRYPTO_A)).as_dict()
+        body["lease"] = lease
+        crypto = body.setdefault("desks", {}).setdefault("crypto", {})
+        crypto["lease_owner"] = lease.get("lease_owner")
+        crypto["lease_expires_at"] = lease.get("lease_expires_at")
+        crypto["lease_misses_consecutive"] = lease.get("lease_misses_consecutive")
+        body["lease_owner"] = lease.get("lease_owner")
+        body["lease_expires_at"] = lease.get("lease_expires_at")
+        body["lease_misses_consecutive"] = lease.get("lease_misses_consecutive")
+    except Exception:
+        body.setdefault("lease", {"name": LEASE_CRYPTO_A, "error": "snapshot_failed"})
+    return body
+
+
+@router.get("/beta/multiasset/strategy-a/eligibility")
+async def strategy_a_eligibility(
+    scope: OrgScope = Depends(get_org_scope),
+    session: AsyncSession = Depends(get_session),
+):
+    """Read-only Strategy A gate + last daily liquidity/spread screen. Mesa only."""
+    _enabled()
+    scope.require_desk()
+    from database.repositories.ops_repository import OpsFlagRepository
+    from services.multiasset.crypto_eligibility import EligibilityClosed, public_payload
+
+    try:
+        payload = public_payload()
+    except EligibilityClosed as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    daily = await OpsFlagRepository(session).get_json("crypto_strategy_a_daily_screen")
+    payload["daily_screen"] = daily or None
+    payload["passed_symbols"] = (daily or {}).get("passed_symbols") or [
+        r["symbol"] for r in payload.get("approved") or []
+    ]
+    return payload
 
 
 @router.get("/beta/multiasset/desks")

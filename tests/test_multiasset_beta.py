@@ -40,10 +40,10 @@ def test_desks_catalog_independent():
     assert crypto.time_in_force == "gtc"
     assert "gold_trend_specialist" in gold.agent_names
     assert "fx_momentum_specialist" in fx.agent_names
-    assert "crypto_breakout_specialist" in crypto.agent_names
-    assert "crypto_chart_technical_agent" in crypto.agent_names
+    assert "crypto_strategy_a" in crypto.agent_names
+    assert "crypto_breakout_specialist" not in crypto.agent_names
     assert len(gold.agent_names) >= 4
-    assert len(crypto.agent_names) >= 5
+    assert crypto.agent_names == ["crypto_strategy_a"]
 
 
 def test_list_desks_payload():
@@ -292,6 +292,7 @@ async def test_autopilot_capital_aware_dry_cycle(session: AsyncSession, monkeypa
 
     from domain.multiasset import DeskBrief, AgentVote
     from services.multiasset.autopilot import MultiAssetAutopilotService
+    from services.multiasset.strategy_a import StrategyASignal
 
     brief_buy = DeskBrief(
         desk="crypto",
@@ -316,6 +317,11 @@ async def test_autopilot_capital_aware_dry_cycle(session: AsyncSession, monkeypa
 
     mock_broker = MagicMock()
     mock_broker.is_configured.return_value = False
+    mock_broker.base_url = "https://paper-api.alpaca.markets"
+    mock_broker.paper = True
+    mock_broker.list_crypto_assets = AsyncMock(return_value=[])
+    mock_broker.get_positions = AsyncMock(return_value=[])
+    mock_broker.list_orders = AsyncMock(return_value=[])
 
     async def fake_brief(self, desk, symbol):
         if desk == "crypto" and "BTC" in symbol:
@@ -352,8 +358,16 @@ async def test_autopilot_capital_aware_dry_cycle(session: AsyncSession, monkeypa
             ),
         ),
         patch(
+            "agents.multiasset.quote_symbol",
+            AsyncMock(return_value={"symbol": "BTC/USD", "current_price": 50000.0, "bid": 49995.0, "ask": 50005.0}),
+        ),
+        patch(
             "services.multiasset.desk_service.quote_symbol",
             AsyncMock(return_value={"symbol": "BTC/USD", "current_price": 50000.0}),
+        ),
+        patch(
+            "services.multiasset.strategy_a.signal_for_symbol",
+            AsyncMock(return_value=StrategyASignal("hold", None, 0.0, "test_hold")),
         ),
     ):
         result = await MultiAssetAutopilotService(session).run(actor="test")

@@ -83,9 +83,31 @@ def _normalize_alpaca_symbol(sym: str) -> str | None:
 
 
 async def resolve_crypto_universe(broker=None) -> list[DeskUniverseItem]:
-    """Prefer live Alpaca crypto assets; fall back to curated USD list."""
+    """Candidate universe: Alpaca tradable crypto/USD (auto) or explicit list.
+
+    Trading still requires the Strategy A eligibility file + live spread/corr filters.
+    """
     fallback = default_crypto_universe()
     by_sym = {i.symbol: i for i in fallback}
+    mode = "auto"
+    listed: list[str] = []
+    try:
+        from config.settings import get_settings
+
+        s = get_settings()
+        mode = str(getattr(s, "crypto_universe", "auto") or "auto").strip().lower()
+        raw_list = str(getattr(s, "crypto_universe_list", "") or "")
+        listed = [_normalize_alpaca_symbol(x) or "" for x in raw_list.split(",")]
+        listed = [x for x in listed if x]
+    except Exception:
+        mode = "auto"
+
+    if mode == "list":
+        names = listed or ["BTC/USD", "ETH/USD"]
+        return [
+            by_sym.get(s) or DeskUniverseItem(symbol=s, label=s.split("/")[0], asset_class="crypto", notes="list")
+            for s in names
+        ]
 
     if broker is None or not getattr(broker, "is_configured", lambda: False)():
         return list(by_sym.values())
