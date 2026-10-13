@@ -522,8 +522,8 @@ async def test_find_working_stop_paginates():
         found = await svc.find_working_stop("SNAP")
     assert found is not None
     assert found.id == "snap-stop"
-    assert listed.await_count == 2
-    assert listed.await_args_list[1].kwargs.get("until")
+    assert listed.await_count >= 2
+    assert any(c.kwargs.get("until") for c in listed.await_args_list[1:])
 
 
 @pytest.mark.asyncio

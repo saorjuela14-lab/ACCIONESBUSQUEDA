@@ -54,6 +54,24 @@ def _parse_dt(value: Any) -> datetime | None:
         return None
 
 
+def order_page_cursor_ts(order: Any) -> str | None:
+    """Exclusive until cursor. Prefer submitted_at — Alpaca until is exclusive on it."""
+    raw = getattr(order, "raw", None)
+    if not isinstance(raw, dict):
+        raw = {}
+    for key in ("submitted_at", "created_at"):
+        val = raw.get(key)
+        if val:
+            return str(val)
+    submitted = getattr(order, "submitted_at", None)
+    if submitted is not None:
+        try:
+            return submitted.isoformat()
+        except Exception:
+            return str(submitted)
+    return None
+
+
 class AlpacaOrderService:
     """Status, account, and order submission against Alpaca."""
 
@@ -251,28 +269,56 @@ class AlpacaOrderService:
         until: str | None = None
         pages = 0
         max_pages = 8
+        seen: set[str] = set()
+        widened: set[str] = set()
         try:
             while pages < max_pages:
                 orders = await self.list_orders(status="all", limit=200, until=until)
-                for od in orders:
-                    if (od.symbol or "").upper() != sym:
-                        continue
-                    if order_is_live_stop(od):
-                        return od
+                found = self._first_unseen_live_stop(orders, sym, seen)
+                if found:
+                    return found
                 pages += 1
                 if len(orders) < 200:
                     break
-                last = orders[-1]
-                raw = last.raw if isinstance(getattr(last, "raw", None), dict) else {}
-                until = (
-                    str(raw.get("created_at") or raw.get("submitted_at") or "")
-                    or None
-                )
+                tail_ts = order_page_cursor_ts(orders[-1])
+                widen_key = until or ""
+                cluster = [
+                    od for od in orders if tail_ts and order_page_cursor_ts(od) == tail_ts
+                ]
+                # Exclusive until drops leftover rows that share the tail timestamp.
+                if tail_ts and len(cluster) >= 2 and widen_key not in widened:
+                    widened.add(widen_key)
+                    wide = await self.list_orders(status="all", limit=500, until=until)
+                    found = self._first_unseen_live_stop(wide, sym, seen)
+                    if found:
+                        return found
+                    pages += 1
+                until = tail_ts or None
                 if not until:
                     break
         except Exception as exc:
             logger.warning("broker.stop_list_all_failed", symbol=sym, error=str(exc))
             raise
+        return None
+
+    def _first_unseen_live_stop(
+        self,
+        orders: list[Any],
+        symbol: str,
+        seen: set[str],
+    ) -> Any | None:
+        from services.order_idempotency import order_is_live_stop
+
+        for od in orders:
+            oid = str(getattr(od, "id", "") or "")
+            if oid and oid in seen:
+                continue
+            if oid:
+                seen.add(oid)
+            if (getattr(od, "symbol", "") or "").upper() != symbol:
+                continue
+            if order_is_live_stop(od):
+                return od
         return None
 
     async def cancel_order(self, order_id: str) -> dict[str, Any]:

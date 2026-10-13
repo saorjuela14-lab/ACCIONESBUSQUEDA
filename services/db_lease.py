@@ -32,6 +32,7 @@ LEASE_LIFECYCLE = "lifecycle_scan"
 DEFAULT_TTL_SECONDS = 120
 ALERT_AFTER_MISSES = 2
 HEARTBEAT_INTERVAL_SECONDS = 40
+BEAT_TIMEOUT_SECONDS = 2.0
 
 
 @dataclass
@@ -183,7 +184,9 @@ async def snapshot_leases(session: AsyncSession, names: list[str] | None = None)
         try:
             out[name] = (await snapshot_lease(session, name)).as_dict()
         except Exception as exc:
-            out[name] = {"name": name, "error": str(exc), "acquired": False}
+            from database.url import sanitize_db_error
+
+            out[name] = {"name": name, "error": sanitize_db_error(exc), "acquired": False}
     return out
 
 
@@ -328,6 +331,7 @@ class LeaseHeartbeat:
         ttl_seconds: int = DEFAULT_TTL_SECONDS,
         interval_seconds: float | None = None,
         session_factory: Callable[[], AsyncIterator[AsyncSession]] | None = None,
+        beat_timeout_seconds: float | None = None,
     ) -> None:
         self.name = name
         self.owner = owner
@@ -335,6 +339,9 @@ class LeaseHeartbeat:
         default_iv = min(HEARTBEAT_INTERVAL_SECONDS, max(1, self.ttl_seconds // 3))
         self.interval_seconds = float(
             interval_seconds if interval_seconds is not None else default_iv
+        )
+        self.beat_timeout_seconds = float(
+            beat_timeout_seconds if beat_timeout_seconds is not None else BEAT_TIMEOUT_SECONDS
         )
         self._session_factory = session_factory
         self._task: asyncio.Task[None] | None = None
@@ -365,10 +372,17 @@ class LeaseHeartbeat:
             except Exception:
                 pass
 
+    async def _beat_or_timeout(self) -> bool:
+        """Fail closed if Postgres holds the lease row longer than beat_timeout."""
+        try:
+            return await asyncio.wait_for(self._beat(), timeout=self.beat_timeout_seconds)
+        except asyncio.TimeoutError as exc:
+            raise TimeoutError("lease_beat_timeout") from exc
+
     async def _loop(self) -> None:
         try:
             while True:
-                ok = await self._beat()
+                ok = await self._beat_or_timeout()
                 if not ok:
                     self.lost = True
                     log.warning(
@@ -381,12 +395,22 @@ class LeaseHeartbeat:
                 await asyncio.sleep(self.interval_seconds)
         except asyncio.CancelledError:
             return
+        except Exception as exc:
+            self.lost = True
+            log.warning(
+                "lease_heartbeat_loop_failed name=%s owner=%s err=%s",
+                self.name,
+                self.owner,
+                exc,
+            )
+            await self._alert_lost(f"heartbeat_loop_error:{exc}")
+            return
 
     async def start(self) -> None:
         if self._task is not None:
             return
         try:
-            ok = await self._beat()
+            ok = await self._beat_or_timeout()
             if not ok:
                 self.lost = True
                 await self._alert_lost("heartbeat_start_not_owner")
@@ -409,7 +433,7 @@ class LeaseHeartbeat:
         if self.lost:
             return False
         try:
-            ok = await self._beat()
+            ok = await self._beat_or_timeout()
         except Exception as exc:
             self.lost = True
             log.warning(

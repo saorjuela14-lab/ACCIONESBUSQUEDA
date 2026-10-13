@@ -60,8 +60,8 @@ async def emit_desk_ops_alert(
     """Send a mesa alert. False when no channel is configured or send fails."""
     key = _dedupe_key(kind, owner=owner, detail=detail, dedupe_key=dedupe_key)
     now = time.monotonic()
-    if not force:
-        last = _sent.get(key, 0.0)
+    if not force and key in _sent:
+        last = _sent[key]
         if now - last < DEDUPE_SECONDS:
             logger.info("desk_ops_alert.suppressed", kind=kind, owner=owner)
             return False

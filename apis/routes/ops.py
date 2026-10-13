@@ -42,7 +42,9 @@ async def _lease_status(session: AsyncSession) -> dict:
     try:
         return await snapshot_leases(session)
     except Exception as exc:
-        return {"error": str(exc)}
+        from database.url import sanitize_db_error
+
+        return {"error": sanitize_db_error(exc)}
 
 
 class KillSwitchRequest(BaseModel):
