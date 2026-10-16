@@ -416,6 +416,16 @@ class MultiAssetDeskService:
         while str(order.get("status") or "") != "filled" and asyncio.get_event_loop().time() < deadline:
             await asyncio.sleep(0.5)
             got = await self._broker.get_order_by_client_order_id(cid) if cid else None
+            if not isinstance(got, dict) and cid and hasattr(self._broker, "list_orders"):
+                # provider lookup uses a path form that Alpaca answers 404; scan recent orders
+                try:
+                    got = next(
+                        (o for o in await self._broker.list_orders(status="all", limit=50)
+                         if o.get("client_order_id") == cid),
+                        None,
+                    )
+                except Exception:
+                    got = None
             if isinstance(got, dict):
                 order = got
         qty = float(order.get("filled_qty") or 0)
