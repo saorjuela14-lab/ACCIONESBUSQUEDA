@@ -43,6 +43,10 @@ def _label(agent_name: str) -> str:
     return agent_name.replace("_", " ")
 
 
+async def _protect_alert(kind: str, data: dict) -> None:
+    logger.error("multiasset.protection_alert", kind=kind, **data)
+
+
 class MultiAssetDeskService:
     def __init__(self, session: AsyncSession | None = None) -> None:
         self._session = session
@@ -321,6 +325,9 @@ class MultiAssetDeskService:
             raise ValueError("Para equity ETF usa qty; crypto puede usar notional")
 
         # Protective stop on the PAPER broker (GTC). 1x, no margin. Crypto 24/7.
+        # Crypto: Alpaca rejects OTO/bracket for crypto -> market buy, then stop_limit GTC
+        # after fill (services.protection.stop_watch). Equity: OTO; never retry without stop.
+        stop_px = 0.0
         if req.side == "buy" and not req.dry_run:
             try:
                 qstop = await quote_symbol(sym)
@@ -331,9 +338,14 @@ class MultiAssetDeskService:
                 stop_px = round(px_s * (1 - float(strategy.default_stop_pct)), 8)
                 if stop_px <= 0:
                     stop_px = px_s * (1 - float(strategy.default_stop_pct))
-                order["order_class"] = "oto"
-                order["stop_loss"] = {"stop_price": str(stop_px)}
+                if not is_crypto:
+                    order["order_class"] = "oto"
+                    order["stop_loss"] = {"stop_price": str(round(stop_px, 2))}
                 order["time_in_force"] = "gtc"
+        if req.side == "buy" and not req.dry_run:
+            import uuid as _uuid
+
+            order["client_order_id"] = f"ma-{sym.replace('/', '')}-{_uuid.uuid4().hex[:12]}"
 
         if req.dry_run or not self._broker.is_configured():
             result = MultiAssetOrderResult(
@@ -353,19 +365,26 @@ class MultiAssetDeskService:
                 await self._track_fill(req, result, sym, is_sim=True)
             return result
 
+        needs_client_protection = req.side == "buy" and is_crypto
         try:
             raw = await self._broker.submit_order(order)
         except Exception as exc:
-            if "stop_loss" in order:
-                logger.warning("multiasset.oto_failed_retry_plain", error=str(exc), symbol=sym)
-                plain = {k: v for k, v in order.items() if k not in {"order_class", "stop_loss"}}
-                raw = await self._broker.submit_order(plain)
-            else:
+            if "stop_loss" not in order:
                 raise
-        if isinstance(raw, dict) and str(raw.get("status") or "") in {"rejected", "canceled"} and "stop_loss" in order:
-            logger.warning("multiasset.oto_rejected_retry_plain", symbol=sym)
+            # Equity OTO failed: NEVER resend a naked market buy. Buy + standalone stop or close.
+            logger.warning("multiasset.oto_failed_protect_after_fill", error=str(exc), symbol=sym)
             plain = {k: v for k, v in order.items() if k not in {"order_class", "stop_loss"}}
             raw = await self._broker.submit_order(plain)
+            needs_client_protection = True
+        if isinstance(raw, dict) and str(raw.get("status") or "") in {"rejected", "canceled"} and "stop_loss" in order:
+            logger.warning("multiasset.oto_rejected_protect_after_fill", symbol=sym)
+            plain = {k: v for k, v in order.items() if k not in {"order_class", "stop_loss"}}
+            plain["client_order_id"] = str(order.get("client_order_id", "")) + "r"
+            raw = await self._broker.submit_order(plain)
+            needs_client_protection = True
+        protection: dict = {}
+        if needs_client_protection and isinstance(raw, dict):
+            protection = await self._protect_after_fill(raw, sym, is_crypto, float(strategy.default_stop_pct))
         result = MultiAssetOrderResult(
             ok=True,
             desk=req.desk,
@@ -376,12 +395,57 @@ class MultiAssetDeskService:
             order_id=str(raw.get("id") or "") or None,
             status=str(raw.get("status") or ""),
             message=f"Orden paper enviada ({req.side} {sym})",
-            payload=raw if isinstance(raw, dict) else {"raw": raw},
+            payload=(raw if isinstance(raw, dict) else {"raw": raw}) | ({"protection": protection} if protection else {}),
         )
         if self._session is not None:
             await self._journal_write(req, result)
             await self._track_fill(req, result, sym, is_sim=False)
         return result
+
+    async def _protect_after_fill(
+        self, raw: dict, sym: str, is_crypto: bool, stop_pct: float, *, wait_s: float = 10.0
+    ) -> dict:
+        """Wait for fill, then place broker backup stop (crypto stop_limit). Fail -> sell + alert."""
+        import asyncio
+
+        from services.protection.stop_watch import ProtectedPosition, StopWatchService
+
+        order = raw
+        cid = str(raw.get("client_order_id") or "")
+        deadline = asyncio.get_event_loop().time() + wait_s
+        while str(order.get("status") or "") != "filled" and asyncio.get_event_loop().time() < deadline:
+            await asyncio.sleep(0.5)
+            got = await self._broker.get_order_by_client_order_id(cid) if cid else None
+            if isinstance(got, dict):
+                order = got
+        qty = float(order.get("filled_qty") or 0)
+        entry = float(order.get("filled_avg_price") or 0)
+        if qty <= 0 or entry <= 0:
+            logger.error("multiasset.protect_no_fill", symbol=sym, status=order.get("status"))
+            return {"ok": False, "reason": "no_fill_yet", "status": order.get("status")}
+        if is_crypto:
+            # fees are charged in the asset: use what the broker actually holds
+            try:
+                for p in await self._broker.get_positions():
+                    if str(p.get("symbol", "")).replace("/", "") == sym.replace("/", ""):
+                        qty = float(p.get("qty") or qty)
+            except Exception:
+                pass
+
+        async def _q(_s: str) -> float:
+            return entry
+
+        svc = StopWatchService(self._broker, _q, alert=_protect_alert, paper=True)
+        pos = ProtectedPosition.from_entry(
+            sym, "crypto" if is_crypto else "equity", qty, entry, entry * (1 - stop_pct)
+        )
+        await svc.register(pos)
+        return {
+            "ok": not pos.closed,
+            "stop": pos.stop,
+            "stop_order_id": pos.broker_stop_order_id,
+            "closed": pos.closed,
+        }
 
     async def _track_fill(
         self,

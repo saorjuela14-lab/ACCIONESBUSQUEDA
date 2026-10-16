@@ -163,6 +163,12 @@ class Settings(BaseSettings):
     alpaca_beta_paper: bool = True
     alpaca_beta_base_url: str = "https://paper-api.alpaca.markets"
     multiasset_beta_max_notional: float = 500.0
+    # Client-side stop/TP ladder watcher (services/protection/stop_watch.py).
+    # None -> on in paper, OFF in LIVE. LIVE also needs CLIENT_STOP_WATCH_LIVE_ACK=true.
+    client_stop_watch_enabled: bool | None = None
+    client_stop_watch_interval_s: int = 15
+    client_stop_watch_heartbeat_max_s: int = 90
+    crypto_backup_stop_limit_slippage_pct: float = 0.01
     # Hours before mark-to-market evaluates an open multi-asset trade brief
     multiasset_eval_hours: float = 24.0
     # Overnight / continuous paper autopilot for gold·forex·crypto desks
