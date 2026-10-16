@@ -56,6 +56,7 @@ async def main() -> None:
     await assert_paper(b)
     svc = StopWatchService(
         b, quote, alert=lambda k, d: log(alert=k, **d),
+        only_symbols={x for x in os.environ.get("STOP_WATCH_SYMBOLS", "").split(",") if x} or None,
         state_path=LOGDIR / "state.json", heartbeat_path=LOGDIR / "heartbeat.json",
     )
     interval = int(os.environ.get("CLIENT_STOP_WATCH_INTERVAL_S", "15"))

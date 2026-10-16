@@ -162,7 +162,9 @@ class StopWatchService:
         default_stop_pct: float = 0.03,
         crypto_slippage_pct: float | None = None,
         paper: bool = True,
+        only_symbols: set[str] | None = None,
     ) -> None:
+        self.only = {x.replace('/', '').upper() for x in only_symbols} if only_symbols else None
         self._b = broker
         self._quote = quote
         self._alert_fn = alert
@@ -320,7 +322,11 @@ class StopWatchService:
     # ---------- main loop ----------
     async def tick(self) -> dict:
         await self._guard()
-        broker_pos = {str(p["symbol"]).replace("/", ""): p for p in await self._b.get_positions()}
+        broker_pos = {
+            str(p["symbol"]).replace("/", ""): p
+            for p in await self._b.get_positions()
+            if self.only is None or str(p["symbol"]).replace("/", "").upper() in self.only
+        }
         open_orders = await self._b.list_orders(status="open", limit=200)
         report: dict[str, Any] = {"checked": 0, "actions": []}
         # orphans: broker position without a record -> default stop + alert
