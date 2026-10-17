@@ -361,6 +361,12 @@ class StopWatchService:
             if qty_total and abs(qty_total - pos.qty) > 1e-9:
                 pos.qty = qty_total
             report["checked"] += 1
+            live_ids = {str(o.get("id")) for o in open_orders}
+            if pos.broker_stop_order_id and pos.broker_stop_order_id not in live_ids:
+                # backup stop vanished at broker (manual cancel/expired): re-place now
+                await self.alert("backup_stop_missing", {"symbol": sym, "order_id": pos.broker_stop_order_id})
+                pos.broker_stop_order_id = None
+                pos.broker_stop_price = None
             px = float(await self._quote(sym) or 0)
             if px <= 0:
                 await self.alert("no_quote", {"symbol": sym})

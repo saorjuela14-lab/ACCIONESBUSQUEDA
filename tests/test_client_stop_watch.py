@@ -256,3 +256,13 @@ def test_idempotent_ticks_do_not_duplicate_orders(tmp_path):
     # state persisted and reloaded
     svc2, _ = _svc(tmp_path, b, {"AAPL": 101.0})
     assert svc2.positions["AAPL"].broker_stop_order_id == svc.positions["AAPL"].broker_stop_order_id
+
+
+def test_missing_broker_stop_is_replaced_on_tick(tmp_path):
+    b = FakeBroker(); _hold(b, "ETH/USD", 1.0)
+    svc, alerts = _svc(tmp_path, b, {"ETH/USD": 100.0})
+    asyncio.run(svc.register(_pos("ETH/USD")))
+    asyncio.run(b.cancel_order(svc.positions["ETH/USD"].broker_stop_order_id))
+    asyncio.run(svc.tick())
+    assert any(k == "backup_stop_missing" for k, _ in alerts)
+    assert len([o for o in b.orders if o["type"] == "stop_limit" and o["status"] == "new"]) == 1
