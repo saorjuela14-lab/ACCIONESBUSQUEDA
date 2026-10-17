@@ -41,13 +41,23 @@ def broker() -> AlpacaBrokerProvider:
 
 
 async def quote(sym: str) -> float:
+    """Executable-side price for a long: latest BID (last trade can be stale for hours on
+    thin crypto pairs). Returns 0 if the quote is older than 120 s -> watcher alerts and
+    keeps the broker backup stop."""
+    from datetime import datetime, timezone
+
     b = broker()
     async with httpx.AsyncClient(timeout=15) as c:
         if "/" in sym:
-            r = await c.get(f"{DATA}/v1beta3/crypto/us/latest/trades", params={"symbols": sym}, headers=b._headers())
-            return float(r.json()["trades"][sym]["p"])
-        r = await c.get(f"{DATA}/v2/stocks/{sym}/trades/latest", params={"feed": "iex"}, headers=b._headers())
-        return float(r.json()["trade"]["p"])
+            r = await c.get(f"{DATA}/v1beta3/crypto/us/latest/quotes", params={"symbols": sym}, headers=b._headers())
+            q = r.json()["quotes"][sym]
+        else:
+            r = await c.get(f"{DATA}/v2/stocks/{sym}/quotes/latest", params={"feed": "iex"}, headers=b._headers())
+            q = r.json()["quote"]
+    t = datetime.fromisoformat(str(q["t"]).replace("Z", "+00:00")[:26] + "+00:00" if "." in str(q["t"]) else str(q["t"]).replace("Z", "+00:00"))
+    if (datetime.now(timezone.utc) - t).total_seconds() > 120:
+        return 0.0
+    return float(q.get("bp") or 0)
 
 
 async def main() -> None:
