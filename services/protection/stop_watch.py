@@ -173,7 +173,14 @@ class StopWatchService:
         crypto_slippage_pct: float | None = None,
         paper: bool = True,
         only_symbols: set[str] | None = None,
+        file_backend: bool = True,
+        enabled_override: bool | None = None,
     ) -> None:
+        # file_backend=False: state/heartbeat live in memory and the caller persists them
+        # (in-app job -> DB via services/protection/stop_watch_job.py). Paper script keeps files.
+        self.file_backend = file_backend
+        self._enabled_override = enabled_override
+        self.last_beat: dict | None = None
         self.only = {x.replace('/', '').upper() for x in only_symbols} if only_symbols else None
         self._b = broker
         self._quote = quote
@@ -193,17 +200,30 @@ class StopWatchService:
 
     # ---------- persistence ----------
     def load(self) -> None:
+        if not self.file_backend:
+            return
         if self.state_path.exists():
             data = json.loads(self.state_path.read_text() or "{}")
             self.positions = {k: ProtectedPosition(**v) for k, v in data.items()}
 
+    def dump_state(self) -> dict:
+        return {k: asdict(v) for k, v in self.positions.items()}
+
+    def load_state(self, data: dict | None) -> None:
+        self.positions = {k: ProtectedPosition(**v) for k, v in (data or {}).items()}
+
     def save(self) -> None:
+        if not self.file_backend:
+            return
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.state_path.with_suffix(".tmp")
         tmp.write_text(json.dumps({k: asdict(v) for k, v in self.positions.items()}, indent=2))
         tmp.replace(self.state_path)
 
     def beat(self, extra: dict | None = None) -> None:
+        self.last_beat = {"ts": time.time(), **(extra or {})}
+        if not self.file_backend:
+            return
         self.heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
         self.heartbeat_path.write_text(json.dumps({"ts": time.time(), **(extra or {})}))
 
@@ -215,7 +235,20 @@ class StopWatchService:
                 await res
 
     # ---------- guards ----------
+    def heartbeat_age(self) -> float | None:
+        if not self.file_backend:
+            try:
+                return time.time() - float((self.last_beat or {})["ts"])
+            except Exception:
+                return None
+        return heartbeat_age(self.heartbeat_path)
+
     def enabled(self) -> bool:
+        if self._enabled_override is not None:
+            # LIVE still needs the explicit ack even with an override
+            if not self.paper:
+                return bool(self._enabled_override) and bool(_bool_env("CLIENT_STOP_WATCH_LIVE_ACK"))
+            return bool(self._enabled_override)
         return stop_watch_enabled(self.paper)
 
     async def _guard(self) -> None:
@@ -500,7 +533,7 @@ async def watchdog_check(
 ) -> dict:
     """If the heartbeat is stale: alert and verify every position has a broker stop."""
     max_age = max_age_s if max_age_s is not None else float(os.environ.get("CLIENT_STOP_WATCH_HEARTBEAT_MAX_S", "90"))
-    age = heartbeat_age(svc.heartbeat_path)
+    age = svc.heartbeat_age()
     if age is not None and age <= max_age:
         return {"stale": False, "age": age}
     await svc.alert("stop_watch_heartbeat_stale", {"age": age})

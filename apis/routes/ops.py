@@ -279,7 +279,17 @@ async def ops_status(session: AsyncSession = Depends(get_session)) -> dict:
             "max_sector_pct": settings.risk_max_sector_pct,
         },
         "leases": await _lease_status(session),
+        "client_stop_watch": await _client_stop_watch_status(session),
     }
+
+
+async def _client_stop_watch_status(session: AsyncSession) -> dict:
+    try:
+        from services.protection.stop_watch_job import stop_watch_status
+
+        return await stop_watch_status(session)
+    except Exception as exc:
+        return {"error": str(exc)[:200]}
 
 
 @router.get("/ops/autopilot/last")
