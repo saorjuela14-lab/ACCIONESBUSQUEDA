@@ -45,6 +45,16 @@ class NotPaperError(RuntimeError):
     pass
 
 
+class PositionGoneError(RuntimeError):
+    """The broker no longer holds the tracked position (qty 0)."""
+
+
+def is_insufficient_balance(exc: BaseException) -> bool:
+    """Alpaca 403 'insufficient balance ... available: 0' on a sell."""
+    msg = str(exc).lower()
+    return "insufficient" in msg and ("balance" in msg or "qty" in msg or "available" in msg)
+
+
 def is_crypto_symbol(symbol: str, asset_class: str | None = None) -> bool:
     if asset_class:
         return asset_class.lower() == "crypto"
@@ -218,6 +228,58 @@ class StopWatchService:
         self._seq += 1
         return f"sw-{sym.replace('/', '')}-{tag}-{int(time.time())}-{self._seq}"
 
+    # ---------- broker reconciliation ----------
+    async def _broker_qty(self, pos: ProtectedPosition) -> float | None:
+        """Total qty held at the broker for pos; None if it could not be read."""
+        try:
+            rows = await self._b.get_positions()
+        except Exception as exc:
+            logger.info("stop_watch.positions_read_failed", symbol=pos.symbol, error=str(exc))
+            return None
+        key = pos.symbol.replace("/", "").upper()
+        for p in rows or []:
+            if str(p.get("symbol", "")).replace("/", "").upper() == key:
+                return float(p.get("qty") or 0)
+        return 0.0
+
+    async def _stop_fill(self, pos: ProtectedPosition) -> dict | None:
+        """Recent fill of the known broker stop order, if any."""
+        if not pos.broker_stop_order_id:
+            return None
+        try:
+            rows = await self._b.list_orders(status="closed", limit=200)
+        except Exception:
+            return None
+        for o in rows or []:
+            if str(o.get("id")) == str(pos.broker_stop_order_id) and str(o.get("status")) in {"filled", "partially_filled"}:
+                return o
+        return None
+
+    async def mark_gone(self, pos: ProtectedPosition, fill: dict | None = None, reason: str = "gone_at_broker") -> None:
+        if fill is None:
+            fill = await self._stop_fill(pos)
+        ev: dict[str, Any] = {"ts": time.time(), "event": "gone_at_broker", "reason": reason}
+        if fill:
+            try:
+                ev["fill_price"] = float(fill.get("filled_avg_price") or 0) or None
+            except (TypeError, ValueError):
+                ev["fill_price"] = None
+            ev["fill_order_id"] = str(fill.get("id"))
+        pos.closed = True
+        pos.broker_stop_order_id = None
+        pos.history.append(ev)
+        logger.info("stop_watch.gone", symbol=pos.symbol, fill_price=ev.get("fill_price"), reason=reason)
+
+    async def reconcile_gone(self, pos: ProtectedPosition) -> bool:
+        """True (and pos marked closed) if the broker no longer holds the position."""
+        if pos.closed:
+            return True
+        qty = await self._broker_qty(pos)
+        if qty is not None and qty <= 1e-12:
+            await self.mark_gone(pos)
+            return True
+        return False
+
     # ---------- broker helpers ----------
     async def _place_backup(self, pos: ProtectedPosition) -> dict:
         await self._guard()
@@ -243,11 +305,19 @@ class StopWatchService:
 
     async def ensure_backup(self, pos: ProtectedPosition, retries: int = 2) -> bool:
         """Make the broker stop match pos.stop/qty. On failure: close + alert."""
+        if pos.closed:
+            return False
+        await self._guard()
+        # re-placing (not a fresh registration right after a fill, where the
+        # positions endpoint may still lag): verify the broker still holds it
+        replacing = bool(pos.broker_stop_order_id or pos.history)
         last: Exception | None = None
         for _ in range(retries + 1):
             try:
                 if pos.broker_stop_order_id and pos.broker_stop_price == round_px(pos.stop) and pos.broker_stop_qty == pos.qty:
                     return True
+                if replacing and await self.reconcile_gone(pos):
+                    return False
                 if pos.broker_stop_order_id and pos.asset_class != "crypto":
                     await self._guard()
                     raw = await self._b.replace_order(
@@ -270,28 +340,51 @@ class StopWatchService:
             except Exception as exc:
                 last = exc
                 pos.broker_stop_order_id = None if pos.asset_class == "crypto" else pos.broker_stop_order_id
+                if is_insufficient_balance(exc):
+                    # nothing to sell: re-check the position instead of retrying
+                    if await self.reconcile_gone(pos):
+                        return False
+                    await self.alert("insufficient_balance_on_stop", {"symbol": pos.symbol, "error": str(exc)})
+                    return False
+        if await self.reconcile_gone(pos):
+            return False
         await self.alert("backup_stop_failed_closing", {"symbol": pos.symbol, "error": str(last)})
         await self.close(pos, reason="backup_stop_failed")
         return False
 
     async def close(self, pos: ProtectedPosition, reason: str) -> None:
         await self._guard()
+        if pos.closed:
+            return
+        fill = await self._stop_fill(pos)
+        if fill is not None or await self.reconcile_gone(pos):
+            if not pos.closed:
+                await self.mark_gone(pos, fill=fill, reason=f"{reason}:stop_filled")
+            return
         if pos.broker_stop_order_id:
             try:
                 await self._b.cancel_order(pos.broker_stop_order_id)
             except Exception as exc:
                 logger.info("stop_watch.cancel_before_close_failed", symbol=pos.symbol, error=str(exc))
             pos.broker_stop_order_id = None
-        await self._b.submit_order(
-            {
-                "symbol": pos.symbol,
-                "side": "sell",
-                "type": "market",
-                "qty": str(pos.qty),
-                "time_in_force": "gtc" if pos.asset_class == "crypto" else "day",
-                "client_order_id": self._cid(pos.symbol, "close"),
-            }
-        )
+        try:
+            await self._b.submit_order(
+                {
+                    "symbol": pos.symbol,
+                    "side": "sell",
+                    "type": "market",
+                    "qty": str(pos.qty),
+                    "time_in_force": "gtc" if pos.asset_class == "crypto" else "day",
+                    "client_order_id": self._cid(pos.symbol, "close"),
+                }
+            )
+        except Exception as exc:
+            if is_insufficient_balance(exc):
+                if await self.reconcile_gone(pos):
+                    return
+                await self.alert("insufficient_balance_on_close", {"symbol": pos.symbol, "error": str(exc)})
+                return
+            raise
         pos.closed = True
         pos.history.append({"ts": time.time(), "event": "close", "reason": reason})
         logger.info("stop_watch.closed", symbol=pos.symbol, reason=reason)
@@ -350,9 +443,8 @@ class StopWatchService:
             if pos.closed:
                 continue
             bp = broker_pos.get(sym.replace("/", ""))
-            if bp is None:  # broker stop filled or closed elsewhere
-                pos.closed = True
-                pos.history.append({"ts": time.time(), "event": "gone_at_broker"})
+            if bp is None or float(bp.get("qty") or 0) <= 1e-12:  # broker stop filled or closed elsewhere
+                await self.mark_gone(pos)
                 report["actions"].append({"symbol": sym, "action": "gone"})
                 continue
             qty_b = float(bp.get("qty_available") or bp.get("qty") or 0)
@@ -415,6 +507,9 @@ async def watchdog_check(
     fixed = []
     for pos in svc.positions.values():
         if not pos.closed:
+            # startup reconciliation: never re-place a stop for a position already gone
+            if await svc.reconcile_gone(pos):
+                continue
             pos.broker_stop_order_id = await _find_live_stop(svc, pos)
             if await svc.ensure_backup(pos):
                 fixed.append(pos.symbol)

@@ -266,3 +266,70 @@ def test_missing_broker_stop_is_replaced_on_tick(tmp_path):
     asyncio.run(svc.tick())
     assert any(k == "backup_stop_missing" for k, _ in alerts)
     assert len([o for o in b.orders if o["type"] == "stop_limit" and o["status"] == "new"]) == 1
+
+
+# 14
+class StrictBroker(FakeBroker):
+    """Sells with nothing to sell fail like Alpaca: 403 insufficient balance."""
+
+    async def submit_order(self, o):
+        key = o["symbol"].replace("/", "")
+        if o.get("side") == "sell" and float((self.positions.get(key) or {}).get("qty") or 0) <= 0:
+            self.sell_attempts = getattr(self, "sell_attempts", 0) + 1
+            raise RuntimeError('403 {"code":40310000,"message":"insufficient balance for BTC (requested: 0.5, available: 0)"}')
+        return await super().submit_order(o)
+
+    async def list_orders(self, status="open", limit=200):
+        if status == "closed":
+            return [o for o in self.orders if o["status"] in {"filled", "canceled"}]
+        return await super().list_orders(status, limit)
+
+
+def test_position_closed_at_broker_while_down_is_marked_gone_without_orders(tmp_path):
+    b = StrictBroker(); _hold(b, "BTC/USD", 0.5)
+    svc, _ = _svc(tmp_path, b, {"BTC/USD": 94.0})
+    asyncio.run(svc.register(_pos()))
+    stop_id = svc.positions["BTC/USD"].broker_stop_order_id
+    # watcher down: the broker stop_limit fills and the position disappears
+    so = next(o for o in b.orders if o["id"] == stop_id)
+    so.update(status="filled", filled_avg_price="94.9", filled_qty="0.5")
+    b.positions.clear()
+    svc.heartbeat_path.write_text(json.dumps({"ts": time.time() - 999}))
+    n = len(b.orders)
+
+    # restart: startup reconciliation (watchdog) + ticks
+    svc2, alerts = _svc(tmp_path, b, {"BTC/USD": 94.0})
+    out = asyncio.run(watchdog_check(svc2, max_age_s=90))
+    p = svc2.positions["BTC/USD"]
+    assert out["verified"] == [] and p.closed
+    gone = [h for h in p.history if h["event"] == "gone_at_broker"]
+    assert gone and gone[-1]["fill_price"] == 94.9 and gone[-1]["fill_order_id"] == stop_id
+    for _ in range(3):
+        asyncio.run(svc2.tick())
+    assert len(b.orders) == n and getattr(b, "sell_attempts", 0) == 0
+    assert not any(k == "backup_stop_failed_closing" for k, _ in alerts)
+
+    # tick path directly (no watchdog): stop hit with position gone -> no market sell
+    b2 = StrictBroker(); _hold(b2, "AAPL", 1)
+    svc3, _ = _svc(tmp_path / "t", b2, {"AAPL": 94.0})
+    asyncio.run(svc3.register(_pos("AAPL", "equity", 1)))
+    b2.positions["AAPL"]["qty"] = "0"  # broker reports qty 0
+    n2 = len(b2.orders)
+    asyncio.run(svc3.tick())
+    assert svc3.positions["AAPL"].closed and len(b2.orders) == n2
+    assert getattr(b2, "sell_attempts", 0) == 0
+
+    # 403 insufficient balance on a sell -> re-check position, no retry loop
+    b3 = StrictBroker(); _hold(b3, "ETH/USD", 1.0)
+    svc4, _ = _svc(tmp_path / "u", b3, {"ETH/USD": 100.0})
+    pos = _pos("ETH/USD", qty=1.0)
+    svc4.positions[pos.symbol] = pos
+
+    real_place = svc4._place_backup
+
+    async def place(p):
+        b3.positions.clear()
+        return await real_place(p)
+    svc4._place_backup = place
+    assert asyncio.run(svc4.ensure_backup(pos)) is False
+    assert pos.closed and b3.sell_attempts == 1  # one failed attempt, then reconciled
