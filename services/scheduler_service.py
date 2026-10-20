@@ -1,5 +1,6 @@
 """Cloud scheduler — market reports, watchlist scans, daily reports, memory evaluation."""
 
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -29,6 +30,9 @@ from services.push_notification_service import PushNotificationService
 from services.watchlist_monitor_service import WatchlistMonitorService
 from utils.logging import get_logger
 from utils.market_hours import should_run_automation
+
+AUTOPILOT_MISFIRE_GRACE_SECONDS = 300
+AUTOPILOT_COLDSTART_DELAY_SECONDS = 5
 
 logger = get_logger(__name__)
 
@@ -559,6 +563,12 @@ class SchedulerService:
                 IntervalTrigger(minutes=autopilot_every),
                 id="firm_autopilot",
                 replace_existing=True,
+                # Cold start (ítem 2): run once right after boot instead of
+                # waiting a full interval; tolerate up to 5 min of loop delay.
+                next_run_time=datetime.now(tz) + timedelta(seconds=AUTOPILOT_COLDSTART_DELAY_SECONDS),
+                misfire_grace_time=AUTOPILOT_MISFIRE_GRACE_SECONDS,
+                coalesce=True,
+                max_instances=1,
             )
 
         # Multi-asset beta desks (gold / forex / crypto) — capital-aware paper/sim loop
