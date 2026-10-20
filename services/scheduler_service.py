@@ -589,6 +589,8 @@ class SchedulerService:
                     coalesce=True,
                 )
 
+        self._register_client_stop_watch()
+
         self._scheduler.start()
         logger.info(
             "scheduler.started",
@@ -603,6 +605,43 @@ class SchedulerService:
             multiasset_autopilot_interval=getattr(
                 self._settings, "multiasset_autopilot_interval_minutes", None
             ),
+        )
+
+    async def _run_client_stop_watch(self) -> None:
+        from services.protection.stop_watch_job import run_stop_watch_tick
+
+        rep = await run_stop_watch_tick(settings=self._settings)
+        logger.info("scheduler.client_stop_watch", **{k: v for k, v in rep.items() if k != "actions"})
+
+    async def _run_client_stop_watch_staleness(self) -> None:
+        from services.protection.stop_watch_job import stop_watch_staleness_check
+
+        await stop_watch_staleness_check(settings=self._settings)
+
+    def _register_client_stop_watch(self) -> None:
+        """Client stop/TP watcher inside the app. Only when CLIENT_STOP_WATCH_ENABLED=true."""
+        from services.protection.stop_watch_job import job_enabled
+
+        if not job_enabled(self._settings):
+            return
+        every = max(5, int(getattr(self._settings, "client_stop_watch_job_interval_s", 20) or 20))
+        self._scheduler.add_job(
+            self._run_client_stop_watch,
+            IntervalTrigger(seconds=every),
+            id="client_stop_watch",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=every,
+        )
+        self._scheduler.add_job(
+            self._run_client_stop_watch_staleness,
+            IntervalTrigger(seconds=60),
+            id="client_stop_watch_staleness",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=60,
         )
 
     def stop(self) -> None:
