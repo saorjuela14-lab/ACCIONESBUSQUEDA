@@ -36,6 +36,8 @@ async def test_company_register_login_and_me():
         created = await client.post(
             "/api/v1/auth/companies",
             json={
+                "accept_privacy_terms": True,
+                "declare_adult": True,
                 "org_name": "Acme Capital",
                 "email": "admin@acme.test",
                 "password": "segura1234",

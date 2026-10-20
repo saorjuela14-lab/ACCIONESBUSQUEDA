@@ -166,6 +166,18 @@ def create_app() -> FastAPI:
                 headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
             )
 
+        legal_dir = Path(__file__).resolve().parent.parent / "legal"
+
+        @app.get("/privacidad")
+        async def privacy_page():
+            """Política de tratamiento de datos (Ley 1581/2012) — pública."""
+            return FileResponse(legal_dir / "privacidad.html", media_type="text/html")
+
+        @app.get("/terminos")
+        async def terms_page():
+            """Términos y condiciones + aviso de riesgo — público."""
+            return FileResponse(legal_dir / "terminos.html", media_type="text/html")
+
         @app.get("/login")
         async def login_page(request: Request):
             from apis.routes.auth import _clear_session_cookies

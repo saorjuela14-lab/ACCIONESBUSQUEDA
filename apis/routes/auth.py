@@ -29,6 +29,17 @@ class CompanyCreateRequest(BaseModel):
     email: str = Field(min_length=3, max_length=255)
     password: str = Field(min_length=8, max_length=128)
     full_name: str = Field(default="", max_length=160)
+    # Ley 1581: autorización previa, expresa e informada + declaración de mayoría de edad.
+    # Obligatorias en la solicitud pública; la mesa puede dar de alta sin ellas.
+    accept_privacy_terms: bool = False
+    declare_adult: bool = False
+
+
+class DataRequestBody(BaseModel):
+    """Habeas data: solicitud del titular (Ley 1581 art. 8)."""
+
+    kind: str = Field(pattern="^(acceso|rectificacion|supresion|revocatoria)$")
+    detail: str = Field(default="", max_length=1000)
 
 
 class DepositRequestBody(BaseModel):
@@ -177,6 +188,14 @@ async def create_company(
         is_desk = bool(resolved and resolved.get("role") == "desk")
 
     pending = not is_desk
+    if pending and not (body.accept_privacy_terms and body.declare_adult):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Debes autorizar el tratamiento de datos (Política de Privacidad), aceptar los "
+                "Términos y declarar ser mayor de 18 años o actuar por una persona jurídica."
+            ),
+        )
     try:
         org, user, raw = await svc.create_company(
             org_name=body.org_name,
@@ -191,6 +210,7 @@ async def create_company(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if pending:
+        await _record_consent(session, request, org_id=org.id, user_id=user.id)
         # Notify mesa (Telegram/WhatsApp env) — never block registration on push failure
         try:
             from services.push_notification_service import PushNotificationService
@@ -198,9 +218,8 @@ async def create_company(
             await PushNotificationService().notify_message(
                 "Solicitud de acceso Monarch",
                 (
-                    f"Empresa: {org.name}\n"
-                    f"Contacto: {user.full_name or '—'}\n"
-                    f"Email: {user.email}\n"
+                    # Minimización (Ley 1581): sin nombre/email/empresa en mensajería externa
+                    f"Org ID: {org.id}\n"
                     f"Estado: pendiente de autorización.\n"
                     f"Entra a la mesa → panel Accesos para aprobar."
                 ),
@@ -290,6 +309,42 @@ def _require_client(resolved: dict | None) -> dict:
     return resolved
 
 
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()[:64]
+    return (request.client.host if request.client else "")[:64]
+
+
+async def _record_consent(session: AsyncSession, request: Request, *, org_id: str, user_id: str) -> None:
+    """Prueba de la autorización (Decreto 1377 art. 7) en audit_events (tabla existente)."""
+    from datetime import datetime, timezone
+
+    from config.legal import AUDIT_ACTION_CONSENT, PRIVACY_POLICY_VERSION, TERMS_VERSION
+    from database.repositories.audit_repository import AuditRepository
+    from domain.ops import AuditEvent
+
+    await AuditRepository(session).append(
+        AuditEvent(
+            action=AUDIT_ACTION_CONSENT,
+            actor=f"user:{user_id}",
+            success=True,
+            message="Autorización tratamiento de datos + aceptación de términos + mayoría de edad",
+            payload={
+                "org_id": org_id,
+                "user_id": user_id,
+                "consent_at_utc": datetime.now(timezone.utc).isoformat(),
+                "privacy_policy_version": PRIVACY_POLICY_VERSION,
+                "terms_version": TERMS_VERSION,
+                "accept_privacy_terms": True,
+                "declare_adult_or_legal_entity": True,
+                "ip": _client_ip(request),
+                "user_agent": (request.headers.get("user-agent") or "")[:400],
+            },
+        )
+    )
+
+
 def _require_desk(resolved: dict | None) -> dict:
     if not resolved or resolved.get("role") != "desk":
         raise HTTPException(status_code=403, detail="Solo la mesa Monarch puede hacer esto")
@@ -344,7 +399,7 @@ async def capital_deposit(
     await _notify_mesa(
         "Depósito solicitado (transferencia bancaria)",
         (
-            f"Cliente: {resolved.get('email')}\n"
+            f"Org ID: {resolved.get('org_id')}\n"
             f"Monto: ${body.amount_usd:,.2f}\n"
             f"Ref/memo: {resolved.get('email')}\n"
             f"{(body.note or '')[:200]}\n"
@@ -379,7 +434,7 @@ async def capital_deposit_confirm(
     await _notify_mesa(
         "Cliente confirma depósito enviado",
         (
-            f"Cliente: {resolved.get('email')}\n"
+            f"Org ID: {resolved.get('org_id')}\n"
             f"Monto: ${float(req.get('amount_usd') or 0):,.2f}\n"
             f"Revisa Alpaca y marca «Recibido» en Capital si ya entró el dinero."
         ),
@@ -412,7 +467,7 @@ async def capital_withdraw(
     await _notify_mesa(
         "Retiro solicitado — requiere tu aprobación",
         (
-            f"Cliente: {resolved.get('email')}\n"
+            f"Org ID: {resolved.get('org_id')}\n"
             f"Monto: ${body.amount_usd:,.2f}\n"
             f"{(body.note or '')[:200]}\n"
             f"Revisa en Accesos → Capital y Aprueba o Rechaza."
@@ -602,12 +657,10 @@ async def forgot_password(
             await PushNotificationService().notify_message(
                 "Recuperación de contraseña",
                 (
-                    f"Cliente: {result.get('full_name') or '—'}\n"
-                    f"Email: {result.get('email')}\n"
-                    f"Empresa: {result.get('org_name') or '—'}\n"
-                    f"Código: {result['code']}\n"
-                    f"Válido {result.get('expires_minutes', 30)} min.\n"
-                    f"Entrégalelo al cliente o revísalo en Accesos → Recuperaciones."
+                    # Sin PII ni código por mensajería externa (Ley 1581, minimización)
+                    f"Solicitud: {result.get('request_id')}\n"
+                    f"Org ID: {result.get('org_id') or '—'}\n"
+                    f"Revisa el código en el panel de la mesa → Accesos → Recuperaciones."
                 ),
             )
         except Exception:
@@ -725,3 +778,96 @@ async def client_error(body: ClientErrorReport, request: Request) -> dict:
         path=str(request.url.path),
     )
     return {"ok": True}
+
+
+@router.post("/auth/data-requests")
+async def create_data_request(
+    body: DataRequestBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Habeas data: el titular pide acceso/rectificación/supresión/revocatoria.
+
+    Solo registra la solicitud; NO borra nada automáticamente (la mesa la gestiona).
+    La notificación a la mesa lleva solo el id interno.
+    """
+    import uuid
+    from datetime import datetime, timezone
+
+    from config.legal import AUDIT_ACTION_DATA_REQUEST
+    from database.repositories.audit_repository import AuditRepository
+    from domain.ops import AuditEvent
+
+    auth = CompanyAuthService(session)
+    token = _extract_bearer(request)
+    resolved = _require_client(await auth.resolve_bearer(token) if token else None)
+    rid = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    await AuditRepository(session).append(
+        AuditEvent(
+            id=rid,
+            action=AUDIT_ACTION_DATA_REQUEST,
+            actor=f"user:{resolved['user_id']}",
+            success=True,
+            message=f"Solicitud habeas data: {body.kind}",
+            payload={
+                "request_id": rid,
+                "kind": body.kind,
+                "detail": body.detail,
+                "org_id": resolved["org_id"],
+                "user_id": resolved["user_id"],
+                "requested_at_utc": now,
+                "status": "recibida",
+            },
+        )
+    )
+    await _notify_mesa(
+        "Solicitud habeas data",
+        f"Solicitud: {rid}\nTipo: {body.kind}\nRevisa en el panel de la mesa (auditoría: {AUDIT_ACTION_DATA_REQUEST}).",
+    )
+    metrics.inc("auth_data_requests")
+    return {
+        "ok": True,
+        "request_id": rid,
+        "status": "recibida",
+        "requested_at_utc": now,
+        "message": (
+            "Solicitud recibida. Consultas: respuesta máx. 10 días hábiles; reclamos "
+            "(rectificación/supresión/revocatoria): máx. 15 días hábiles (Ley 1581 arts. 14-15)."
+        ),
+    }
+
+
+@router.get("/auth/data-requests")
+async def list_data_requests(
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Mesa: lista de solicitudes habeas data (incluye las propias del cliente si es cliente)."""
+    import json
+
+    from sqlalchemy import select
+
+    from config.legal import AUDIT_ACTION_DATA_REQUEST
+    from database.models import AuditEventORM
+
+    auth = CompanyAuthService(session)
+    token = _extract_bearer(request)
+    resolved = await auth.resolve_bearer(token) if token else None
+    if not resolved:
+        raise HTTPException(status_code=401, detail="No autenticado")
+    rows = (
+        await session.execute(
+            select(AuditEventORM)
+            .where(AuditEventORM.action == AUDIT_ACTION_DATA_REQUEST)
+            .order_by(AuditEventORM.created_at.desc())
+            .limit(200)
+        )
+    ).scalars().all()
+    items = []
+    for r in rows:
+        p = json.loads(r.payload_json or "{}")
+        if resolved.get("role") != "desk" and p.get("org_id") != resolved.get("org_id"):
+            continue
+        items.append(p)
+    return {"items": items}
