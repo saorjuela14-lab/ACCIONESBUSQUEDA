@@ -610,6 +610,7 @@ class CompanyAuthService:
             **generic,
             "created": True,
             "request_id": reset.id,
+            "org_id": user.org_id,
             "email": email,
             "org_name": org.name,
             "full_name": user.full_name,

@@ -22,6 +22,9 @@ PUBLIC_PREFIXES = (
     "/dashboard/sw.js",
 )
 
+# Exact public pages (GET/HEAD only, exact match — no prefix, no other route opened).
+PUBLIC_EXACT_GET = frozenset({"/privacidad", "/terminos"})
+
 # Clients may only monitor. All mutating API calls (except auth deposit request)
 # require the mesa desk role.
 CLIENT_MUTATION_ALLOW_PREFIXES = (
@@ -97,6 +100,10 @@ class AccessTokenMiddleware(BaseHTTPMiddleware):
                 return JSONResponse(status_code=404, content={"detail": "Not Found"})
 
         if any(path.startswith(p) for p in PUBLIC_PREFIXES):
+            return await call_next(request)
+
+        # Legal pages (Ley 1581 / T&C): public, GET/HEAD only, exact path.
+        if path in PUBLIC_EXACT_GET and method in ("GET", "HEAD"):
             return await call_next(request)
 
         # /metrics: desk/session only (was public). Health stays the wake-path.

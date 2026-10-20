@@ -613,6 +613,26 @@
 
     <footer class="term-footer" id="provider-health">Proveedores: —</footer>
 
+    <details class="panel habeas-panel" id="habeas-panel">
+      <summary>Mis datos personales (habeas data)</summary>
+      <p class="muted">Pide acceso, corrección o supresión de tus datos, o revoca la autorización (Ley 1581). La mesa responde consultas en máximo 10 días hábiles y reclamos en máximo 15. No se borra nada automáticamente.</p>
+      <label for="habeas-kind">Tipo de solicitud</label>
+      <select id="habeas-kind">
+        <option value="acceso">Conocer / acceder a mis datos</option>
+        <option value="rectificacion">Actualizar o rectificar</option>
+        <option value="supresion">Suprimir mis datos</option>
+        <option value="revocatoria">Revocar la autorización</option>
+      </select>
+      <label for="habeas-detail">Detalle (opcional)</label>
+      <textarea id="habeas-detail" maxlength="1000" rows="3"></textarea>
+      <button type="button" class="btn" id="btn-habeas">Enviar solicitud</button>
+      <p id="habeas-status" class="muted" role="status"></p>
+    </details>
+    <footer class="legal-footer">
+      <p>[RAZÓN SOCIAL] · NIT [NIT] · [DOMICILIO] · [EMAIL DE CONTACTO] · [TELÉFONO]</p>
+      <p><a href="/privacidad">Política de Privacidad</a> · <a href="/terminos">Términos y Condiciones</a> · Invertir tiene riesgo de pérdida total; rendimientos pasados no garantizan futuros; no es asesoría financiera.</p>
+    </footer>
+
     <nav class="mobile-nav" id="mobile-nav" aria-label="Navegación móvil">
       <button type="button" data-scroll="ceo-bar" class="mob-nav-btn active">Inicio</button>
       <button type="button" id="mob-tech" class="mob-nav-btn">Gráfico</button>
@@ -666,6 +686,30 @@
     </div>
   </div>
 
+  <script>
+    (function () {
+      const btn = document.getElementById("btn-habeas");
+      if (!btn) return;
+      btn.addEventListener("click", async () => {
+        const st = document.getElementById("habeas-status");
+        const headers = { "Content-Type": "application/json" };
+        const t = localStorage.getItem("nexbuy_token");
+        if (t) headers.Authorization = "Bearer " + t;
+        try {
+          const r = await fetch("/api/v1/auth/data-requests", {
+            method: "POST", headers, credentials: "same-origin",
+            body: JSON.stringify({
+              kind: document.getElementById("habeas-kind").value,
+              detail: document.getElementById("habeas-detail").value.trim(),
+            }),
+          });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : "No se pudo enviar");
+          st.textContent = (d.message || "Solicitud recibida.") + " Radicado: " + d.request_id;
+        } catch (e) { st.textContent = e.message; }
+      });
+    })();
+  </script>
   <script src="/dashboard/static/reliability.js?v=37-login-enter"></script>
   <script src="/dashboard/static/voice.js?v=37-login-enter"></script>
   <script src="/dashboard/static/app.js?v=41-multiasset-cookie"></script>

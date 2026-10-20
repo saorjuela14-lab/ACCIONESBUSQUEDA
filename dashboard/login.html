@@ -57,8 +57,8 @@
           La recuperación solo aplica al <strong>mismo email</strong> con el que intentas entrar.
           No se puede cambiar por otro. La mesa te dará un código de 6 dígitos (válido 30 min).
         </p>
-        <label>Email de la cuenta</label>
-        <input id="forgot-email" type="email" readonly tabindex="-1" autocomplete="username" />
+        <label for="forgot-email">Email de la cuenta</label>
+        <input id="forgot-email" type="email" readonly aria-readonly="true" autocomplete="username" />
         <p class="muted" style="font-size:11px;margin:0.25rem 0 0.5rem">Fijado al email del login — así nadie usa otro correo para intentar tomar la cuenta.</p>
         <button id="btn-forgot-send" class="btn primary" style="width:100%;margin-top:0.5rem;padding:0.65rem">Pedir código</button>
         <label for="forgot-code" style="margin-top:0.75rem">Código de 6 dígitos</label>
@@ -87,6 +87,17 @@
         <input id="reg-email" type="email" placeholder="tu@empresa.com" />
         <label for="reg-pass" style="margin-top:0.45rem">Contraseña</label>
         <input id="reg-pass" type="password" placeholder="Mínimo 8 caracteres" />
+        <div class="consent-row">
+          <input id="reg-consent" type="checkbox" required />
+          <label for="reg-consent">Autorizo el tratamiento de mis datos según la
+            <a href="/privacidad" target="_blank" rel="noopener">Política de Privacidad</a> y acepto los
+            <a href="/terminos" target="_blank" rel="noopener">Términos</a>.</label>
+        </div>
+        <div class="consent-row">
+          <input id="reg-adult" type="checkbox" required />
+          <label for="reg-adult">Declaro ser mayor de 18 años o actuar en representación de una persona jurídica.</label>
+        </div>
+        <p class="muted" style="font-size:12px;margin:0.35rem 0 0">Aviso: invertir tiene riesgo de pérdida total; rendimientos pasados no garantizan futuros; no es asesoría financiera.</p>
         <button id="btn-register" class="btn" style="width:100%;margin-top:0.65rem">Enviar solicitud</button>
       </details>
     </div>
@@ -97,7 +108,7 @@
       <button id="btn-login-desk" class="btn primary" style="width:100%;margin-top:0.75rem;padding:0.65rem">Entrar al terminal</button>
     </div>
 
-    <p id="login-error" class="login-error hidden"></p>
+    <p id="login-error" class="login-error hidden" role="alert"></p>
     <p id="login-ok" class="login-ok hidden"></p>
     <p id="login-status" class="muted" style="text-align:center;margin-top:0.75rem;font-size:11px"></p>
   </div>
@@ -306,7 +317,13 @@
         full_name: document.getElementById("reg-name").value.trim(),
         email: document.getElementById("reg-email").value.trim(),
         password: document.getElementById("reg-pass").value,
+        accept_privacy_terms: document.getElementById("reg-consent").checked,
+        declare_adult: document.getElementById("reg-adult").checked,
       };
+      if (!body.accept_privacy_terms || !body.declare_adult) {
+        showErr("Para enviar la solicitud debes marcar la autorización de datos/Términos y la declaración de mayoría de edad.");
+        return;
+      }
       try {
         const r = await fetch(`${API}/auth/companies`, {
           method: "POST",
@@ -401,5 +418,9 @@
       }
     })();
   </script>
+  <footer class="legal-footer">
+    <p>[RAZÓN SOCIAL] · NIT [NIT] · [DOMICILIO] · [EMAIL DE CONTACTO] · [TELÉFONO]</p>
+    <p><a href="/privacidad">Política de Privacidad</a> · <a href="/terminos">Términos y Condiciones</a></p>
+  </footer>
 </body>
 </html>

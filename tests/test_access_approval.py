@@ -31,6 +31,8 @@ async def test_public_register_is_pending_until_desk_approves():
         created = await client.post(
             "/api/v1/auth/companies",
             json={
+                "accept_privacy_terms": True,
+                "declare_adult": True,
                 "org_name": "Cliente Nuevo",
                 "email": "cliente@nuevo.test",
                 "password": "segura1234",
@@ -106,6 +108,8 @@ async def test_reject_deletes_access_request():
         created = await client.post(
             "/api/v1/auth/companies",
             json={
+                "accept_privacy_terms": True,
+                "declare_adult": True,
                 "org_name": "No gracias",
                 "email": "no@gracias.test",
                 "password": "segura1234",
