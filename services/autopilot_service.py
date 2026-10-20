@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from config.settings import get_settings
@@ -99,18 +100,26 @@ class AutopilotService:
         owner = run_owner()
         flags_lock = OpsFlagRepository(self._session)
         try:
-            got, lease = await acquire_lease(
-                flags_lock,
-                owner=owner,
-                flag=FLAG_LEASE,
-                advisory_key=ADVISORY_KEY,
-                session=self._session,
+            from services.db_lease import LEASE_OP_TIMEOUT_SECONDS
+
+            got, lease = await asyncio.wait_for(
+                acquire_lease(
+                    flags_lock,
+                    owner=owner,
+                    flag=FLAG_LEASE,
+                    advisory_key=ADVISORY_KEY,
+                    session=self._session,
+                ),
+                timeout=LEASE_OP_TIMEOUT_SECONDS,
             )
         except Exception as exc:
+            from services.db_lease import sanitize_lease_error
+
+            safe = sanitize_lease_error(exc)
             steps["aborted"] = "replica_lease_failed"
-            steps["lease_error"] = str(exc)
+            steps["lease_error"] = safe
             steps["finished_at"] = utc_now().isoformat()
-            steps["message"] = f"abortado: replica_lease_failed ({exc})"
+            steps["message"] = f"abortado: replica_lease_failed ({safe})"
             return steps
         if not got:
             steps["skipped"] = True
@@ -312,7 +321,11 @@ class AutopilotService:
             try:
                 lease_ok = await lease_guard.still_mine()
             except Exception as exc:
-                logger.warning("autopilot.lease_still_mine_failed", error=str(exc))
+                from services.db_lease import sanitize_lease_error
+
+                logger.warning(
+                    "autopilot.lease_still_mine_failed", error=sanitize_lease_error(exc)
+                )
                 lease_ok = False
             if not lease_ok:
                 steps["lease_lost_mid_cycle"] = True

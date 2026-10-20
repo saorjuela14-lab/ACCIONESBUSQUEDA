@@ -32,6 +32,22 @@ LEASE_LIFECYCLE = "lifecycle_scan"
 DEFAULT_TTL_SECONDS = 120
 ALERT_AFTER_MISSES = 2
 HEARTBEAT_INTERVAL_SECONDS = 40
+# Cold-start hardening (paquete 22-oct, ítem 2): bound every lease DB op.
+LEASE_OP_TIMEOUT_SECONDS = float(os.getenv("LEASE_OP_TIMEOUT_SECONDS", "10") or 10)
+STILL_MINE_ATTEMPTS = 3
+STILL_MINE_BACKOFF_SECONDS = (0.5, 1.0)
+
+
+def sanitize_lease_error(exc: BaseException | str) -> str:
+    """Error text safe for logs/alerts: no DSN, credentials or hosts."""
+    import re as _re
+
+    raw = exc if isinstance(exc, str) else f"{type(exc).__name__}: {exc}"
+    raw = _re.sub(r"[a-zA-Z0-9+]+://[^\s'\"]+", "<dsn>", raw)
+    raw = _re.sub(r"(?i)(password|passwd|pwd|user|host)=\S+", r"\1=<redacted>", raw)
+    raw = _re.sub(r"\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b", "<host>", raw)
+    raw = _re.sub(r"\b[\w.-]+\.(?:neon\.tech|amazonaws\.com|internal|local)(?::\d+)?\b", "<host>", raw)
+    return raw[:200]
 
 
 @dataclass
@@ -349,6 +365,9 @@ class LeaseHeartbeat:
         return get_session()
 
     async def _beat(self) -> bool:
+        return await asyncio.wait_for(self._beat_once(), timeout=LEASE_OP_TIMEOUT_SECONDS)
+
+    async def _beat_once(self) -> bool:
         agen = self._iter_session()
         session = await agen.__anext__()
         try:
@@ -368,7 +387,18 @@ class LeaseHeartbeat:
     async def _loop(self) -> None:
         try:
             while True:
-                ok = await self._beat()
+                try:
+                    ok = await self._beat_with_retry()
+                except Exception as exc:
+                    self.lost = True
+                    log.warning(
+                        "lease_heartbeat_loop_error name=%s owner=%s err=%s",
+                        self.name,
+                        self.owner,
+                        sanitize_lease_error(exc),
+                    )
+                    await self._alert_lost(f"heartbeat_loop_error:{sanitize_lease_error(exc)}")
+                    return
                 if not ok:
                     self.lost = True
                     log.warning(
@@ -398,32 +428,48 @@ class LeaseHeartbeat:
                 "lease_heartbeat_start_failed name=%s owner=%s err=%s",
                 self.name,
                 self.owner,
-                exc,
+                sanitize_lease_error(exc),
             )
             self.lost = True
             self._task = None
             self._started = False
-            await self._alert_lost(f"heartbeat_start_error:{exc}")
+            await self._alert_lost(f"heartbeat_start_error:{sanitize_lease_error(exc)}")
 
     async def still_mine(self) -> bool:
         if self.lost:
             return False
         try:
-            ok = await self._beat()
+            ok = await self._beat_with_retry()
         except Exception as exc:
             self.lost = True
             log.warning(
                 "lease_still_mine_failed name=%s owner=%s err=%s",
                 self.name,
                 self.owner,
-                exc,
+                sanitize_lease_error(exc),
             )
-            await self._alert_lost(f"still_mine_error:{exc}")
+            await self._alert_lost(f"still_mine_error:{sanitize_lease_error(exc)}")
             return False
         if not ok:
             self.lost = True
             await self._alert_lost("still_mine_not_owner")
         return bool(ok)
+
+    async def _beat_with_retry(self) -> bool:
+        """Up to STILL_MINE_ATTEMPTS on DB error/timeout. ``False`` (not owner) is final."""
+        last: Exception | None = None
+        for attempt in range(STILL_MINE_ATTEMPTS):
+            try:
+                return await self._beat()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # includes asyncio.TimeoutError
+                last = exc
+                if attempt < STILL_MINE_ATTEMPTS - 1:
+                    delay = STILL_MINE_BACKOFF_SECONDS[min(attempt, len(STILL_MINE_BACKOFF_SECONDS) - 1)]
+                    await asyncio.sleep(delay)
+        assert last is not None
+        raise last
 
     async def _alert_lost(self, detail: str) -> None:
         try:
