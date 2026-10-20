@@ -5,7 +5,7 @@ Ver memoria completa: [`PROJECT_MEMORY.json`](./PROJECT_MEMORY.json) · corto: [
 ## Producto
 - **Monarch Capital** — escritorio autónomo LIVE (comités + Risk Desk + Autopilot)
 - Web = **solo terminal** (`/` → `/dashboard`)
-- Pitch: Canva + `dashboard/pitch/MONARCH_CAPITAL_SHARK_TANK.md`
+- Pitch: Canva + `docs/internal/MONARCH_CAPITAL_SHARK_TANK.md (interno, no servido)`
 
 ## Live (refrescar siempre)
 - Prod: https://accionesbusqueda.fastapicloud.dev/dashboard
