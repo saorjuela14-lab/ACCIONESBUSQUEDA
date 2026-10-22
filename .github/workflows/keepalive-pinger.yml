@@ -1,0 +1,32 @@
+name: keepalive-pinger
+# Mantiene despierta prod (FastAPI Cloud, 0-1 réplicas) durante la sesión NYSE.
+# Horario: L-V 08:20-15:05 COT = 13:20-20:05 UTC (Colombia UTC-5, sin DST).
+on:
+  schedule:
+    - cron: "20-59/5 13 * * 1-5"
+    - cron: "*/5 14-19 * * 1-5"
+    - cron: "0,5 20 * * 1-5"
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: keepalive-pinger
+  cancel-in-progress: true
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: GET /health
+        run: |
+          set -u
+          URL="https://accionesbusqueda.fastapicloud.dev/health"
+          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+          for i in 1 2 3; do
+            code=$(curl -s -o body.txt -w '%{http_code}' -m 30 -A "$UA" "$URL" || echo 000)
+            if [ "$code" = "200" ] && grep -qi healthy body.txt; then
+              echo "OK intento $i: $code"; exit 0
+            fi
+            echo "Intento $i falló: $code"; sleep 10
+          done
+          echo "::error::/health no respondió healthy tras 3 intentos"; exit 1
