@@ -33,6 +33,10 @@ from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+# Desk 2R default when the canceled child has no usable stop price.
+_RESTORE_STOP_PCT = 0.08
+_RESTORE_STOP_ATTEMPTS = 2
+
 
 def _f(value: Any, default: float = 0.0) -> float:
     try:
@@ -41,6 +45,33 @@ def _f(value: Any, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _stop_price_from_order(order: BrokerOrderResult | None) -> float:
+    """Stop price from a live/canceled child (bracket OTO or standalone)."""
+    if order is None:
+        return 0.0
+    raw = order.raw if isinstance(getattr(order, "raw", None), dict) else {}
+    px = _f(raw.get("stop_price"))
+    if px > 0:
+        return px
+    sl = raw.get("stop_loss")
+    if isinstance(sl, dict):
+        px = _f(sl.get("stop_price"))
+    else:
+        px = _f(sl)
+    return px if px > 0 else 0.0
+
+
+def _remaining_qty_from_order(order: BrokerOrderResult | None) -> float:
+    if order is None:
+        return 0.0
+    qty = _f(order.qty)
+    filled = _f(order.filled_qty)
+    remaining = qty - filled
+    if remaining > 1e-12:
+        return remaining
+    return qty if qty > 0 else 0.0
 
 
 def _parse_dt(value: Any) -> datetime | None:
@@ -288,6 +319,7 @@ class AlpacaOrderService:
             raise RuntimeError("trading_mode_unconfigured")
         sym = (symbol or "").upper().strip()
         child_stop = None
+        child_canceled = False
         try:
             child_stop = await self.find_working_stop(sym)
         except Exception as exc:
@@ -296,6 +328,7 @@ class AlpacaOrderService:
         if child_stop and child_stop.id:
             try:
                 await self.cancel_order(child_stop.id)
+                child_canceled = True
                 logger.info(
                     "broker.close_child_stop_cancelled",
                     symbol=sym,
@@ -316,9 +349,171 @@ class AlpacaOrderService:
             logger.warning(
                 "broker.close_position_failed_after_child_stop_cancel",
                 symbol=sym,
+                canceled=child_canceled,
                 error=str(exc),
             )
+            if child_canceled:
+                # LIVE: never leave the book naked after we pulled the child stop.
+                # Do not retry close while unprotected; restore GTC first, then raise.
+                restored = await self._restore_protective_stop_after_failed_close(
+                    sym, child_stop
+                )
+                await self._alert_close_failed_stop_restore(sym, child_stop, restored, exc)
             raise
+
+    async def _restore_protective_stop_after_failed_close(
+        self,
+        symbol: str,
+        child_stop: BrokerOrderResult | None,
+    ) -> BrokerOrderResult | None:
+        """Re-place a GTC protective stop after cancel+close left the position naked."""
+        qty = _remaining_qty_from_order(child_stop)
+        stop_px = _stop_price_from_order(child_stop)
+        if qty <= 0 or stop_px <= 0:
+            try:
+                positions = await self.get_positions()
+            except Exception as exc:
+                logger.warning(
+                    "broker.close_failed_restore_positions_unreadable",
+                    symbol=symbol,
+                    error=str(exc),
+                )
+                positions = []
+            if qty <= 0:
+                from services.live_safety import long_qty_from_positions
+
+                qty = float(long_qty_from_positions(positions, symbol) or 0)
+            if stop_px <= 0:
+                want = (symbol or "").upper()
+                for pos in positions:
+                    if (getattr(pos, "symbol", "") or "").upper() == want:
+                        entry = _f(getattr(pos, "avg_entry_price", 0))
+                        last = _f(getattr(pos, "current_price", 0))
+                        basis = entry if entry > 0 else last
+                        if basis > 0:
+                            stop_px = round(basis * (1.0 - _RESTORE_STOP_PCT), 2)
+                        break
+        if qty <= 0 or stop_px <= 0:
+            logger.warning(
+                "broker.close_failed_cannot_restore_stop",
+                symbol=symbol,
+                qty=qty,
+                stop_px=stop_px,
+            )
+            return None
+
+        from services.order_idempotency import order_is_live_stop
+
+        last: BrokerOrderResult | None = None
+        for attempt in range(_RESTORE_STOP_ATTEMPTS):
+            try:
+                last = await self._submit_restored_gtc_stop(
+                    symbol=symbol, qty=qty, stop_price=stop_px
+                )
+            except Exception as exc:
+                logger.warning(
+                    "broker.close_failed_restore_stop_error",
+                    symbol=symbol,
+                    attempt=attempt + 1,
+                    error=str(exc),
+                )
+                last = BrokerOrderResult(
+                    symbol=symbol,
+                    qty=float(qty),
+                    side="sell",
+                    type="stop",
+                    status="failed",
+                    error=str(exc),
+                )
+                continue
+            if last and not last.error and order_is_live_stop(last):
+                logger.info(
+                    "broker.close_failed_stop_restored",
+                    symbol=symbol,
+                    order_id=last.id,
+                    stop=stop_px,
+                    qty=qty,
+                    attempt=attempt + 1,
+                )
+                return last
+        return last
+
+    async def _submit_restored_gtc_stop(
+        self,
+        *,
+        symbol: str,
+        qty: float,
+        stop_price: float,
+    ) -> BrokerOrderResult:
+        """Emergency GTC stop. Skips entry/qty gates — qty already came off a live child."""
+        cid = await self._allocate_stop_client_order_id(symbol)
+        req = BrokerOrderRequest(
+            symbol=symbol,
+            qty=float(qty),
+            side="sell",
+            order_type="stop",
+            time_in_force="gtc",
+            stop_price=round(float(stop_price), 2),
+            client_order_id=cid,
+            source_tag="desk",
+        )
+        failed = BrokerOrderResult(
+            symbol=symbol,
+            qty=float(qty),
+            side="sell",
+            type="stop",
+            status="failed",
+            client_order_id=cid,
+        )
+        payload = self._build_order_payload(req)
+        placed = await self._submit_payload_idempotent(req, payload, failed)
+        from services.order_idempotency import order_is_live_stop
+
+        if placed and not placed.error and order_is_live_stop(placed):
+            return placed
+        if placed is None:
+            return failed.model_copy(update={"error": "stop_restore_empty"})
+        extra = dict(placed.raw or {})
+        extra["restored_after_close_fail"] = True
+        err = placed.error or f"stop_not_live:{placed.status}"
+        return placed.model_copy(update={"raw": extra, "status": "failed", "error": err})
+
+    async def _alert_close_failed_stop_restore(
+        self,
+        symbol: str,
+        child_stop: BrokerOrderResult | None,
+        restored: BrokerOrderResult | None,
+        close_exc: BaseException,
+    ) -> None:
+        from services.desk_ops_alert import (
+            KIND_CLOSE_FAILED_STOP_RESTORE_FAILED,
+            KIND_CLOSE_FAILED_STOP_RESTORED,
+            emit_desk_ops_alert,
+        )
+        from services.order_idempotency import order_is_live_stop
+
+        ok = bool(restored and not restored.error and order_is_live_stop(restored))
+        kind = KIND_CLOSE_FAILED_STOP_RESTORED if ok else KIND_CLOSE_FAILED_STOP_RESTORE_FAILED
+        stop_px = _stop_price_from_order(child_stop)
+        qty = _remaining_qty_from_order(child_stop)
+        detail = (
+            f"{symbol} close_failed={close_exc} canceled_child={getattr(child_stop, 'id', '')} "
+            f"child_stop={stop_px} qty={qty} restored_id={getattr(restored, 'id', '')} "
+            f"restored_status={getattr(restored, 'status', '')} "
+            f"restored_error={getattr(restored, 'error', None)}"
+        )
+        try:
+            await emit_desk_ops_alert(
+                kind,
+                detail=detail[:400],
+                dedupe_key=f"{kind}:{symbol}",
+            )
+        except Exception as alert_exc:
+            logger.warning(
+                "broker.close_failed_restore_alert_failed",
+                symbol=symbol,
+                error=str(alert_exc),
+            )
 
     async def replace_protective_stop(
         self,

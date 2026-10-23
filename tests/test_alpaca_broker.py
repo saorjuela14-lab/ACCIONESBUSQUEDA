@@ -8,6 +8,7 @@ import pytest
 from domain.broker import BrokerAccount, BrokerOrderRequest, ExecuteLine, ExecuteOrdersRequest
 from providers.broker.alpaca_provider import PAPER_BASE_URL, AlpacaBrokerProvider
 from services.alpaca_order_service import AlpacaOrderService
+from services.desk_ops_alert import KIND_CLOSE_FAILED_STOP_RESTORED
 
 
 def _mock_response(status: int, json_data, headers=None):
@@ -595,3 +596,60 @@ async def test_close_position_does_not_close_when_child_stop_cancel_fails():
         await svc.close_position("SNAP")
 
     inner.close_position.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_close_position_restores_gtc_stop_when_market_close_fails():
+    inner = MagicMock()
+    inner.paper = False
+    inner.last_request_id = None
+    inner.list_orders = AsyncMock(
+        return_value=[
+            {
+                "id": "stop-child-1",
+                "symbol": "SNAP",
+                "qty": "1",
+                "side": "sell",
+                "type": "stop",
+                "status": "held",
+                "stop_price": "5.48",
+            }
+        ]
+    )
+    inner.cancel_order = AsyncMock(return_value={"ok": True})
+    inner.close_position = AsyncMock(side_effect=RuntimeError("close rejected"))
+    inner.submit_order = AsyncMock(
+        return_value={
+            "id": "stop-restored-1",
+            "symbol": "SNAP",
+            "qty": "1",
+            "side": "sell",
+            "type": "stop",
+            "status": "accepted",
+            "stop_price": "5.48",
+            "time_in_force": "gtc",
+            "client_order_id": "stop-uuid-1",
+        }
+    )
+    svc = AlpacaOrderService(broker=inner)
+
+    with (
+        patch("services.live_safety.production_trading_unconfigured", return_value=False),
+        patch.object(svc, "_allocate_stop_client_order_id", AsyncMock(return_value="stop-uuid-1")),
+        patch("services.desk_ops_alert.emit_desk_ops_alert", AsyncMock()) as alert,
+        pytest.raises(RuntimeError, match="close rejected"),
+    ):
+        await svc.close_position("SNAP")
+
+    inner.cancel_order.assert_awaited_once_with("stop-child-1")
+    inner.close_position.assert_awaited_once_with("SNAP")
+    inner.submit_order.assert_awaited_once()
+    payload = inner.submit_order.await_args.args[0]
+    assert payload["type"] == "stop"
+    assert payload["side"] == "sell"
+    assert payload["time_in_force"] == "gtc"
+    assert payload["stop_price"] == "5.48"
+    assert payload["qty"] == "1"
+    assert payload["symbol"] == "SNAP"
+    alert.assert_awaited()
+    assert alert.await_args.args[0] == KIND_CLOSE_FAILED_STOP_RESTORED

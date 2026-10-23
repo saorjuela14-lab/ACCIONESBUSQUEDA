@@ -418,6 +418,42 @@ class StopWatchService:
         await self.close(pos, reason="backup_stop_failed")
         return False
 
+    async def _restore_stop_after_failed_close(self, pos: ProtectedPosition) -> bool:
+        """Re-place the GTC backup using last known stop/qty. Never calls close()."""
+        if pos.closed:
+            return False
+        if (not pos.stop or pos.stop <= 0) and pos.broker_stop_price and pos.broker_stop_price > 0:
+            pos.stop = float(pos.broker_stop_price)
+        if pos.qty <= 0 and pos.broker_stop_qty and pos.broker_stop_qty > 0:
+            pos.qty = float(pos.broker_stop_qty)
+        last: Exception | None = None
+        for _ in range(3):
+            try:
+                await self._place_backup(pos)
+                pos.history.append(
+                    {
+                        "ts": time.time(),
+                        "event": "stop_restored_after_close_fail",
+                        "stop": pos.stop,
+                        "qty": pos.qty,
+                        "order_id": pos.broker_stop_order_id,
+                    }
+                )
+                return True
+            except NotPaperError:
+                raise
+            except Exception as exc:
+                last = exc
+                if is_insufficient_balance(exc):
+                    if await self.reconcile_gone(pos):
+                        return False
+                    break
+        await self.alert(
+            "close_failed_stop_restore_failed",
+            {"symbol": pos.symbol, "error": str(last), "stop": pos.stop, "qty": pos.qty},
+        )
+        return False
+
     async def close(self, pos: ProtectedPosition, reason: str) -> None:
         await self._guard()
         if pos.closed:
@@ -427,12 +463,15 @@ class StopWatchService:
             if not pos.closed:
                 await self.mark_gone(pos, fill=fill, reason=f"{reason}:stop_filled")
             return
+        canceled_ok = False
         if pos.broker_stop_order_id:
             try:
                 await self._broker_call("cancel_before_close", self._b.cancel_order, pos.broker_stop_order_id)
+                canceled_ok = True
             except Exception as exc:
                 logger.info("stop_watch.cancel_before_close_failed", symbol=pos.symbol, error=str(exc))
-            pos.broker_stop_order_id = None
+            else:
+                pos.broker_stop_order_id = None
         try:
             await self._broker_call(
                 "submit_close",
@@ -451,7 +490,36 @@ class StopWatchService:
                 if await self.reconcile_gone(pos):
                     return
                 await self.alert("insufficient_balance_on_close", {"symbol": pos.symbol, "error": str(exc)})
+                if canceled_ok and not pos.closed:
+                    restored = await self._restore_stop_after_failed_close(pos)
+                    if restored:
+                        await self.alert(
+                            "close_failed_stop_restored",
+                            {
+                                "symbol": pos.symbol,
+                                "error": str(exc),
+                                "stop": pos.stop,
+                                "qty": pos.qty,
+                                "order_id": pos.broker_stop_order_id,
+                            },
+                        )
                 return
+            if canceled_ok and not pos.closed:
+                # LIVE: cancel succeeded, close failed → restore GTC immediately. Do not
+                # retry market close while naked.
+                restored = await self._restore_stop_after_failed_close(pos)
+                if restored:
+                    await self.alert(
+                        "close_failed_stop_restored",
+                        {
+                            "symbol": pos.symbol,
+                            "error": str(exc),
+                            "stop": pos.stop,
+                            "qty": pos.qty,
+                            "order_id": pos.broker_stop_order_id,
+                            "reason": reason,
+                        },
+                    )
             raise
         pos.closed = True
         pos.history.append({"ts": time.time(), "event": "close", "reason": reason})
