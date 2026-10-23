@@ -352,6 +352,39 @@ def test_broker_call_timeout_fails_closed_without_hanging(tmp_path):
     assert qty is None
 
 
+class CloseFailsBroker(FakeBroker):
+    """Market flatten fails after the backup stop was canceled."""
+
+    async def submit_order(self, o):
+        if o.get("type") == "market" and o.get("side") == "sell":
+            raise RuntimeError("market close rejected")
+        return await super().submit_order(o)
+
+
+def test_close_restores_backup_stop_when_market_close_fails(tmp_path):
+    b = CloseFailsBroker()
+    _hold(b, "AAPL", 1)
+    svc, alerts = _svc(tmp_path, b, {"AAPL": 94.0})
+    pos = asyncio.run(svc.register(_pos("AAPL", "equity", 1)))
+    original_stop_id = pos.broker_stop_order_id
+    assert original_stop_id
+
+    with pytest.raises(RuntimeError, match="market close rejected"):
+        asyncio.run(svc.close(pos, reason="close_stop"))
+
+    assert pos.closed is False
+    assert original_stop_id in b.canceled
+    assert pos.broker_stop_order_id and pos.broker_stop_order_id != original_stop_id
+    live = [o for o in b.orders if o["type"] == "stop" and o["status"] == "new"]
+    assert len(live) == 1
+    assert float(live[0]["stop_price"]) == 95.0
+    assert live[0]["time_in_force"] == "gtc"
+    assert live[0]["qty"] == "1"
+    assert any(k == "close_failed_stop_restored" for k, _ in alerts)
+    restored = next(h for h in pos.history if h.get("event") == "stop_restored_after_close_fail")
+    assert restored["order_id"] == pos.broker_stop_order_id
+
+
 def test_startup_reconciliation_adopts_live_stop_before_any_replace(tmp_path):
     b = FakeBroker()
     _hold(b, "AAPL", 1)

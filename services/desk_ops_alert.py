@@ -17,12 +17,16 @@ KIND_LEASE_MISSES = "lease_misses"
 KIND_ORDER_UNCERTAIN = "order_uncertain_no_retry"
 KIND_STOP_RECHECK_EMPTY = "stop_recheck_empty"
 KIND_STOP_NOT_LIVE = "stop_reconciled_not_live"
+KIND_CLOSE_FAILED_STOP_RESTORED = "close_failed_stop_restored"
+KIND_CLOSE_FAILED_STOP_RESTORE_FAILED = "close_failed_stop_restore_failed"
 
 _TITLES = {
     KIND_LEASE_MISSES: "Desk lease: 2+ misses",
     KIND_ORDER_UNCERTAIN: "Orden incierta — no retry",
     KIND_STOP_RECHECK_EMPTY: "Stop: 2ª búsqueda vacía",
     KIND_STOP_NOT_LIVE: "Stop reconciliado no vivo",
+    KIND_CLOSE_FAILED_STOP_RESTORED: "Close falló — stop restaurado",
+    KIND_CLOSE_FAILED_STOP_RESTORE_FAILED: "Close falló — stop NO restaurado",
 }
 
 DEDUPE_SECONDS = 15 * 60
