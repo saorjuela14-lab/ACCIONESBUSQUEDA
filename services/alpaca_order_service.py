@@ -286,12 +286,36 @@ class AlpacaOrderService:
 
         if production_trading_unconfigured():
             raise RuntimeError("trading_mode_unconfigured")
+        sym = (symbol or "").upper().strip()
+        child_stop = None
         try:
-            return await self._broker.close_position(symbol)
+            child_stop = await self.find_working_stop(sym)
+        except Exception as exc:
+            logger.warning("broker.close_child_stop_lookup_failed", symbol=sym, error=str(exc))
+            raise RuntimeError(f"child_stop_lookup_failed:{exc}") from exc
+        if child_stop and child_stop.id:
+            try:
+                await self.cancel_order(child_stop.id)
+                logger.info(
+                    "broker.close_child_stop_cancelled",
+                    symbol=sym,
+                    order_id=child_stop.id,
+                    status=child_stop.status,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "broker.close_child_stop_cancel_failed",
+                    symbol=sym,
+                    order_id=child_stop.id,
+                    error=str(exc),
+                )
+                raise RuntimeError(f"child_stop_cancel_failed:{exc}") from exc
+        try:
+            return await self._broker.close_position(sym)
         except Exception as exc:
             logger.warning(
-                "broker.close_position_failed_stop_intact",
-                symbol=(symbol or "").upper(),
+                "broker.close_position_failed_after_child_stop_cancel",
+                symbol=sym,
                 error=str(exc),
             )
             raise
@@ -1272,7 +1296,9 @@ class AlpacaOrderService:
                 if settings.risk_enforce_sector_cap and risk_metrics is not None:
                     try:
                         from providers.market.factory import get_market_provider
-                        from services.portfolio_risk_metrics_service import PortfolioRiskMetricsService
+                        from services.portfolio_risk_metrics_service import (
+                            PortfolioRiskMetricsService,
+                        )
 
                         quote = await get_market_provider().get_quote(line.ticker.upper())
                         sector = quote.get("sector") or "Unknown"

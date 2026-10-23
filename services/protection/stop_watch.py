@@ -21,6 +21,7 @@ explicit LIVE acknowledgement is set (never in this change).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import time
@@ -36,6 +37,7 @@ logger = get_logger(__name__)
 PAPER_HOST = "paper-api.alpaca.markets"
 DEFAULT_STATE = Path(os.environ.get("CLIENT_STOP_WATCH_STATE", "data/stop_watch_state.json"))
 DEFAULT_HEARTBEAT = Path(os.environ.get("CLIENT_STOP_WATCH_HEARTBEAT", "data/stop_watch_heartbeat.json"))
+LIVE_STOP_STATUSES = {"new", "accepted", "held", "pending_new", "partially_filled"}
 
 QuoteFn = Callable[[str], Awaitable[float]]
 AlertFn = Callable[[str, dict], Awaitable[None] | None]
@@ -87,9 +89,18 @@ def assert_paper_broker_url(base_url: Any) -> None:
         raise NotPaperError(f"stop_watch: base URL no es paper ({host or 'vacía'}); abortado")
 
 
-async def assert_paper(broker: Any) -> None:
+async def _await_broker(op: str, awaitable: Awaitable[Any], timeout_s: float | None) -> Any:
+    if timeout_s is None or timeout_s <= 0:
+        return await awaitable
+    try:
+        return await asyncio.wait_for(awaitable, timeout=float(timeout_s))
+    except asyncio.TimeoutError as exc:
+        raise TimeoutError(f"stop_watch broker call timeout: {op} > {timeout_s}s") from exc
+
+
+async def assert_paper(broker: Any, timeout_s: float | None = 20.0) -> None:
     assert_paper_broker_url(getattr(broker, "base_url", None))
-    acct = await broker.get_account()
+    acct = await _await_broker("get_account", broker.get_account(), timeout_s)
     if not isinstance(acct, dict):
         raise NotPaperError("stop_watch: cuenta ilegible; abortado")
     if acct.get("paper") is False:
@@ -175,6 +186,7 @@ class StopWatchService:
         only_symbols: set[str] | None = None,
         file_backend: bool = True,
         enabled_override: bool | None = None,
+        broker_timeout_s: float = 20.0,
     ) -> None:
         # file_backend=False: state/heartbeat live in memory and the caller persists them
         # (in-app job -> DB via services/protection/stop_watch_job.py). Paper script keeps files.
@@ -188,6 +200,7 @@ class StopWatchService:
         self.state_path = Path(state_path)
         self.heartbeat_path = Path(heartbeat_path)
         self.default_stop_pct = default_stop_pct
+        self.broker_timeout_s = float(broker_timeout_s or 20.0)
         self.slip = (
             crypto_slippage_pct
             if crypto_slippage_pct is not None
@@ -255,7 +268,25 @@ class StopWatchService:
         if not self.enabled():
             raise NotPaperError("stop_watch deshabilitado (LIVE o flag off)")
         if self.paper:
-            await assert_paper(self._b)
+            await assert_paper(self._b, timeout_s=self.broker_timeout_s)
+
+    async def _broker_call(
+        self,
+        op: str,
+        fn: Callable[..., Awaitable[Any]],
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        try:
+            return await _await_broker(op, fn(*args, **kwargs), self.broker_timeout_s)
+        except TimeoutError as exc:
+            logger.warning(
+                "stop_watch.broker_timeout",
+                operation=op,
+                timeout_s=self.broker_timeout_s,
+                error=str(exc),
+            )
+            raise
 
     def _cid(self, sym: str, tag: str) -> str:
         self._seq += 1
@@ -265,7 +296,7 @@ class StopWatchService:
     async def _broker_qty(self, pos: ProtectedPosition) -> float | None:
         """Total qty held at the broker for pos; None if it could not be read."""
         try:
-            rows = await self._b.get_positions()
+            rows = await self._broker_call("get_positions", self._b.get_positions)
         except Exception as exc:
             logger.info("stop_watch.positions_read_failed", symbol=pos.symbol, error=str(exc))
             return None
@@ -280,7 +311,7 @@ class StopWatchService:
         if not pos.broker_stop_order_id:
             return None
         try:
-            rows = await self._b.list_orders(status="closed", limit=200)
+            rows = await self._broker_call("list_orders_closed", self._b.list_orders, status="closed", limit=200)
         except Exception:
             return None
         for o in rows or []:
@@ -328,7 +359,7 @@ class StopWatchService:
             order.update(type="stop_limit", stop_price=str(stop), limit_price=str(round_px(stop * (1 - self.slip))))
         else:
             order.update(type="stop", stop_price=str(stop))
-        raw = await self._b.submit_order(order)
+        raw = await self._broker_call("submit_backup_stop", self._b.submit_order, order)
         if not isinstance(raw, dict) or str(raw.get("status") or "") in {"rejected", "canceled", "expired"}:
             raise RuntimeError(f"backup stop rechazado: {raw.get('status') if isinstance(raw, dict) else raw}")
         pos.broker_stop_order_id = str(raw.get("id") or "") or None
@@ -353,7 +384,9 @@ class StopWatchService:
                     return False
                 if pos.broker_stop_order_id and pos.asset_class != "crypto":
                     await self._guard()
-                    raw = await self._b.replace_order(
+                    raw = await self._broker_call(
+                        "replace_backup_stop",
+                        self._b.replace_order,
                         pos.broker_stop_order_id, stop_price=round_px(pos.stop), qty=pos.qty
                     )
                     pos.broker_stop_order_id = str(raw.get("id") or pos.broker_stop_order_id)
@@ -362,7 +395,7 @@ class StopWatchService:
                 if pos.broker_stop_order_id:
                     await self._guard()
                     try:
-                        await self._b.cancel_order(pos.broker_stop_order_id)
+                        await self._broker_call("cancel_old_backup_stop", self._b.cancel_order, pos.broker_stop_order_id)
                     except Exception as exc:  # already filled/canceled
                         logger.info("stop_watch.cancel_old_failed", symbol=pos.symbol, error=str(exc))
                     pos.broker_stop_order_id = None
@@ -396,12 +429,14 @@ class StopWatchService:
             return
         if pos.broker_stop_order_id:
             try:
-                await self._b.cancel_order(pos.broker_stop_order_id)
+                await self._broker_call("cancel_before_close", self._b.cancel_order, pos.broker_stop_order_id)
             except Exception as exc:
                 logger.info("stop_watch.cancel_before_close_failed", symbol=pos.symbol, error=str(exc))
             pos.broker_stop_order_id = None
         try:
-            await self._b.submit_order(
+            await self._broker_call(
+                "submit_close",
+                self._b.submit_order,
                 {
                     "symbol": pos.symbol,
                     "side": "sell",
@@ -432,11 +467,12 @@ class StopWatchService:
 
     async def adopt_existing_stop(self, pos: ProtectedPosition, orders: list[dict]) -> None:
         for o in orders:
+            osym = str(o.get("symbol", "")).replace("/", "").upper()
             if (
-                str(o.get("symbol", "")).replace("/", "") == pos.symbol.replace("/", "")
+                osym == pos.symbol.replace("/", "").upper()
                 and o.get("side") == "sell"
                 and o.get("type") in {"stop", "stop_limit"}
-                and o.get("status") in {"new", "accepted", "held", "pending_new", "partially_filled"}
+                and o.get("status") in LIVE_STOP_STATUSES
             ):
                 pos.broker_stop_order_id = str(o.get("id"))
                 pos.broker_stop_price = round_px(float(o.get("stop_price") or 0))
@@ -450,10 +486,15 @@ class StopWatchService:
         await self._guard()
         broker_pos = {
             str(p["symbol"]).replace("/", ""): p
-            for p in await self._b.get_positions()
+            for p in await self._broker_call("get_positions", self._b.get_positions)
             if self.only is None or str(p["symbol"]).replace("/", "").upper() in self.only
         }
-        open_orders = await self._b.list_orders(status="open", limit=200)
+        open_orders = await self._broker_call("list_orders_all_for_stops", self._b.list_orders, status="all", limit=200)
+        live_stop_ids = {
+            str(o.get("id"))
+            for o in open_orders
+            if str(o.get("status") or "") in LIVE_STOP_STATUSES
+        }
         report: dict[str, Any] = {"checked": 0, "actions": []}
         # orphans: broker position without a record -> default stop + alert
         for key, bp in broker_pos.items():
@@ -486,8 +527,7 @@ class StopWatchService:
             if qty_total and abs(qty_total - pos.qty) > 1e-9:
                 pos.qty = qty_total
             report["checked"] += 1
-            live_ids = {str(o.get("id")) for o in open_orders}
-            if pos.broker_stop_order_id and pos.broker_stop_order_id not in live_ids:
+            if pos.broker_stop_order_id and pos.broker_stop_order_id not in live_stop_ids:
                 # backup stop vanished at broker (manual cancel/expired): re-place now
                 await self.alert("backup_stop_missing", {"symbol": sym, "order_id": pos.broker_stop_order_id})
                 pos.broker_stop_order_id = None
@@ -552,11 +592,12 @@ async def watchdog_check(
 
 async def _find_live_stop(svc: StopWatchService, pos: ProtectedPosition) -> str | None:
     try:
-        orders = await svc._b.list_orders(status="open", limit=200)
+        orders = await svc._broker_call("list_orders_all_for_stops", svc._b.list_orders, status="all", limit=200)
     except Exception:
         return pos.broker_stop_order_id
-    for o in orders:
-        if str(o.get("id")) == str(pos.broker_stop_order_id):
-            return pos.broker_stop_order_id
+    pos.broker_stop_order_id = None
     pos.broker_stop_price = None
+    await svc.adopt_existing_stop(pos, orders or [])
+    if pos.broker_stop_order_id:
+        return pos.broker_stop_order_id
     return None

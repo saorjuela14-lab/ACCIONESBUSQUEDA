@@ -90,6 +90,7 @@ def get_beta_broker_provider() -> AlpacaBrokerProvider:
         secret_key=secret,
         paper=True,
         base_url=base,
+        timeout_s=float(getattr(settings, "alpaca_broker_timeout_s", 30.0) or 30.0),
     )
     logger.info(
         "multiasset.beta.broker",

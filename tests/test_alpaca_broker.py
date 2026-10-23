@@ -1,6 +1,6 @@
 """Tests for Alpaca Trading API integration."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import httpx
 import pytest
@@ -276,6 +276,7 @@ async def test_order_service_submit_one_maps_result():
     })
     svc = AlpacaOrderService(broker=broker)
     from datetime import datetime
+
     from utils.market_hours import US_EASTERN
 
     # submit_one refuses buys after 16:00 ET — freeze inside the regular session.
@@ -375,11 +376,13 @@ async def test_alpaca_market_data_quote_and_history():
 @pytest.mark.asyncio
 async def test_composite_prefers_alpaca():
     import pandas as pd
+
     from providers.market.composite_market_provider import CompositeMarketDataProvider
 
+    recent_day = pd.Timestamp.now(tz="UTC").normalize()
     sample_df = pd.DataFrame(
         {"Open": [100], "High": [101], "Low": [99], "Close": [100.5], "Volume": [1000]},
-        index=pd.to_datetime(["2025-01-01"]),
+        index=pd.to_datetime([recent_day]),
     )
     sample_quote = {
         "ticker": "AAPL",
@@ -528,3 +531,67 @@ async def test_replace_protective_stop_patch_fail_keeps_old_stop():
     assert "patch_failed" in (result.error or "")
     inner.submit_order.assert_not_called()
     inner.cancel_order.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_close_position_cancels_child_stop_before_market_close():
+    inner = MagicMock()
+    inner.paper = False
+    inner.last_request_id = None
+    inner.list_orders = AsyncMock(
+        return_value=[
+            {
+                "id": "stop-child-1",
+                "symbol": "SNAP",
+                "qty": "1",
+                "side": "sell",
+                "type": "stop",
+                "status": "held",
+                "stop_price": "5.48",
+            }
+        ]
+    )
+    inner.cancel_order = AsyncMock(return_value={"ok": True})
+    inner.close_position = AsyncMock(return_value={"id": "close-1", "status": "accepted"})
+    svc = AlpacaOrderService(broker=inner)
+
+    with patch("services.live_safety.production_trading_unconfigured", return_value=False):
+        out = await svc.close_position("SNAP")
+
+    assert out["id"] == "close-1"
+    inner.cancel_order.assert_awaited_once_with("stop-child-1")
+    inner.close_position.assert_awaited_once_with("SNAP")
+    assert inner.mock_calls.index(call.cancel_order("stop-child-1")) < inner.mock_calls.index(
+        call.close_position("SNAP")
+    )
+
+
+@pytest.mark.asyncio
+async def test_close_position_does_not_close_when_child_stop_cancel_fails():
+    inner = MagicMock()
+    inner.paper = False
+    inner.last_request_id = None
+    inner.list_orders = AsyncMock(
+        return_value=[
+            {
+                "id": "stop-child-1",
+                "symbol": "SNAP",
+                "qty": "1",
+                "side": "sell",
+                "type": "stop",
+                "status": "held",
+                "stop_price": "5.48",
+            }
+        ]
+    )
+    inner.cancel_order = AsyncMock(side_effect=RuntimeError("network timeout"))
+    inner.close_position = AsyncMock()
+    svc = AlpacaOrderService(broker=inner)
+
+    with (
+        patch("services.live_safety.production_trading_unconfigured", return_value=False),
+        pytest.raises(RuntimeError, match="child_stop_cancel_failed"),
+    ):
+        await svc.close_position("SNAP")
+
+    inner.close_position.assert_not_awaited()
