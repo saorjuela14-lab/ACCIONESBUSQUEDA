@@ -23,4 +23,5 @@ def get_broker_provider() -> AlpacaBrokerProvider:
         secret_key=settings.alpaca_secret_key,
         paper=settings.effective_alpaca_paper,
         base_url=settings.alpaca_base_url or None,
+        timeout_s=float(getattr(settings, "alpaca_broker_timeout_s", 30.0) or 30.0),
     )

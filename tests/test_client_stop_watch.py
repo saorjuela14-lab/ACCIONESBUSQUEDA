@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from types import SimpleNamespace
 
 import pytest
 
@@ -77,7 +76,11 @@ class FakeBroker:
         return list(self.positions.values())
 
     async def list_orders(self, status="open", limit=200):
-        return [o for o in self.orders if o["status"] == "new"]
+        if status == "closed":
+            return [o for o in self.orders if o["status"] in {"filled", "canceled"}]
+        if status == "all":
+            return [o for o in self.orders if o["status"] not in {"expired"}]
+        return [o for o in self.orders if o["status"] in {"new", "accepted", "held", "pending_new", "partially_filled"}]
 
 
 def _svc(tmp_path, broker, prices, **kw):
@@ -127,6 +130,7 @@ def test_crypto_stop_limit_failure_closes_position_and_alerts(tmp_path):
     svc, alerts = _svc(tmp_path, b, {})
     pos = asyncio.run(svc.register(_pos()))
     assert pos.closed
+    assert b._n == 4  # 3 protected-stop attempts, then market fail-safe close
     assert any(o["type"] == "market" and o["side"] == "sell" for o in b.orders)
     assert alerts and alerts[0][0] == "backup_stop_failed_closing"
 
@@ -333,3 +337,45 @@ def test_position_closed_at_broker_while_down_is_marked_gone_without_orders(tmp_
     svc4._place_backup = place
     assert asyncio.run(svc4.ensure_backup(pos)) is False
     assert pos.closed and b3.sell_attempts == 1  # one failed attempt, then reconciled
+
+
+class SlowPositionsBroker(FakeBroker):
+    async def get_positions(self):
+        await asyncio.sleep(10)
+        return []
+
+
+def test_broker_call_timeout_fails_closed_without_hanging(tmp_path):
+    b = SlowPositionsBroker()
+    svc, _ = _svc(tmp_path, b, {}, broker_timeout_s=0.01)
+    qty = asyncio.run(svc._broker_qty(_pos()))
+    assert qty is None
+
+
+def test_startup_reconciliation_adopts_live_stop_before_any_replace(tmp_path):
+    b = FakeBroker()
+    _hold(b, "AAPL", 1)
+    b.orders.append(
+        {
+            "id": "child-stop",
+            "symbol": "AAPL",
+            "side": "sell",
+            "type": "stop",
+            "status": "held",
+            "stop_price": "97",
+            "qty": "1",
+        }
+    )
+    svc, _ = _svc(tmp_path, b, {"AAPL": 100.0}, file_backend=False)
+    pos = _pos("AAPL", "equity", 1)
+    pos.broker_stop_order_id = "stale-stop"
+    pos.broker_stop_price = 95.0
+    svc.positions["AAPL"] = pos
+
+    out = asyncio.run(watchdog_check(svc, max_age_s=90))
+
+    assert out["stale"] is True and out["verified"] == ["AAPL"]
+    assert pos.broker_stop_order_id == "child-stop"
+    assert pos.stop == 97.0
+    assert not b.replaced and not b.canceled
+    assert len(b.orders) == 1

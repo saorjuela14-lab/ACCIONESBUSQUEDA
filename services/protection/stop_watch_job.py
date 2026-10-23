@@ -31,30 +31,38 @@ def job_enabled(settings: Any = None) -> bool:
     return getattr(s, "client_stop_watch_enabled", False) is True
 
 
-def _paper_quote_fn(broker: Any):
+def _alpaca_quote_fn(broker: Any, settings: Any):
     """Latest BID; 0 if older than 120 s (watcher keeps the broker backup stop)."""
     from datetime import datetime, timezone
 
     import httpx
 
-    data = "https://data.alpaca.markets"
+    data = str(getattr(settings, "alpaca_data_base_url", "") or "https://data.alpaca.markets").rstrip("/")
+    timeout_s = float(getattr(settings, "client_stop_watch_quote_timeout_s", 15.0) or 15.0)
+    feed = str(getattr(settings, "alpaca_data_feed", "iex") or "iex")
 
     async def quote(sym: str) -> float:
-        async with httpx.AsyncClient(timeout=15) as c:
-            if "/" in sym:
-                r = await c.get(
-                    f"{data}/v1beta3/crypto/us/latest/quotes",
-                    params={"symbols": sym},
-                    headers=broker._headers(),
-                )
-                q = r.json()["quotes"][sym]
-            else:
-                r = await c.get(
-                    f"{data}/v2/stocks/{sym}/quotes/latest",
-                    params={"feed": "iex"},
-                    headers=broker._headers(),
-                )
-                q = r.json()["quote"]
+        try:
+            async with httpx.AsyncClient(timeout=timeout_s) as c:
+                if "/" in sym:
+                    r = await c.get(
+                        f"{data}/v1beta3/crypto/us/latest/quotes",
+                        params={"symbols": sym},
+                        headers=broker._headers(),
+                    )
+                    r.raise_for_status()
+                    q = r.json()["quotes"][sym]
+                else:
+                    r = await c.get(
+                        f"{data}/v2/stocks/{sym}/quotes/latest",
+                        params={"feed": feed},
+                        headers=broker._headers(),
+                    )
+                    r.raise_for_status()
+                    q = r.json()["quote"]
+        except Exception as exc:
+            logger.warning("stop_watch_job.quote_failed", symbol=sym, error=str(exc))
+            return 0.0
         raw = str(q["t"]).replace("Z", "+00:00")
         if "." in raw:
             raw = raw.split(".")[0] + "+00:00"
@@ -66,11 +74,18 @@ def _paper_quote_fn(broker: Any):
     return quote
 
 
-def _default_service_factory():
-    from services.multiasset.paper_broker import get_beta_broker_provider
+def _default_service_factory(settings: Any = None):
+    s = settings or get_settings()
     from services.protection.stop_watch import StopWatchService
 
-    broker = get_beta_broker_provider()
+    if bool(getattr(s, "effective_alpaca_paper", True)):
+        from services.multiasset.paper_broker import get_beta_broker_provider
+
+        broker = get_beta_broker_provider()
+    else:
+        from providers.broker.factory import get_broker_provider
+
+        broker = get_broker_provider()
 
     async def alert(kind: str, data: dict) -> None:
         from services.desk_ops_alert import emit_desk_ops_alert
@@ -83,11 +98,12 @@ def _default_service_factory():
 
     return StopWatchService(
         broker,
-        _paper_quote_fn(broker),
+        _alpaca_quote_fn(broker, s),
         alert=alert,
         file_backend=False,
         enabled_override=True,
-        paper=True,
+        paper=bool(getattr(broker, "paper", getattr(s, "effective_alpaca_paper", True))),
+        broker_timeout_s=float(getattr(s, "client_stop_watch_broker_timeout_s", 20.0) or 20.0),
     )
 
 
@@ -117,7 +133,7 @@ async def run_stop_watch_tick(
             return {"skipped": "lease_held", "owner": snap.owner}
         repo = OpsFlagRepository(session)
         try:
-            svc = (service_factory or _default_service_factory)()
+            svc = service_factory() if service_factory else _default_service_factory(s)
             svc.load_state(await repo.get_json(STATE_KEY))
             hb = await repo.get_json(HEARTBEAT_KEY)
             svc.last_beat = hb if hb.get("ts") else None

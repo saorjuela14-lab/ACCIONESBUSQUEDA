@@ -22,6 +22,11 @@ def _settings(enabled=True):
         client_stop_watch_job_interval_s=20,
         client_stop_watch_heartbeat_max_s=90,
         client_stop_watch_stale_alert_s=120,
+        client_stop_watch_broker_timeout_s=20.0,
+        client_stop_watch_quote_timeout_s=15.0,
+        effective_alpaca_paper=True,
+        alpaca_data_base_url="https://data.alpaca.markets",
+        alpaca_data_feed="iex",
     )
 
 
@@ -66,6 +71,23 @@ def test_job_registered_only_when_flag_on():
     assert ids == {"client_stop_watch", "client_stop_watch_staleness"}
     main = next(a for a in added if a["id"] == "client_stop_watch")
     assert main["max_instances"] == 1 and main["coalesce"] is True and main["misfire_grace_time"]
+
+
+def test_default_service_factory_uses_firm_broker_when_settings_are_live(monkeypatch):
+    from providers.broker import factory as broker_factory
+
+    monkeypatch.delenv("CLIENT_STOP_WATCH_LIVE_ACK", raising=False)
+    broker = FakeBroker(paper=False)
+    broker.base_url = "https://api.alpaca.markets"
+    monkeypatch.setattr(broker_factory, "get_broker_provider", lambda: broker)
+    settings = _settings(True)
+    settings.effective_alpaca_paper = False
+
+    svc = job._default_service_factory(settings)
+
+    assert svc._b is broker
+    assert svc.paper is False
+    assert svc.enabled() is False  # LIVE still requires CLIENT_STOP_WATCH_LIVE_ACK
 
 
 def test_settings_default_off():

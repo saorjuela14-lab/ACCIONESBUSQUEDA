@@ -31,10 +31,12 @@ class AlpacaBrokerProvider(BrokerProvider):
         secret_key: str = "",
         paper: bool = True,
         base_url: str | None = None,
+        timeout_s: float = 30.0,
     ) -> None:
         self._api_key = (api_key or "").strip()
         self._secret_key = (secret_key or "").strip()
         self._paper = paper
+        self._timeout_s = float(timeout_s or 30.0)
         if base_url:
             self._base_url = base_url.rstrip("/")
         else:
@@ -103,7 +105,7 @@ class AlpacaBrokerProvider(BrokerProvider):
             )
 
         url = f"{self._base_url}{path}"
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=self._timeout_s) as client:
             response = await client.request(
                 method,
                 url,

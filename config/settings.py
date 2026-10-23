@@ -171,6 +171,8 @@ class Settings(BaseSettings):
     client_stop_watch_stale_alert_s: int = 120
     client_stop_watch_interval_s: int = 15
     client_stop_watch_heartbeat_max_s: int = 90
+    client_stop_watch_broker_timeout_s: float = 20.0
+    client_stop_watch_quote_timeout_s: float = 15.0
     crypto_backup_stop_limit_slippage_pct: float = 0.01
     # Hours before mark-to-market evaluates an open multi-asset trade brief
     multiasset_eval_hours: float = 24.0
@@ -220,6 +222,7 @@ class Settings(BaseSettings):
 
     http_max_retries: int = 3
     http_retry_backoff: float = 1.5
+    alpaca_broker_timeout_s: float = 30.0
 
     # Risk desk (hard gates on buys + recommendation sizing)
     risk_max_position_pct: float = 35.0
