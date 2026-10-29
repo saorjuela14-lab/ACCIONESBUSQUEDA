@@ -1,0 +1,64 @@
+# Pinger externo de respaldo para despertar prod (FastAPI Cloud, 0-1 réplicas).
+# Repo público → minutos de GitHub Actions gratis. No usa secretos.
+# El cron de GitHub solo corre desde la rama por defecto y puede llegar atrasado.
+#
+# Colombia (COT) = UTC-5, sin horario de verano.
+# Pre-apertura: 07:50 / 08:00 / 08:10 / 08:20 COT
+# Luego cada 10 min: 08:30–15:00 COT
+name: keepalive
+
+on:
+  schedule:
+    # 07:50 COT
+    - cron: "50 12 * * 1-5"
+    # 08:00, 08:10, 08:20 (pre-open) y 08:30, 08:40, 08:50 COT
+    - cron: "0,10,20,30,40,50 13 * * 1-5"
+    # 09:00–14:50 COT cada 10 min
+    - cron: "*/10 14-19 * * 1-5"
+    # 15:00 COT
+    - cron: "0 20 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: GET /health
+        run: |
+          set -u
+          URL="https://accionesbusqueda.fastapicloud.dev/health"
+          MAX_ATTEMPTS=4
+          TIMEOUT=60
+          DELAY=15
+          echo "GET $URL (timeout ${TIMEOUT}s, hasta ${MAX_ATTEMPTS} intentos)"
+          for i in $(seq 1 "$MAX_ATTEMPTS"); do
+            echo "--- intento $i/$MAX_ATTEMPTS ---"
+            code=$(curl -sS -o /tmp/health.body -w "%{http_code}" \
+              --connect-timeout 30 \
+              --max-time "$TIMEOUT" \
+              -A "Monarch-keepalive/1.0" \
+              "$URL" || echo "000")
+            echo "HTTP $code"
+            if [ -s /tmp/health.body ]; then
+              head -c 400 /tmp/health.body || true
+              echo
+            fi
+            if [ "$code" = "200" ]; then
+              echo "OK: /health respondió 200 en el intento $i"
+              exit 0
+            fi
+            if [ "$i" -lt "$MAX_ATTEMPTS" ]; then
+              echo "Intento $i falló (HTTP ${code}). Reintento en ${DELAY}s (arranque en frío lento)."
+              sleep "$DELAY"
+            fi
+          done
+          echo "::error::/health no respondió HTTP 200 tras ${MAX_ATTEMPTS} intentos (timeout ${TIMEOUT}s cada uno). Prod puede seguir dormida."
+          exit 1
