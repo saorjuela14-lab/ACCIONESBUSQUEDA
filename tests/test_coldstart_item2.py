@@ -87,7 +87,9 @@ def test_sanitize_strips_dsn_and_hosts():
 
 
 def test_autopilot_job_runs_on_boot_with_misfire_grace(monkeypatch):
+    """Recovery job is the boot catch-up; the regular job stays clock-aligned."""
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from apscheduler.triggers.date import DateTrigger
 
     from services import scheduler_service as ss
 
@@ -95,8 +97,9 @@ def test_autopilot_job_runs_on_boot_with_misfire_grace(monkeypatch):
     real_add = AsyncIOScheduler.add_job
 
     def spy(self, func, trigger=None, **kw):
-        if kw.get("id") == "firm_autopilot":
-            captured.update(kw)
+        job_id = kw.get("id")
+        if job_id in {"firm_autopilot", "firm_autopilot_recovery"}:
+            captured[job_id] = {"trigger": trigger, **kw}
         return real_add(self, func, trigger, **kw)
 
     monkeypatch.setattr(AsyncIOScheduler, "add_job", spy)
@@ -104,12 +107,14 @@ def test_autopilot_job_runs_on_boot_with_misfire_grace(monkeypatch):
     svc = ss.SchedulerService()
     svc._settings.autopilot_interval_minutes = 10
     svc.start()
-    assert captured, "firm_autopilot no se programó"
-    assert captured["misfire_grace_time"] == 300
-    assert captured["coalesce"] is True and captured["max_instances"] == 1
-    nrt = captured["next_run_time"]
-    delta = (nrt - datetime.now(timezone.utc)).total_seconds()
-    assert 0 <= delta <= 60  # corre ya, no a +10 min
+    assert "firm_autopilot" in captured, "firm_autopilot no se programó"
+    auto = captured["firm_autopilot"]
+    assert auto["misfire_grace_time"] == 300
+    assert auto["coalesce"] is True and auto["max_instances"] == 1
+    rec = captured["firm_autopilot_recovery"]
+    assert isinstance(rec["trigger"], DateTrigger)
+    delta = (rec["trigger"].run_date - datetime.now(timezone.utc)).total_seconds()
+    assert 30 <= delta <= 60  # catch-up after cold start, not a full 10 min wait
 
 
 def test_delayed_job_under_300s_still_runs():
