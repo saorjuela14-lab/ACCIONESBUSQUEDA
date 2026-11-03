@@ -1,10 +1,11 @@
 """Cloud scheduler — market reports, watchlist scans, daily reports, memory evaluation."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from agents.market_monitor import MarketMonitor
@@ -22,17 +23,23 @@ from providers.market.factory import get_market_provider
 from providers.news.factory import get_news_provider
 from reports.writer import ReportWriter
 from services.alert_service import AlertService
+from services.autopilot_schedule import (
+    AUTOPILOT_CLOCK_OFFSET_SECONDS,
+    AUTOPILOT_MISFIRE_GRACE_SECONDS,
+    AUTOPILOT_RECOVERY_DELAY_SECONDS,
+    LAST_CYCLE_FLAG,
+    make_autopilot_trigger,
+    parse_last_cycle_at,
+    should_run_startup_recovery,
+)
+from services.company_discovery_service import CompanyDiscoveryService
 from services.daily_report_service import DailyReportService
 from services.daily_trade_recommendation_service import DailyTradeRecommendationService
 from services.memory_evaluation_service import MemoryEvaluationService
-from services.company_discovery_service import CompanyDiscoveryService
 from services.push_notification_service import PushNotificationService
 from services.watchlist_monitor_service import WatchlistMonitorService
 from utils.logging import get_logger
-from utils.market_hours import should_run_automation
-
-AUTOPILOT_MISFIRE_GRACE_SECONDS = 300
-AUTOPILOT_COLDSTART_DELAY_SECONDS = 5
+from utils.market_hours import is_market_open, should_run_automation
 
 logger = get_logger(__name__)
 
@@ -310,6 +317,51 @@ class SchedulerService:
             )
             break
 
+    async def _maybe_run_autopilot_recovery(self) -> None:
+        """One-shot after boot: fill a missed cycle without racing cold start.
+
+        Goes through ``_run_autopilot`` → ``AutopilotService.run`` so the same
+        replica lease applies as the clock-aligned ticks.
+        """
+        market_open = is_market_open()
+        last_at = None
+        try:
+            from database.repositories.ops_repository import OpsFlagRepository
+
+            async for session in get_session():
+                payload = await OpsFlagRepository(session).get_json(LAST_CYCLE_FLAG)
+                last_at = parse_last_cycle_at(payload)
+                break
+        except Exception as exc:
+            logger.warning(
+                "scheduler.autopilot_recovery.last_cycle_failed",
+                error=str(exc)[:200],
+            )
+            last_at = None
+
+        now = datetime.now(timezone.utc)
+        interval = self._settings.effective_autopilot_interval_minutes or 10
+        if not should_run_startup_recovery(
+            market_open=market_open,
+            last_at=last_at,
+            now=now,
+            max_age_minutes=interval,
+        ):
+            logger.info(
+                "scheduler.autopilot_recovery.skipped",
+                market_open=market_open,
+                last_at=last_at.isoformat() if last_at else None,
+            )
+            return
+
+        age_s = None if last_at is None else int((now - last_at).total_seconds())
+        logger.info(
+            "scheduler.autopilot_recovery.run",
+            last_at=last_at.isoformat() if last_at else None,
+            age_s=age_s,
+        )
+        await self._run_autopilot()
+
     async def _run_daily_report(self) -> None:
         async for session in get_session():
             service = await self._build_daily_report_service(session)
@@ -555,17 +607,32 @@ class SchedulerService:
             replace_existing=True,
         )
 
-        # Full firm autopilot (firm autonomy defaults to 30m when unset)
+        # Full firm autopilot — clock-aligned (:00/:10/:20 + offset), not from boot.
         autopilot_every = self._settings.effective_autopilot_interval_minutes
         if autopilot_every > 0:
             self._scheduler.add_job(
                 self._run_autopilot,
-                IntervalTrigger(minutes=autopilot_every),
+                make_autopilot_trigger(
+                    interval_minutes=autopilot_every,
+                    offset_seconds=AUTOPILOT_CLOCK_OFFSET_SECONDS,
+                    tz=tz,
+                ),
                 id="firm_autopilot",
                 replace_existing=True,
-                # Cold start (ítem 2): run once right after boot instead of
-                # waiting a full interval; tolerate up to 5 min of loop delay.
-                next_run_time=datetime.now(tz) + timedelta(seconds=AUTOPILOT_COLDSTART_DELAY_SECONDS),
+                misfire_grace_time=AUTOPILOT_MISFIRE_GRACE_SECONDS,
+                coalesce=True,
+                max_instances=1,
+            )
+            # Catch-up ~45s after boot so a FastAPI Cloud restart does not wait
+            # a full interval. The job itself no-ops if the last cycle is fresh.
+            self._scheduler.add_job(
+                self._maybe_run_autopilot_recovery,
+                DateTrigger(
+                    run_date=datetime.now(tz)
+                    + timedelta(seconds=AUTOPILOT_RECOVERY_DELAY_SECONDS)
+                ),
+                id="firm_autopilot_recovery",
+                replace_existing=True,
                 misfire_grace_time=AUTOPILOT_MISFIRE_GRACE_SECONDS,
                 coalesce=True,
                 max_instances=1,
@@ -600,6 +667,8 @@ class SchedulerService:
             lifecycle_interval=self._settings.lifecycle_scan_interval_minutes,
             reconcile_interval=self._settings.reconcile_interval_minutes,
             autopilot_interval=autopilot_every,
+            autopilot_clock_offset_s=AUTOPILOT_CLOCK_OFFSET_SECONDS if autopilot_every > 0 else None,
+            autopilot_recovery_delay_s=AUTOPILOT_RECOVERY_DELAY_SECONDS if autopilot_every > 0 else None,
             firm_autonomy=self._settings.firm_autonomy,
             whatsapp_briefing=self._settings.whatsapp_briefing_schedule,
             multiasset_autopilot_interval=getattr(
